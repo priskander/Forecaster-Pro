@@ -176,6 +176,7 @@
       }
     }
   </style>
+  <link rel="stylesheet" href="./src/styles/navigation.css" />
 </head>
 
 <body class="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-blue-600 selection:text-white">
@@ -277,7 +278,7 @@
   </header>
 
   <!-- NAVIGATION BAR (Always visible & responsive across desktop, tablet, and mobile) -->
-  <nav class="bg-white dark:bg-slate-900 px-4 md:px-8 py-3 flex items-center gap-2 md:gap-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto custom-scrollbar flex-nowrap md:flex-wrap">
+  <nav id="desktop-navigation" class="bg-white dark:bg-slate-900 px-4 md:px-8 py-3 flex items-center gap-2 md:gap-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto custom-scrollbar flex-nowrap md:flex-wrap">
     <a class="nav-link flex items-center gap-2 bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold shadow-sm transition-all flex-shrink-0" href="#" onclick="switchView('dashboard', this, event)"><span>📊</span> Dashboard</a>
     <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('insights', this, event)"><span>👁️</span> Insights &amp; Alerts</a>
     <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('transactions', this, event)"><span>📝</span> Transactions</a>
@@ -1641,5 +1642,6 @@
   <script src="./src/scripts/pwa-bridge.js"></script>
   <script src="./src/scripts/github-sync.js"></script>
   <script src="./src/scripts/saas-subscription.js"></script>
+  <script src="./src/scripts/navigation.js"></script>
 </body>
 </html>
