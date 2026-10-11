@@ -158,8 +158,22 @@
       }
     }
 
+    /* Keep the mobile navigation separate from page content even if
+       the external utility stylesheet fails to load. */
     #mobile-bottom-nav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 40;
+      display: flex;
       padding-bottom: max(var(--safe-bottom), 8px);
+    }
+
+    @media screen and (min-width: 768px) {
+      #mobile-bottom-nav {
+        display: none !important;
+      }
     }
   </style>
 </head>
