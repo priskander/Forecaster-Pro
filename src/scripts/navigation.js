@@ -47,7 +47,9 @@
       control.className = desktopActive;
       control.setAttribute('aria-current', 'page');
     } else {
-      const desktopLink = document.querySelector('#desktop-navigation .nav-link[onclick*="\'' + requestedView + '\'"]');
+      const desktopLink = Array.from(document.querySelectorAll('#desktop-navigation .nav-link')).find(function (link) {
+        return (link.getAttribute('onclick') || '').includes("'" + requestedView + "'");
+      });
       if (desktopLink) {
         desktopLink.className = desktopActive;
         desktopLink.setAttribute('aria-current', 'page');
