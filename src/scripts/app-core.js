@@ -148,10 +148,11 @@
   };
 
   /* VIEW NAVIGATION ROUTER */
-  window.switchView = function(viewId, element) {
-    if (typeof event !== 'undefined' && event) {
-      try { event.preventDefault(); } catch(e) {}
-    }
+  window.switchView = function(viewId, element, clickEvent) {
+      if (clickEvent) {
+        clickEvent.preventDefault();
+      }
+        return false;
     const requestedStockModule = viewId === 'pharmacy' ? 'pharmacy' : (viewId === 'inventory' ? 'inventory' : null);
     if (requestedStockModule) viewId = 'stock';
 
