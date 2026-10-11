@@ -149,10 +149,10 @@
 
   /* VIEW NAVIGATION ROUTER */
   window.switchView = function(viewId, element, clickEvent) {
-      if (clickEvent) {
-        clickEvent.preventDefault();
-      }
-        return false;
+    if (clickEvent && typeof clickEvent.preventDefault === 'function') {
+      clickEvent.preventDefault();
+    }
+
     const requestedStockModule = viewId === 'pharmacy' ? 'pharmacy' : (viewId === 'inventory' ? 'inventory' : null);
     if (requestedStockModule) viewId = 'stock';
 
