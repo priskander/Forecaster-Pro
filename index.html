@@ -158,8 +158,22 @@
       }
     }
 
+    /* Keep the mobile navigation separate from page content even if
+       the external utility stylesheet fails to load. */
     #mobile-bottom-nav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 40;
+      display: flex;
       padding-bottom: max(var(--safe-bottom), 8px);
+    }
+
+    @media screen and (min-width: 768px) {
+      #mobile-bottom-nav {
+        display: none !important;
+      }
     }
   </style>
 </head>
@@ -264,14 +278,14 @@
 
   <!-- NAVIGATION BAR (Always visible & responsive across desktop, tablet, and mobile) -->
   <nav class="bg-white dark:bg-slate-900 px-4 md:px-8 py-3 flex items-center gap-2 md:gap-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto custom-scrollbar flex-nowrap md:flex-wrap">
-    <a class="nav-link flex items-center gap-2 bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold shadow-sm transition-all flex-shrink-0" href="#" onclick="switchView('dashboard', this)"><span>📊</span> Dashboard</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('insights', this)"><span>👁️</span> Insights &amp; Alerts</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('transactions', this)"><span>📝</span> Transactions</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('rentals', this)"><span>🏠</span> Rentals</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('vehicles', this)"><span>🚗</span> Vehicles</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('stock', this); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('accounts', this)"><span>💳</span> Accounts</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('reports', this)"><span>📄</span> Reports &amp; Backups</a>
+    <a class="nav-link flex items-center gap-2 bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold shadow-sm transition-all flex-shrink-0" href="#" onclick="switchView('dashboard', this, event)"><span>📊</span> Dashboard</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('insights', this, event)"><span>👁️</span> Insights &amp; Alerts</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('transactions', this, event)"><span>📝</span> Transactions</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('rentals', this, event)"><span>🏠</span> Rentals</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('vehicles', this, event)"><span>🚗</span> Vehicles</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('stock', this, event); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('accounts', this, event)"><span>💳</span> Accounts</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('reports', this, event)"><span>📄</span> Reports &amp; Backups</a>
   </nav>
 
   <!-- TOAST NOTIFICATION HOST -->
