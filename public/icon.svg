@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="chartGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#34d399" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#fbbf24" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#bgGrad)" />
+
+  <!-- Shield / Crest accent -->
+  <path d="M256 70 C340 100 400 110 400 110 V250 C400 340 320 405 256 440 C192 405 112 340 112 250 V110 C112 110 172 100 256 70 Z" 
+        fill="#ffffff" fill-opacity="0.08" />
+
+  <!-- Financial Chart Bars -->
+  <g filter="url(#shadow)">
+    <!-- Bar 1 -->
+    <rect x="156" y="270" width="44" height="110" rx="10" fill="#ffffff" fill-opacity="0.85" />
+    <!-- Bar 2 -->
+    <rect x="220" y="210" width="44" height="170" rx="10" fill="#ffffff" fill-opacity="0.95" />
+    <!-- Bar 3 -->
+    <rect x="284" y="150" width="44" height="230" rx="10" fill="url(#accentGrad)" />
+    <!-- Bar 4 -->
+    <rect x="348" y="185" width="44" height="195" rx="10" fill="url(#chartGrad)" />
+
+    <!-- Trend line with nodes -->
+    <path d="M140 280 L200 230 L270 170 L340 135 L400 120" 
+          fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+    
+    <circle cx="200" cy="230" r="10" fill="#ffffff" />
+    <circle cx="270" cy="170" r="10" fill="#ffffff" />
+    <circle cx="340" cy="135" r="10" fill="#ffffff" />
+    <circle cx="400" cy="120" r="14" fill="#fbbf24" stroke="#ffffff" stroke-width="4" />
+  </g>
+
+  <!-- Forward-looking Sparkle / Pulse -->
+  <path d="M256 95 L263 115 L283 122 L263 129 L256 149 L249 129 L229 122 L249 115 Z" fill="#ffffff" />
+</svg>

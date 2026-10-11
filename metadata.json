@@ -1,0 +1,6 @@
+{
+  "name": "Forecaster Pro",
+  "description": "Unified financial ledger, intelligent depletion & expiry guard, rental contracts, and vehicle fleet management PWA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

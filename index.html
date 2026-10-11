@@ -1,0 +1,1533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <title>Forecaster Pro V. 01.06.12 - Enterprise Edition</title>
+  <meta name="description" content="Unified financial ledger, intelligent depletion & expiry guard, rental contracts, and vehicle fleet management PWA." />
+  <meta property="og:title" content="Forecaster Pro - Unified Financial Ledger" />
+  <meta property="og:description" content="Unified financial ledger, intelligent depletion & expiry guard, rental contracts, and vehicle fleet management PWA." />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Forecaster Pro" />
+
+  <!-- PWA Manifest & App Icons -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+
+  <!-- Instant Theme Bootstrapping -->
+  <script>
+    (function() {
+      try {
+        const saved = localStorage.getItem('pro_theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const shouldBeDark = saved ? saved === 'dark' : prefersDark;
+        if (shouldBeDark) document.documentElement.classList.add('dark');
+      } catch (err) { /* default to light mode */ }
+    })();
+  </script>
+
+  <!-- Typography & Component Libraries -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+
+  <!-- Engine Libraries -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+
+  <link rel="stylesheet" href="/src/styles/forecaster.css" />
+</head>
+
+<body class="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-blue-600 selection:text-white">
+
+  <!-- PWA Offline Indicator Banner -->
+  <div id="pwa-offline-indicator" class="hidden fixed top-0 inset-x-0 z-50 bg-amber-500 text-white text-xs font-bold py-1.5 px-4 text-center shadow-md flex items-center justify-center gap-2">
+    <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+    Offline Mode Active — Working locally with cached database. Changes will sync when reconnected.
+  </div>
+
+  <!-- APPLICATION HEADER -->
+  <header class="bg-white dark:bg-slate-900 px-4 md:px-8 py-3.5 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 backdrop-blur-md bg-white/95 dark:bg-slate-900/95">
+    <div class="flex items-center gap-3">
+      <div class="bg-gradient-to-tr from-blue-700 to-blue-500 p-2.5 rounded-2xl text-white shadow-md shadow-blue-500/25 flex-shrink-0">
+        <svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-base md:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">Forecaster Pro</h1>
+          <span class="saas-subscription-badge hidden sm:inline-flex px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 cursor-pointer" onclick="window.ForecasterSubscription.openModal()" title="View Subscription Tiers">
+            Free Tier
+          </span>
+        </div>
+        <p class="text-[10px] md:text-xs text-slate-500 dark:text-slate-404 font-medium hidden sm:block">Unified Financial Ledger, Intelligent Depletion &amp; Expiry Guard</p>
+      </div>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="flex items-center gap-2">
+      <!-- PWA In-App Install Button -->
+      <button id="header-pwa-install-btn" class="hidden px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold rounded-xl shadow-sm hover:from-blue-700 hover:to-indigo-700 transition flex items-center gap-1.5" onclick="window.triggerPWAInstall()" title="Install as Web App">
+        <i class="fa-solid fa-download text-[11px]"></i>
+        <span class="hidden md:inline">Install App</span>
+      </button>
+
+      <!-- GitHub Cloud Sync Hook -->
+      <button id="gh-sync-header-btn" class="p-2 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" onclick="window.ForecasterGitHubSync.openModal()" title="GitHub Cloud Sync & Sharing">
+        <i class="fa-brands fa-github text-sm"></i>
+      </button>
+
+      <!-- Dark / Light Theme Toggle -->
+      <button class="p-2 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" id="theme-toggle-btn" onclick="toggleDarkMode()" title="Toggle Dark / Light Mode">
+        <span class="moon-icon">🌙</span><span class="sun-icon hidden">☀️</span>
+      </button>
+
+      <!-- Configuration Settings Dropdown -->
+      <div class="relative">
+        <button class="p-2 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" onclick="toggleSettingsMenu(event)" title="Configuration">
+          ⚙️
+        </button>
+        <div class="hidden absolute right-0 mt-2 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-50 overflow-hidden" id="settings-dropdown-menu">
+          <p class="px-4 pt-3 pb-2 text-[10px] font-bold text-slate-404 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700">Sandbox Settings</p>
+          <button class="w-full text-left px-4 py-3 text-sm font-semibold text-slate-707 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-700" onclick="window.openPropertyManagerModal()">
+            <span>🏢</span> Create Property / Unit
+          </button>
+          <button class="w-full text-left px-4 py-3 text-sm font-semibold text-slate-707 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-700" onclick="openUnhideItemsModal()">
+            <span>📤</span> Unhide Items
+          </button>
+          <button class="w-full text-left px-4 py-3 text-sm font-semibold text-slate-707 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-700" onclick="window.ForecasterGitHubSync.openModal()">
+            <span>☁️</span> GitHub Cloud Sync &amp; Backup
+          </button>
+          <button class="w-full text-left px-4 py-3 text-sm font-semibold text-slate-707 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-700" onclick="window.ForecasterSubscription.openModal()">
+            <span>💎</span> SaaS Subscription Plans
+          </button>
+          <button class="w-full text-left px-4 py-3 text-sm font-semibold text-slate-707 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-2.5" onclick="confirmRefreshSandbox()">
+            <span>🔄</span> Refresh Sandbox
+          </button>
+          <button class="w-full text-left px-4 py-3 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition flex items-center gap-2.5 border-t border-slate-100 dark:border-slate-700" onclick="confirmDeleteAllData()">
+            <span>🗑️</span> Delete All Database Input
+          </button>
+        </div>
+      </div>
+
+      <!-- Notification Center -->
+      <div class="relative" id="notification-center">
+        <button aria-expanded="false" aria-label="Open notifications" class="relative p-2 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" id="notification-bell-btn" onclick="toggleNotificationCenter(event)" title="Notifications" type="button">
+          🔔
+          <span class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-rose-600 text-white text-[10px] leading-[18px] font-black text-center rounded-full border-2 border-white dark:border-slate-900" id="notification-unread-badge">0</span>
+        </button>
+        <div class="hidden absolute right-0 mt-2 w-[360px] max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-[60] overflow-hidden" id="notification-dropdown">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-700">
+            <div>
+              <p class="text-sm font-extrabold text-slate-900 dark:text-white">Notification Center</p>
+              <p class="text-[10px] font-semibold text-slate-404">Active financial alerts</p>
+            </div>
+            <button class="text-[10px] font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400" onclick="markAllNotificationsRead(event)" type="button">Mark all read</button>
+          </div>
+          <div class="max-h-[420px] overflow-y-auto custom-scrollbar p-3 space-y-2" id="notification-list">
+            <div class="text-center py-8 text-xs font-semibold text-slate-404">No active notifications.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile & Local Authentication Trigger -->
+      <div id="fp-profile-auth-root"></div>
+    </div>
+  </header>
+
+  <!-- DESKTOP NAVIGATION BAR (Hidden on small screens, thumb nav used instead) -->
+  <nav class="hidden md:flex bg-white dark:bg-slate-900 px-8 py-3.5 flex-wrap items-center gap-3 border-b border-slate-200 dark:border-slate-800">
+    <a class="nav-link flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold shadow-sm transition-all" href="#" onclick="switchView('dashboard', this)"><span>📊</span> Dashboard</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('insights', this)"><span>👁️</span> Insights &amp; Alerts</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('transactions', this)"><span>📝</span> Transactions</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('rentals', this)"><span>🏠</span> Rentals</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('vehicles', this)"><span>🚗</span> Vehicles</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('stock', this); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('accounts', this)"><span>💳</span> Accounts</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('reports', this)"><span>📄</span> Reports &amp; Backups</a>
+  </nav>
+
+  <!-- TOAST NOTIFICATION HOST -->
+  <div class="hidden fixed bottom-6 right-6 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl shadow-2xl max-w-md flex items-center gap-3 transition-all duration-300 transform translate-y-2 opacity-0" id="toast">
+    <span id="toast-icon">💡</span>
+    <span class="text-sm font-semibold text-slate-800 dark:text-slate-200" id="toast-message"></span>
+  </div>
+
+  <!-- MAIN APP SCREEN WRAPPERS -->
+  <main class="max-w-7xl w-full mx-auto p-4 md:p-8 flex-grow space-y-6">
+
+    <!-- =================== DASHBOARD VIEW =================== -->
+    <div class="view-section active space-y-6" id="view-dashboard">
+      <!-- SPENDING LAST 7 DAYS CARD -->
+      <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+        <div>
+          <p class="text-sm font-semibold text-slate-500 dark:text-slate-404">Your spending last 7 days</p>
+          <h2 class="text-4xl font-black text-slate-900 dark:text-white mt-1" id="spend7d-total">EGP 0.00</h2>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-emerald-50 dark:bg-emerald-950/40 rounded-2xl px-4 py-3 flex items-center gap-2">
+            <i class="w-4 h-4 text-emerald-600 dark:text-emerald-400" data-lucide="arrow-down-left"></i>
+            <span class="text-sm font-extrabold text-emerald-700 dark:text-emerald-300" id="spend7d-income-pill">EGP 0.00</span>
+          </div>
+          <div class="bg-rose-50 dark:bg-rose-950/40 rounded-2xl px-4 py-3 flex items-center gap-2">
+            <i class="w-4 h-4 text-rose-600 dark:text-rose-400" data-lucide="arrow-up-right"></i>
+            <span class="text-sm font-extrabold text-rose-600 dark:text-rose-300" id="spend7d-expense-pill">EGP 0.00</span>
+          </div>
+        </div>
+        <div class="relative h-[160px]">
+          <canvas id="spend7dChart"></canvas>
+        </div>
+        <div class="flex justify-between text-xs font-semibold text-slate-404">
+          <span id="spend7d-date-start">-</span>
+          <span id="spend7d-date-end">-</span>
+        </div>
+      </div>
+
+      <!-- Top Summary Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <!-- Total Income -->
+        <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          <div class="space-y-1">
+            <p class="text-xs font-semibold uppercase tracking-wider text-slate-505 dark:text-slate-404">Total Income</p>
+            <h3 class="text-2xl font-black text-slate-900 dark:text-white" id="stat-total-income">EGP 0.00</h3>
+            <p class="text-xs text-emerald-600 dark:text-emerald-400 flex items-center font-medium">
+              <i class="w-3.5 h-3.5 mr-0.5" data-lucide="arrow-up-right"></i>
+              <span>Real-time Sync</span>
+            </p>
+          </div>
+          <div class="p-3 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-xl">
+            <i class="w-5 h-5" data-lucide="arrow-up-right"></i>
+          </div>
+        </div>
+
+        <!-- Total Expenses -->
+        <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          <div class="space-y-1">
+            <p class="text-xs font-semibold uppercase tracking-wider text-slate-505 dark:text-slate-404">Total Expenses</p>
+            <h3 class="text-2xl font-black text-slate-900 dark:text-white" id="stat-total-expenses">EGP 0.00</h3>
+            <p class="text-xs text-slate-555 dark:text-slate-404 font-medium" id="stat-expense-percentage">0% of budget</p>
+          </div>
+          <div class="p-3 bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 rounded-xl">
+            <i class="w-5 h-5" data-lucide="arrow-down-left"></i>
+          </div>
+        </div>
+
+        <!-- Budget Limit -->
+        <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          <div class="space-y-1">
+            <p class="text-xs font-semibold uppercase tracking-wider text-slate-505 dark:text-slate-404">Budget Limit</p>
+            <h3 class="text-2xl font-black text-slate-900 dark:text-white" id="stat-budget-limit">EGP 0.00</h3>
+            <p class="text-xs text-blue-600 dark:text-blue-400 font-bold cursor-pointer hover:underline">Targets Active</p>
+          </div>
+          <div class="p-3 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-xl">
+            <i class="w-5 h-5" data-lucide="sliders"></i>
+          </div>
+        </div>
+
+        <!-- Net Savings -->
+        <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          <div class="space-y-1">
+            <p class="text-xs font-semibold uppercase tracking-wider text-slate-505 dark:text-slate-404">Net Savings</p>
+            <h3 class="text-2xl font-black text-slate-950 dark:text-white" id="stat-net-savings">EGP 0.00</h3>
+            <div class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300" id="savings-progress-pill">
+              Active Saving
+            </div>
+          </div>
+          <div class="p-3 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-xl">
+            <i class="w-5 h-5" data-lucide="piggy-bank"></i>
+          </div>
+        </div>
+
+        <!-- Critical Reorders -->
+        <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          <div class="space-y-1">
+            <p class="text-xs font-semibold uppercase tracking-wider text-slate-505 dark:text-slate-404">Critical Reorders</p>
+            <h3 class="text-2xl font-black text-rose-600 dark:text-rose-400" id="insight-low-stock">0 Items</h3>
+            <p class="text-xs text-rose-500 font-medium">Below Buffer Minimums</p>
+          </div>
+          <div class="p-3 bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 rounded-xl">
+            <i class="w-5 h-5" data-lucide="alert-triangle"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart & Activity Section -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm lg:col-span-2 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h4 class="text-lg font-extrabold text-slate-900 dark:text-white">Financial Performance</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-404">Monthly breakdown of Income and dynamic Expense categories</p>
+            </div>
+            <div class="px-3 py-1 bg-slate-100 dark:bg-slate-700 rounded-full text-xs font-bold text-slate-600 dark:text-slate-300">Current Period</div>
+          </div>
+          <div class="relative h-[300px]">
+            <canvas id="overviewChart"></canvas>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">
+              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">Recent Transactions</h4>
+              <button class="text-xs font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400" onclick="switchView('transactions', document.querySelector('[onclick*=\'transactions\']'))">Audit Registry</button>
+            </div>
+            <div class="space-y-3 max-h-[280px] overflow-y-auto custom-scrollbar pr-1" id="recent-transactions-list"></div>
+          </div>
+          <div class="pt-4 border-t border-slate-100 dark:border-slate-700">
+            <button class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl transition flex items-center justify-center shadow-sm" onclick="openAddTransactionModal()">
+              <i class="w-4 h-4 mr-1.5 text-white" data-lucide="plus-circle"></i>
+              Quick Add Entry
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Payment Accounts Analysis -->
+      <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 dark:border-slate-700 pb-3 gap-2">
+          <div>
+            <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>💳</span> Payment Accounts Analysis</h2>
+            <p class="text-[11px] text-slate-500 dark:text-slate-404 mt-0.5">Full breakdown of Income, Expenses, Transfers &amp; Net Balance per payment account</p>
+          </div>
+          <button class="text-xs bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-3 py-1.5 rounded-lg font-bold text-slate-707 dark:text-slate-200 hover:bg-slate-202 transition" onclick="switchView('accounts', document.querySelector('[onclick*=\'accounts\']'))">Manage Accounts</button>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-1 relative h-[260px]">
+            <canvas id="dashboardAccountsChart"></canvas>
+          </div>
+          <div class="lg:col-span-2 overflow-x-auto custom-scrollbar">
+            <table class="w-full text-left text-xs">
+              <thead>
+                <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-404 font-bold uppercase tracking-wider">
+                  <th class="py-2 px-2">Account</th>
+                  <th class="py-2 px-2 text-right">Income</th>
+                  <th class="py-2 px-2 text-right">Expenses</th>
+                  <th class="py-2 px-2 text-right">Transfers</th>
+                  <th class="py-2 px-2 text-right">Net Balance</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-700 text-slate-707 dark:text-slate-300" id="dashboard-accounts-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Automated Depletion Forecaster & Shopping Planner -->
+      <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 dark:border-slate-700 pb-3 gap-2">
+          <div>
+            <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span>🔮</span> Automated Depletion Forecaster &amp; Shopping Planner
+            </h2>
+            <p class="text-[11px] text-slate-500 dark:text-slate-404 mt-0.5">Consolidates duplicates by name, translates units to base volumes, and tracks velocities to automate restock budgets.</p>
+          </div>
+          <div class="bg-blue-50 dark:bg-blue-950/60 border border-blue-100 dark:border-blue-900 px-4 py-2 rounded-xl text-right">
+            <span class="text-[9px] text-blue-700 dark:text-blue-300 font-extrabold uppercase tracking-wider block">Total Restock Budget Forecast</span>
+            <span class="text-lg font-black text-blue-800 dark:text-blue-200" id="forecast-total-budget">EGP 0.00</span>
+          </div>
+        </div>
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-left text-xs">
+            <thead>
+              <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-404 font-bold uppercase tracking-wider">
+                <th class="py-3 px-2">Consolidated Item</th>
+                <th class="py-3 px-2">Total Base Volume</th>
+                <th class="py-3 px-2">Consumption Velocity</th>
+                <th class="py-3 px-2">Est. Days Supply</th>
+                <th class="py-3 px-2">Safety Buffer Target</th>
+                <th class="py-3 px-2">Restock Deficit</th>
+                <th class="py-3 px-2 text-right">Estimated Cost</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-700 text-slate-707 dark:text-slate-300" id="forecaster-planner-rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Warnings & Financial Footprint -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+          <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>🚨</span> Immediate Reorders &amp; Predictive Alerts</h2>
+          <div class="space-y-3" id="alerts-ledger-container"></div>
+        </div>
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+          <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>📈</span> Household Financial Footprint</h2>
+          <div class="space-y-6">
+            <div>
+              <span class="text-xs font-bold text-slate-505 dark:text-slate-404 block mb-2 uppercase tracking-wider">Expense Ratios by Category</span>
+              <div class="space-y-2 text-xs" id="expense-distribution-bars"></div>
+            </div>
+            <div class="pt-4 border-t border-slate-100 dark:border-slate-700">
+              <span class="text-xs font-bold text-slate-505 dark:text-slate-404 block mb-2 uppercase tracking-wider">Income Sources Breakdown</span>
+              <div class="space-y-2 text-xs" id="income-distribution-bars"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Medication Safety & Expiry Dashboard -->
+      <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+        <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-3">
+          <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>🛡️</span> Medication Safety &amp; Expiry Dashboard</h2>
+          <span class="text-[10px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wider">Safety Protocols Active</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="medication-safety-dashboard"></div>
+      </div>
+
+      <!-- Allocator Blueprint Segment -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm lg:col-span-1 space-y-6">
+          <div>
+            <h4 class="text-base font-extrabold text-slate-900 dark:text-white">Define Allocations</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-404">Control budget limits and benchmark goals dynamically</p>
+          </div>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-505 dark:text-slate-404 uppercase tracking-wider mb-1.5">Projected Monthly Income (EGP)</label>
+              <input class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-1 focus:ring-blue-500 text-sm font-semibold text-slate-800 dark:text-white" id="budget-income-input" onchange="updateMainBudgets()" type="number" value="3500"/>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-505 dark:text-slate-404 uppercase tracking-wider mb-1.5">Monthly Expense Budget Limit (EGP)</label>
+              <input class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-1 focus:ring-blue-500 text-sm font-semibold text-slate-800 dark:text-white" id="budget-expense-input" onchange="updateMainBudgets()" type="number" value="2000"/>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm lg:col-span-2 space-y-6">
+          <div>
+            <h4 class="text-base font-extrabold text-slate-900 dark:text-white">Computed Blueprint Allocations</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-404">Benchmark target distributions calculated using your dynamic allocations</p>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-4">
+              <div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-100 dark:border-emerald-800">
+                <h5 class="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                  <i class="w-4 h-4 text-emerald-600 dark:text-emerald-400" data-lucide="trending-up"></i>
+                  Income Target Proportions
+                </h5>
+              </div>
+              <div class="space-y-2 max-h-56 overflow-y-auto custom-scrollbar" id="blueprint-income-items"></div>
+            </div>
+            <div class="space-y-4">
+              <div class="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-100 dark:border-rose-800">
+                <h5 class="text-xs font-bold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
+                  <i class="w-4 h-4 text-rose-600 dark:text-rose-400" data-lucide="trending-down"></i>
+                  Expense Quotas Blueprint
+                </h5>
+              </div>
+              <div class="space-y-2 max-h-56 overflow-y-auto custom-scrollbar" id="blueprint-expense-items"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================== INSIGHTS & ALERTS TAB =================== -->
+    <div class="view-section space-y-6" id="view-insights">
+      <div class="space-y-3" id="alerts-container"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
+          <div>
+            <span class="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-xs font-semibold rounded-full uppercase tracking-wider">Targets vs actual</span>
+            <h4 class="text-xl font-bold text-slate-900 dark:text-white mt-2">Income Sources Breakdown</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-404">Track how each stream matches up with projected calculations</p>
+          </div>
+          <div class="space-y-5" id="insights-income-list"></div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
+          <div>
+            <span class="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-xs font-semibold rounded-full uppercase tracking-wider">Quota Limiters</span>
+            <h4 class="text-xl font-bold text-slate-900 dark:text-white mt-2">Expense Ratios by Category</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-404">Keep eye on actual consumption of resources against calculated limits</p>
+          </div>
+          <div class="space-y-5" id="insights-expense-list"></div>
+        </div>
+      </div>
+
+      <div class="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-6 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="space-y-2">
+          <h5 class="text-lg font-bold flex items-center gap-2">
+            <i class="text-blue-500 w-5 h-5" data-lucide="shield-check"></i>
+            Automated Portfolio Assessment
+          </h5>
+          <p class="text-slate-300 text-xs leading-relaxed max-w-2xl">
+            Keep total expense footprints under <span class="font-semibold text-white">80%</span> of active budget allocations to guarantee a sustainable financial safety margin.
+          </p>
+        </div>
+        <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition" onclick="switchView('dashboard', document.querySelector('[onclick*=\'dashboard\']'))">
+          Adjust Ratios
+        </button>
+      </div>
+    </div>
+
+    <!-- =================== UNIFIED TRANSACTIONS VIEW =================== -->
+    <div class="view-section space-y-6" id="view-transactions">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Log Form -->
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-fit">
+          <h2 class="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><span>✍🏼</span> Log New Transaction</h2>
+          <form class="space-y-4" id="unified-txn-form" onsubmit="handleUnifiedTxnSubmit(event)">
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Transaction Type</label>
+              <div class="grid grid-cols-3 gap-2">
+                <button class="py-2 px-3 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="form-type-expense" onclick="setFormType('expense')" type="button">📉 Expense</button>
+                <button class="py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="form-type-income" onclick="setFormType('income')" type="button">📈 Income</button>
+                <button class="py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="form-type-transfer" onclick="setFormType('transfer')" type="button">🔁 Transfer</button>
+              </div>
+              <input id="form-txn-type" type="hidden" value="expense"/>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Date</label>
+              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="form-txn-date" required="" type="date"/>
+            </div>
+            <div id="form-txn-category-wrap">
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Category</label>
+              <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100" id="form-txn-category"></select>
+              <p class="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium mt-1" id="form-txn-tip">🥦 Grocery &amp; 💊 Medical expenses are generated automatically when registering Stock batches.</p>
+            </div>
+            <div class="hidden" id="form-txn-utility-wrap">
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Utility Type</label>
+              <select class="utility-type-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100" id="form-txn-utility-type"></select>
+            </div>
+            <div class="hidden" id="form-txn-utility-duedate-wrap">
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Due Date</label>
+              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100" id="form-txn-utility-duedate" type="date"/>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Amount (EGP)</label>
+              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="form-txn-amount" min="0.01" placeholder="0.00" required="" step="0.01" type="number"/>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Notes / Description</label>
+              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-medium" id="form-txn-desc" placeholder="Details..." type="text"/>
+            </div>
+            <div id="form-txn-account-wrap">
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label>
+              <select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100" id="form-txn-account"></select>
+            </div>
+            <div class="hidden space-y-4" id="form-transfer-fields">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">From Account</label>
+                <select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="form-transfer-from"></select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">To Account</label>
+                <select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="form-transfer-to"></select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Transfer Method</label>
+                <select class="transfer-method-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="form-transfer-method"></select>
+              </div>
+              <div class="hidden" id="form-transfer-instapay-fee-wrap">
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Instapay Fees (EGP)</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="form-transfer-instapay-fee" min="0" placeholder="0.00" step="0.01" type="number"/>
+              </div>
+            </div>
+            <button class="w-full bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition" type="submit">Save Log</button>
+          </form>
+        </div>
+
+        <!-- Audit Register -->
+        <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+          <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white">Transaction Audit Register</h2>
+            <button class="text-xs bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-3 py-1.5 rounded-lg font-bold text-slate-707 dark:text-slate-200 hover:bg-slate-202 transition" onclick="toggleFilterDrawer('transaction')">🔍 Toggle Advanced Filter</button>
+          </div>
+          <!-- Filter Drawer -->
+          <div class="hidden bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3" id="transaction-filter-drawer">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+              <div>
+                <label class="block font-bold text-slate-505 dark:text-slate-404 mb-1">Filter Type</label>
+                <select class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 font-medium" id="filter-txn-type" onchange="applyFilters('transaction')">
+                  <option value="all">All Types</option>
+                  <option value="expense">Expense</option>
+                  <option value="income">Income</option>
+                  <option value="transfer">Transfer</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-505 dark:text-slate-404 mb-1">Category Filter</label>
+                <select class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 font-medium" id="filter-txn-cat" onchange="applyFilters('transaction')">
+                  <option value="">All Categories</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label>
+                <select class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 font-medium" id="filter-txn-account" onchange="applyFilters('transaction')">
+                  <option value="">All Accounts</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-505 dark:text-slate-404 mb-1">Sort Order</label>
+                <select class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 font-medium" id="filter-txn-sort" onchange="applyFilters('transaction')">
+                  <option value="date-desc">Newest Date</option>
+                  <option value="date-asc">Oldest Date</option>
+                  <option value="amt-desc">Highest Amount</option>
+                  <option value="amt-asc">Lowest Amount</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs pt-1">
+              <div class="md:col-span-2">
+                <label class="block font-bold text-slate-505 dark:text-slate-404 mb-1">Text Search Description / Category</label>
+                <input class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 font-medium" id="filter-txn-search" oninput="applyFilters('transaction')" placeholder="Search items..." type="text"/>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-505 dark:text-slate-404 mb-1">Date Range</label>
+                <div class="flex gap-1">
+                  <input class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 text-[10px]" id="filter-txn-start" onchange="applyFilters('transaction')" type="date"/>
+                  <input class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 text-[10px]" id="filter-txn-end" onchange="applyFilters('transaction')" type="date"/>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="overflow-x-auto custom-scrollbar">
+            <table class="w-full text-left text-xs">
+              <thead>
+                <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-404 font-bold uppercase tracking-wider">
+                  <th class="py-3 px-2">Date</th>
+                  <th class="py-3 px-2">Type</th>
+                  <th class="py-3 px-2">Category</th>
+                  <th class="py-3 px-2">Description</th>
+                  <th class="py-3 px-2 text-right">Amount</th>
+                  <th class="py-3 px-2 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-700 text-slate-707 dark:text-slate-300" id="transactions-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================== STOCK INVENTORY & PHARMACY TAB =================== -->
+    <div class="view-section space-y-6" id="view-stock">
+      <div id="stock-module-panel">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-fit space-y-4">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2" id="stock-entry-title"><span>📦</span> Log New Stock Item</h2>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Stock Module</label>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button class="py-2 px-3 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="stock-module-btn" onclick="setStockPharmacyModule('inventory')" type="button">📦 Inventory</button>
+                <button class="py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="pharmacy-module-btn" onclick="setStockPharmacyModule('pharmacy')" type="button">💊 Pharmacy</button>
+                <button class="py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="spare-parts-module-btn" onclick="setStockPharmacyModule('spareparts')" type="button">🧰 Spare Parts</button>
+              </div>
+            </div>
+            <form class="space-y-4" id="stock-form" onsubmit="handleInventoryRegister(event)">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Item Name</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="stock-name" placeholder="E.g., Almond Milk" required="" type="text"/>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Purchase Style</label>
+                  <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="stock-buy-style" onchange="togglePackagingMath('stock')">
+                    <option value="single">Single Pieces</option>
+                    <option value="pack">Pack / Box / Case</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Unit Typology</label>
+                  <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="stock-unit">
+                    <option value="units">units</option>
+                    <option value="KG">KG</option>
+                    <option value="L">L</option>
+                  </select>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="lbl-stock-qty">Quantity Bought</label>
+                  <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="stock-quantity" min="0" placeholder="10" required="" step="0.1" type="number"/>
+                </div>
+                <div class="hidden" id="stock-pack-size-container">
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Items per Pack</label>
+                  <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="stock-pack-size" min="1" step="1" type="number" value="12"/>
+                </div>
+              </div>
+              <div class="hidden bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800 p-3 rounded-xl text-xs text-indigo-700 dark:text-indigo-300 font-mono" id="stock-calc-preview"></div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="lbl-stock-price">Price per Unit (EGP)</label>
+                  <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="stock-price" min="0" placeholder="0.00" required="" step="0.01" type="number"/>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Threshold Trigger</label>
+                  <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="stock-threshold" min="0" placeholder="2.0" required="" step="0.1" type="number"/>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Alert Method &amp; Learning Curve</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="stock-alert-method">
+                  <option value="loose">By Base Unit Pieces / Loose Items</option>
+                  <option value="pack">By Whole Pack quantities remaining</option>
+                  <option value="smart">Intelligent Curve (Alert if supply &lt; 7 Days)</option>
+                </select>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Production Date</label>
+                  <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-medium" id="stock-prod-date" type="date"/>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Expiry Date</label>
+                  <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-medium" id="stock-exp-date" type="date"/>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Is this Old Stock or a New Purchase?</label>
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="cursor-pointer border-2 border-blue-600 bg-blue-50 text-blue-700 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs" id="stock-origin-label-new">
+                    <input checked="" class="sr-only" name="stock-origin" onchange="toggleStockOrigin()" type="radio" value="new"/>
+                    <span>🆕 New Purchase</span>
+                  </label>
+                  <label class="cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs" id="stock-origin-label-old">
+                    <input class="sr-only" name="stock-origin" onchange="toggleStockOrigin()" type="radio" value="old"/>
+                    <span>📦 Old Stock</span>
+                  </label>
+                </div>
+                <p class="hidden text-[10px] text-amber-700 dark:text-amber-400 font-semibold mt-1.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900 rounded-lg p-2" id="stock-origin-disclaimer">
+                  ⚠️ Old stock quantities are used only for forecasting — no expense logged.
+                </p>
+              </div>
+              <div id="stock-account-wrapper">
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label>
+                <select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="stock-account"></select>
+              </div>
+              <button class="w-full bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition" type="submit">Log Asset Stock</button>
+            </form>
+          </div>
+
+          <div class="lg:col-span-2 space-y-4">
+            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+              <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+                <h2 class="text-base font-bold text-slate-900 dark:text-white">Inventory Audit Register</h2>
+                <div class="relative w-full md:w-64">
+                  <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-404">🔍</span>
+                  <input class="w-full pl-9 pr-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none font-medium bg-transparent" id="inventory-search" oninput="renderAllViews()" placeholder="Search assets..." type="text"/>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="inventory-ledger-cards"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================== PHARMACY MODULE =================== -->
+    <div class="hidden" id="pharmacy-module-panel">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-fit space-y-4">
+          <h2 class="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><span>💊</span> Log New Medication</h2>
+          <div>
+            <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Stock Module</label>
+            <div class="grid grid-cols-3 gap-2">
+              <button class="py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition" onclick="setStockPharmacyModule('inventory')" type="button">📦 Inventory</button>
+              <button class="py-2 px-3 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition" onclick="setStockPharmacyModule('pharmacy')" type="button">💊 Pharmacy</button>
+              <button class="py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition" onclick="setStockPharmacyModule('spareparts')" type="button">🧰 Spare Parts</button>
+            </div>
+          </div>
+          <form class="space-y-4" id="pharmacy-form" onsubmit="handlePharmacyRegister(event)">
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Medication Name</label>
+              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-name" placeholder="E.g., Concor" required="" type="text"/>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Purchase Style</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-buy-style" onchange="togglePackagingMath('pharmacy')">
+                  <option value="single">Single Pieces / Pills</option>
+                  <option value="pack">Strip / Box / Pack</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Medical Unit</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-unit">
+                  <option value="pills">pills</option>
+                  <option value="packs">packs</option>
+                  <option value="ml">ml</option>
+                  <option value="units">units</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="lbl-pharmacy-qty">In Stock (Pills/ml)</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-quantity" min="0" placeholder="30" required="" step="1" type="number"/>
+              </div>
+              <div class="hidden" id="pharmacy-pack-size-container">
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Pills per Strip/Box</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-pack-size" min="1" step="1" type="number" value="10"/>
+              </div>
+            </div>
+            <div class="hidden bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-800 p-3 rounded-xl text-xs text-emerald-700 dark:text-emerald-300 font-mono" id="pharmacy-calc-preview"></div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="lbl-pharmacy-price">Price per Unit (EGP)</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-price" min="0" placeholder="0.00" required="" step="0.01" type="number"/>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Alert Trigger</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-threshold" min="0" placeholder="5" required="" step="1" type="number"/>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Alert Method &amp; Learning Curve</label>
+              <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-alert-method">
+                <option value="loose">By Base Pill Count</option>
+                <option value="pack">By Whole Pack quantities remaining</option>
+                <option value="smart">Intelligent Curve (Alert if supply &lt; 7 Days)</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Production Date</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-medium" id="pharmacy-prod-date" required="" type="date"/>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Expiry Date</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-medium" id="pharmacy-exp-date" required="" type="date"/>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Dosage Instructions</label>
+              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-medium" id="pharmacy-dosage" placeholder="E.g., 1 pill after dinner" required="" type="text"/>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Reason for Taking (Purpose)</label>
+              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-medium" id="pharmacy-reason" placeholder="E.g., Heart wellness" required="" type="text"/>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Prescription Req.</label>
+              <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-prescription">
+                <option value="OTC">OTC (Over the Counter)</option>
+                <option value="Rx">Rx Required</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Is this Old Stock or a New Purchase?</label>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="cursor-pointer border-2 border-blue-600 bg-blue-50 text-blue-700 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs" id="pharmacy-origin-label-new">
+                  <input checked="" class="sr-only" name="pharmacy-origin" onchange="togglePharmacyOrigin()" type="radio" value="new"/>
+                  <span>🆕 New Purchase</span>
+                </label>
+                <label class="cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs" id="pharmacy-origin-label-old">
+                  <input class="sr-only" name="pharmacy-origin" onchange="togglePharmacyOrigin()" type="radio" value="old"/>
+                  <span>📦 Old Stock</span>
+                </label>
+              </div>
+            </div>
+            <div id="pharmacy-account-wrapper">
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label>
+              <select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-account"></select>
+            </div>
+            <button class="w-full bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition" type="submit">Register Medication</button>
+          </form>
+        </div>
+
+        <div class="lg:col-span-2 space-y-4">
+          <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+              <h2 class="text-base font-bold text-slate-900 dark:text-white">Pharmacy Audit Register</h2>
+              <div class="relative w-full md:w-64">
+                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-404">🔍</span>
+                <input class="w-full pl-9 pr-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none font-medium bg-transparent" id="pharmacy-search" oninput="renderAllViews()" placeholder="Search medicine..." type="text"/>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="pharmacy-clinical-rows"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================== RENTAL MANAGEMENT TAB =================== -->
+    <div class="view-section space-y-6" id="view-rentals">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-fit space-y-4">
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2" id="rental-form-title"><span>🏠</span> Log New Rental Contract</h2>
+            <span class="hidden text-[10px] bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 px-2 py-1 rounded-lg font-bold" id="rental-edit-state">EDITING</span>
+          </div>
+          <form class="space-y-4" id="rental-contract-form" onsubmit="handleRentalSubmit(event)">
+            <input id="rental-edit-id" type="hidden" value=""/>
+            <div class="border-b border-slate-100 dark:border-slate-700 pb-3">
+              <div class="text-[10px] uppercase tracking-wider text-slate-404 font-black mb-2">Tenant Details</div>
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Tenant Name</label>
+                  <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="rental-tenant-name" placeholder="Full name" required="" type="text"/>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Phone</label>
+                    <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="rental-tenant-phone" placeholder="+20..." required="" type="tel"/>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Email</label>
+                    <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="rental-tenant-email" placeholder="tenant@email.com" type="email"/>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="border-b border-slate-100 dark:border-slate-700 pb-3">
+              <div class="text-[10px] uppercase tracking-wider text-slate-404 font-black mb-2">Property / Lease</div>
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Property / Unit</label>
+                  <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="rental-property" required=""></select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Start Date</label>
+                    <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="rental-start-date" onchange="updateRentalDurationPreview()" required="" type="date"/>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">End Date</label>
+                    <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="rental-end-date" onchange="updateRentalDurationPreview()" required="" type="date"/>
+                  </div>
+                </div>
+                <div class="hidden bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800 p-2.5 rounded-xl text-[10px] text-indigo-700 dark:text-indigo-300 font-bold" id="rental-duration-preview"></div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Rent (EGP)</label>
+                    <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="rental-rent" min="0" placeholder="0.00" required="" step="0.01" type="number"/>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Deposit (EGP)</label>
+                    <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="rental-deposit" min="0" placeholder="0.00" step="0.01" type="number"/>
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Frequency</label>
+                    <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="rental-frequency">
+                      <option value="Monthly">Monthly</option>
+                      <option value="Quarterly">Quarterly</option>
+                      <option value="Semi-Annual">Semi-Annual</option>
+                      <option value="Annual">Annual</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Next Payment Date</label>
+                    <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="rental-next-payment" type="date"/>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Contract Status</label>
+                  <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="rental-status">
+                    <option value="Active">Active</option>
+                    <option value="Pending Renewal">Pending Renewal</option>
+                    <option value="Expired">Expired</option>
+                    <option value="Terminated">Terminated</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Renewal Alert</label>
+                  <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="rental-alert-days">
+                    <option value="30">30 days</option>
+                    <option selected="" value="60">60 days</option>
+                    <option value="90">90 days</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Notes</label>
+                <textarea class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-medium" id="rental-notes" placeholder="Renewal terms, clauses..." rows="2"></textarea>
+              </div>
+              <div class="flex gap-2">
+                <button class="flex-1 bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition" id="rental-save-btn" type="submit">Save Contract</button>
+                <button class="hidden flex-1 bg-slate-100 dark:bg-slate-700 text-slate-707 dark:text-slate-200 font-bold p-3 rounded-xl hover:bg-slate-202 transition" id="rental-cancel-btn" onclick="cancelRentalEdit()" type="button">Cancel</button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div class="lg:col-span-2 space-y-4">
+          <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+              <div>
+                <h2 class="text-base font-bold text-slate-900 dark:text-white">Rental Contract Register</h2>
+                <p class="text-[10px] text-slate-404 font-semibold mt-1">Contracts, renewals, and tenant communication</p>
+              </div>
+              <div class="flex gap-2 w-full md:w-auto">
+                <button class="flex-1 md:flex-none text-xs bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-3 py-1.5 rounded-lg font-bold text-slate-707 dark:text-slate-200 hover:bg-slate-202 transition" onclick="toggleRentalFilterDrawer()" type="button">🔍 Advanced Filter</button>
+                <button class="flex-1 md:flex-none text-xs bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-100 transition" onclick="exportRentalContracts()" type="button">⬇ Export</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="rental-summary-cards"></div>
+            <div class="space-y-2" id="rental-renewal-alerts"></div>
+            <div class="overflow-x-auto custom-scrollbar">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-404 font-bold uppercase tracking-wider">
+                    <th class="py-3 px-2">Tenant / Property</th>
+                    <th class="py-3 px-2">Lease Term</th>
+                    <th class="py-3 px-2">Rent</th>
+                    <th class="py-3 px-2">Status</th>
+                    <th class="py-3 px-2">Next Payment</th>
+                    <th class="py-3 px-2 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-700 text-slate-707 dark:text-slate-300" id="rental-contracts-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================== VEHICLES MANAGEMENT TAB =================== -->
+    <div class="view-section space-y-6" id="view-vehicles">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div class="vehicle-kpi bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-404">Registered Vehicles</p><p class="text-2xl font-black text-slate-900 dark:text-white mt-1" id="vehicle-kpi-count">0</p></div>
+        <div class="vehicle-kpi bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-404">Fuel Spend</p><p class="text-2xl font-black text-slate-900 dark:text-white mt-1" id="vehicle-kpi-fuel">EGP 0.00</p></div>
+        <div class="vehicle-kpi bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-404">Labor Cost</p><p class="text-2xl font-black text-slate-900 dark:text-white mt-1" id="vehicle-kpi-maint-labor">EGP 0.00</p></div>
+        <div class="vehicle-kpi bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-404">Parts Used</p><p class="text-2xl font-black text-slate-900 dark:text-white mt-1" id="vehicle-kpi-maint-parts">EGP 0.00</p></div>
+        <div class="vehicle-kpi bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-404">Spare Parts Value</p><p class="text-2xl font-black text-slate-900 dark:text-white mt-1" id="vehicle-kpi-parts">EGP 0.00</p></div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+        <div class="space-y-6 min-w-0">
+          <!-- Register Vehicle -->
+          <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>🚗</span> Register Vehicle</h2>
+            <form class="space-y-4" id="vehicle-registration-form" onsubmit="handleVehicleRegistration(event)">
+              <input id="vehicle-edit-id" type="hidden"/>
+              <div class="grid grid-cols-2 gap-3">
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Make</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-make" placeholder="Toyota" required=""/></div>
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Model</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-model" placeholder="Corolla" required=""/></div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Year</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-year" max="2100" min="1900" placeholder="2024" required="" type="number"/></div>
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Plate / ID</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-plate" placeholder="ABC 1234" required=""/></div>
+              </div>
+              <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Initial Odometer</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-odometer" min="0" placeholder="45000" required="" step="0.1" type="number"/></div>
+              <div class="flex gap-2"><button class="flex-1 bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition" id="vehicle-save-btn" type="submit">Register Vehicle</button><button class="px-4 bg-slate-100 dark:bg-slate-700 text-slate-707 dark:text-slate-200 font-bold rounded-xl" onclick="resetVehicleForm()" type="button">Clear</button></div>
+            </form>
+          </div>
+
+          <!-- Log Fuel -->
+          <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>⛽</span> Log Fueling Transaction</h2>
+            <form class="space-y-4" id="vehicle-fuel-form" onsubmit="handleVehicleFuel(event)">
+              <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Vehicle</label><select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-fuel-vehicle" required=""></select></div>
+              <div class="grid grid-cols-2 gap-3">
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Date</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="vehicle-fuel-datetime" required="" type="datetime-local"/></div>
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Odometer</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-fuel-odometer" min="0" required="" step="0.1" type="number"/></div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Liters</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-fuel-liters" min="0.01" required="" step="0.01" type="number"/></div>
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Cost (EGP)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-fuel-cost" min="0" required="" step="0.01" type="number"/></div>
+              </div>
+              <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label><select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-fuel-account"></select></div>
+              <input id="vehicle-fuel-edit-id" type="hidden"/>
+              <button class="w-full bg-emerald-600 text-white font-bold p-3 rounded-xl hover:bg-emerald-700 transition" id="vehicle-fuel-save-btn" type="submit">Save Fuel Transaction</button>
+            </form>
+          </div>
+
+          <!-- Log Maintenance -->
+          <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>🔧</span> Log Maintenance &amp; Repair</h2>
+            <form class="space-y-4" id="vehicle-maintenance-form" onsubmit="handleVehicleMaintenance(event)">
+              <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Vehicle</label><select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-vehicle" required=""></select></div>
+              <div class="grid grid-cols-2 gap-3">
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Date</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="vehicle-maint-date" required="" type="date"/></div>
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Odometer</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-odometer" min="0" required="" step="0.1" type="number"/></div>
+              </div>
+              <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label><select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-account"></select></div>
+              <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Service Details</label><textarea class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-medium" id="vehicle-maint-description" placeholder="Work done..." required="" rows="2"></textarea></div>
+              <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Labor Cost (EGP)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-labor" min="0" required="" step="0.01" type="number" value="0"/></div>
+              <div class="border-t border-slate-100 dark:border-slate-700 pt-3">
+                <div class="flex items-center justify-between mb-2"><label class="text-xs font-bold text-slate-505 dark:text-slate-404">Spare Parts Used</label><button class="text-[10px] font-bold text-blue-600 hover:underline" onclick="addVehiclePartRow()" type="button">+ Add Part</button></div>
+                <div class="space-y-2" id="vehicle-maint-parts"></div>
+                <div class="text-right text-[10px] font-black text-slate-707 dark:text-slate-300 mt-2" id="vehicle-maint-parts-total">Parts value: EGP 0.00</div>
+              </div>
+              <button class="w-full bg-amber-600 text-white font-bold p-3 rounded-xl hover:bg-amber-700 transition" type="submit">Save Record</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="md:col-span-2 space-y-6 min-w-0">
+          <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+              <h2 class="text-base font-bold text-slate-900 dark:text-white">Vehicle Register</h2>
+              <input class="w-full md:w-64 pl-3 pr-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none font-medium bg-transparent" id="vehicle-search" oninput="renderVehicleManagement()" placeholder="Search vehicle..."/>
+            </div>
+            <div class="overflow-x-auto custom-scrollbar"><table class="w-full text-left text-xs"><tbody class="divide-y divide-slate-100 dark:divide-slate-700" id="vehicle-register-body"></tbody></table></div>
+          </div>
+          <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white">Maintenance History</h2>
+            <div class="overflow-x-auto custom-scrollbar"><table class="w-full text-left text-xs"><tbody class="divide-y divide-slate-100 dark:divide-slate-700" id="vehicle-maint-body"></tbody></table></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================== ACCOUNTS TAB =================== -->
+    <div class="view-section space-y-6" id="view-accounts">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-fit space-y-4">
+          <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>💳</span> Register Payment Account</h2>
+          <form class="space-y-4" id="account-form" onsubmit="handleAddAccountSubmit(event)">
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Account Type</label>
+              <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-type" onchange="toggleAccountTypeFields()">
+                <option value="cash">💵 Cash</option>
+                <option value="card">💳 Card (Visa / Mastercard / Meeza)</option>
+                <option value="wallet">📱 Mobile Wallet</option>
+                <option value="general">❔ General / Unidentified</option>
+              </select>
+            </div>
+            <div class="hidden space-y-4" id="account-card-fields">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Card Network</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-card-network">
+                  <option value="Visa">Visa</option><option value="Mastercard">Mastercard</option><option value="Meeza">Meeza</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Card Mode</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-card-mode">
+                  <option value="Credit">Credit Card</option><option value="Debit">Debit Card</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Issuing Bank</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-card-bank" onchange="toggleCardBankOtherField()"></select>
+                <input class="hidden mt-2 w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-card-bank-other" placeholder="Type bank name" type="text"/>
+              </div>
+            </div>
+            <div class="hidden space-y-4" id="account-wallet-fields">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Operator Type</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-wallet-kind" onchange="toggleWalletProviderOptions()">
+                  <option value="Telecom">Telecom Company</option><option value="Bank">Bank</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Provider Name</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-wallet-provider" onchange="toggleWalletProviderOtherField()"></select>
+                <input class="hidden mt-2 w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-wallet-provider-other" placeholder="Type provider" type="text"/>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Nickname (Optional)</label>
+              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-nickname" placeholder="Leave blank for auto-label" type="text"/>
+            </div>
+            <button class="w-full bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition" type="submit">Add Account</button>
+            <button class="hidden w-full bg-slate-100 dark:bg-slate-700 text-slate-707 dark:text-slate-200 font-bold p-2.5 rounded-xl text-sm" id="account-edit-cancel-btn" onclick="cancelAccountEdit()" type="button">Cancel Edit</button>
+          </form>
+        </div>
+
+        <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+          <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white">Registered Payment Accounts</h2>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="accounts-list-cards"></div>
+        </div>
+
+        <div class="lg:col-span-3 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+          <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white">Transfer History</h2>
+            <button class="text-xs bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-100 transition" onclick="switchView('transactions', document.querySelector('[onclick*=\'transactions\']'))">🔁 Log a New Transfer</button>
+          </div>
+          <div class="space-y-2" id="account-transfers-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================== REPORTS & BACKUPS =================== -->
+    <div class="view-section space-y-6" id="view-reports">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-5 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
+          <div class="border-b border-slate-100 dark:border-slate-700 pb-3">
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Your Financial Insights</h3>
+            <p class="text-xs text-slate-404">Select an analyzer to review online or compile standalone PDF/Excel reports</p>
+          </div>
+          <div class="flex flex-col gap-1">
+            <button class="w-full text-left py-3.5 px-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-spending" onclick="selectInsight('spending')">
+              <div class="flex items-center gap-4">
+                <div class="w-11 h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center text-amber-500"><i class="w-5 h-5" data-lucide="wallet"></i></div>
+                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Spending Insights</h4><p class="text-[10px] text-slate-404 font-semibold">Spending analysis</p></div>
+              </div>
+              <i class="w-4 h-4 text-slate-404" data-lucide="chevron-right"></i>
+            </button>
+            <button class="w-full text-left py-3.5 px-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-categories" onclick="selectInsight('categories')">
+              <div class="flex items-center gap-4">
+                <div class="w-11 h-11 rounded-2xl bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center text-purple-600"><i class="w-5 h-5" data-lucide="layers"></i></div>
+                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Categories Insights</h4><p class="text-[10px] text-slate-404 font-semibold">Category breakdown</p></div>
+              </div>
+              <i class="w-4 h-4 text-slate-404" data-lucide="chevron-right"></i>
+            </button>
+            <button class="w-full text-left py-3.5 px-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-income-vs-expense" onclick="selectInsight('income-vs-expense')">
+              <div class="flex items-center gap-4">
+                <div class="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600"><i class="w-5 h-5" data-lucide="arrow-left-right"></i></div>
+                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Income vs Expense</h4><p class="text-[10px] text-slate-404 font-semibold">Cashflow comparison</p></div>
+              </div>
+              <i class="w-4 h-4 text-slate-404" data-lucide="chevron-right"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="lg:col-span-7 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-6">
+          <div class="space-y-4" id="insight-report-content"></div>
+          <div class="border-t border-slate-100 dark:border-slate-700 pt-5 flex flex-col sm:flex-row gap-3">
+            <button class="flex-grow py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-sm" onclick="downloadActiveInsightPDF()">
+              <i class="w-4 h-4" data-lucide="file-text"></i> Download Premium PDF
+            </button>
+            <button class="flex-grow py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-sm" onclick="downloadActiveInsightExcel()">
+              <i class="w-4 h-4" data-lucide="file-spreadsheet"></i> Export Dataset (XLSX)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+          <h2 class="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white mb-2"><span>📄</span> Executive Summaries</h2>
+          <div class="space-y-4">
+            <button class="w-full bg-emerald-600 text-white p-4 rounded-xl flex items-center justify-between hover:bg-emerald-700 transition" onclick="exportToExcel()">
+              <div class="flex items-center gap-3"><span class="text-2xl">📊</span><div class="text-left"><div class="font-bold">Export Full Spreadsheet (XLSX)</div><div class="text-xs opacity-85">Complete transactions, inventory &amp; medication logs</div></div></div><span>📥</span>
+            </button>
+            <button class="w-full bg-rose-600 text-white p-4 rounded-xl flex items-center justify-between hover:bg-rose-700 transition" onclick="exportToPDF()">
+              <div class="flex items-center gap-3"><span class="text-2xl">📄</span><div class="text-left"><div class="font-bold">Download PDF Status Digest</div><div class="text-xs opacity-85">Dynamic indicators, consumption &amp; alerts</div></div></div><span>📥</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+          <h2 class="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white mb-2"><span>☁️</span> Database Sync &amp; Backup</h2>
+          <div class="space-y-3">
+            <div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition" onclick="downloadBackupJSON()">
+              <div class="flex items-center gap-3 text-slate-707 dark:text-slate-200 font-bold text-sm"><span>📋</span> Download Backup JSON</div><span>📥</span>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition" onclick="window.ForecasterGitHubSync.openModal()">
+              <div class="flex items-center gap-3 text-slate-707 dark:text-slate-200 font-bold text-sm"><span>☁️</span> GitHub Cloud Sync &amp; Backup</div><span>↗️</span>
+            </div>
+            <div class="border-2 border-dashed border-slate-200 dark:border-slate-700 p-4 rounded-2xl flex flex-col items-center justify-center text-slate-404 hover:border-blue-400 hover:bg-blue-50/50 transition cursor-pointer relative">
+              <input accept=".json" class="absolute inset-0 opacity-0 cursor-pointer" id="import-json-file" onchange="importBackupJSON(event)" type="file"/>
+              <p class="font-bold text-slate-707 dark:text-slate-200 text-xs">Import Local JSON Backup File</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- =================== MOBILE BOTTOM NAVIGATION BAR =================== -->
+  <nav id="mobile-bottom-nav" class="md:hidden fixed bottom-0 inset-x-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 z-40 px-2 py-2 flex items-center justify-around">
+    <button class="mobile-nav-item flex flex-col items-center gap-1 text-blue-600 dark:text-blue-400 text-[10px] font-bold p-1 transition" data-target-view="dashboard" onclick="switchView('dashboard')">
+      <i class="w-5 h-5" data-lucide="layout-dashboard"></i>
+      <span>Dashboard</span>
+    </button>
+    <button class="mobile-nav-item flex flex-col items-center gap-1 text-slate-500 dark:text-slate-404 text-[10px] font-bold p-1 transition" data-target-view="transactions" onclick="switchView('transactions')">
+      <i class="w-5 h-5" data-lucide="receipt"></i>
+      <span>Ledger</span>
+    </button>
+    <button class="mobile-nav-item flex flex-col items-center gap-1 text-slate-500 dark:text-slate-404 text-[10px] font-bold p-1 transition" data-target-view="stock" onclick="switchView('stock')">
+      <i class="w-5 h-5" data-lucide="package"></i>
+      <span>Stock Hub</span>
+    </button>
+    <button class="mobile-nav-item flex flex-col items-center gap-1 text-slate-500 dark:text-slate-404 text-[10px] font-bold p-1 transition" data-target-view="vehicles" onclick="switchView('vehicles')">
+      <i class="w-5 h-5" data-lucide="car"></i>
+      <span>Vehicles</span>
+    </button>
+    <button class="mobile-nav-item flex flex-col items-center gap-1 text-slate-500 dark:text-slate-404 text-[10px] font-bold p-1 transition" onclick="window.toggleMobileDrawer(true)">
+      <i class="w-5 h-5" data-lucide="menu"></i>
+      <span>More</span>
+    </button>
+  </nav>
+
+  <!-- =================== MOBILE "MORE" DRAWER =================== -->
+  <div id="mobile-more-drawer" class="hidden md:hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col justify-end">
+    <div class="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+        <h3 class="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
+          <span>⚡</span> Quick Navigation &amp; Tools
+        </h3>
+        <button class="text-slate-404 hover:text-slate-600 text-2xl leading-none" onclick="window.toggleMobileDrawer(false)">&times;</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 text-sm font-bold">
+        <button class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700" onclick="switchView('rentals'); window.toggleMobileDrawer(false)">
+          <span>🏠</span> Rentals
+        </button>
+        <button class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700" onclick="switchView('accounts'); window.toggleMobileDrawer(false)">
+          <span>💳</span> Accounts
+        </button>
+        <button class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700" onclick="switchView('insights'); window.toggleMobileDrawer(false)">
+          <span>👁️</span> Insights
+        </button>
+        <button class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700" onclick="switchView('reports'); window.toggleMobileDrawer(false)">
+          <span>📄</span> Reports
+        </button>
+      </div>
+
+      <div class="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+        <button id="drawer-pwa-install-btn" class="w-full p-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2" onclick="window.triggerPWAInstall(); window.toggleMobileDrawer(false)">
+          <i class="fa-solid fa-download"></i> Install Forecaster Pro PWA
+        </button>
+        <button class="w-full p-3 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2" onclick="window.ForecasterGitHubSync.openModal(); window.toggleMobileDrawer(false)">
+          <i class="fa-brands fa-github"></i> GitHub Cloud Sync &amp; Backup
+        </button>
+        <button class="w-full p-3 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2" onclick="window.ForecasterSubscription.openModal(); window.toggleMobileDrawer(false)">
+          <span>💎</span> SaaS Subscription Plans
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== DIALOG MODALS OVERLAY SYSTEM =================== -->
+  <div class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" id="custom-modal">
+    <!-- EDIT EXPENSE MODAL -->
+    <div class="hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl relative text-slate-900 dark:text-white" id="edit-expense-modal">
+      <h3 class="text-base font-black mb-4"><i class="fa-solid fa-pen-to-square mr-2 text-blue-600"></i>Modify Expense Log</h3>
+      <form class="space-y-4" id="edit-expense-form" onsubmit="handleEditExpenseSubmit(event)">
+        <input id="edit-expense-id" type="hidden"/>
+        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Transaction Date</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-date" required="" type="date"/></div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Category</label>
+          <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-category" required="">
+            <option value="Groceries">🥦 Groceries</option><option value="Utilities">Utilities</option><option value="Rent">Rent</option><option value="Entertainment">Entertainment</option><option value="Medical">💊 Medical</option><option value="God Savings">God Savings</option><option value="Tobacco">🚬 Tobacco</option><option value="Pet Supplies">Pet Supplies</option><option value="Transportation">🚗 Transportation</option><option value="Subscriptions">📺 Subscriptions</option><option value="Education">🎓 Education</option><option value="Savings / Investments">💰 Savings / Investments</option><option value="Fast Food / Work Meals">🍔 Fast Food / Work Meals</option><option value="Others">Others</option>
+          </select>
+        </div>
+        <div class="hidden" id="edit-expense-utility-wrap"><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Utility Type</label><select class="utility-type-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-utility-type"></select></div>
+        <div class="hidden" id="edit-expense-utility-duedate-wrap"><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Due Date</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-utility-duedate" type="date"/></div>
+        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Amount (EGP)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-amount" min="0.01" required="" step="0.01" type="number"/></div>
+        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Description</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-desc" type="text"/></div>
+        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label><select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-account"></select></div>
+        <div class="flex gap-2 justify-end pt-2">
+          <button class="bg-slate-100 dark:bg-slate-700 text-slate-707 dark:text-slate-300 px-4 py-2 rounded-xl text-sm font-semibold" onclick="closeModal()" type="button">Cancel</button>
+          <button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold" type="submit">Save Modifications</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- EDIT INCOME MODAL -->
+    <div class="hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl relative text-slate-900 dark:text-white" id="edit-income-modal">
+      <h3 class="text-base font-black mb-4"><i class="fa-solid fa-pen-to-square mr-2 text-emerald-600"></i>Modify Income Log</h3>
+      <form class="space-y-4" id="edit-income-form" onsubmit="handleEditIncomeSubmit(event)">
+        <input id="edit-income-id" type="hidden"/>
+        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Date</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-date" required="" type="date"/></div>
+        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Category</label><select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-category" required=""><option value="Salary">Salary</option><option value="Freelance">Freelance</option><option value="Investments">Investments</option><option value="Gifts">Gifts</option><option value="Others">Others</option></select></div>
+        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Amount (EGP)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-amount" min="0.01" required="" step="0.01" type="number"/></div>
+        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Description</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-desc" type="text"/></div>
+        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label><select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-account"></select></div>
+        <div class="flex gap-2 justify-end pt-2">
+          <button class="bg-slate-100 dark:bg-slate-700 text-slate-707 dark:text-slate-300 px-4 py-2 rounded-xl text-sm font-semibold" onclick="closeModal()" type="button">Cancel</button>
+          <button class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold" type="submit">Save Modifications</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- QUICK ADD ENTRY MODAL -->
+    <div class="hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl relative text-slate-900 dark:text-white" id="add-txn-modal">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+        <h4 class="text-base font-black">Add Transaction Entry</h4>
+        <button class="text-slate-404 hover:text-slate-600" onclick="closeAddTransactionModal()" type="button"><i class="w-5 h-5" data-lucide="x"></i></button>
+      </div>
+      <form class="space-y-4 pt-2" id="modal-form" onsubmit="handleFormSubmission(event)">
+        <div class="grid grid-cols-3 gap-2">
+          <label class="cursor-pointer border-2 border-blue-500 bg-blue-50 text-blue-700 p-3 rounded-xl flex items-center justify-center space-x-2 font-bold text-xs" id="label-type-expense">
+            <input checked="" class="sr-only" name="entry-type" onchange="toggleFormType('expense')" type="radio" value="expense"/>
+            <span>Expense</span>
+          </label>
+          <label class="cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-3 rounded-xl flex items-center justify-center space-x-2 font-bold text-xs" id="label-type-income">
+            <input class="sr-only" name="entry-type" onchange="toggleFormType('income')" type="radio" value="income"/>
+            <span>Income</span>
+          </label>
+          <label class="cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-3 rounded-xl flex items-center justify-center space-x-2 font-bold text-xs" id="label-type-transfer">
+            <input class="sr-only" name="entry-type" onchange="toggleFormType('transfer')" type="radio" value="transfer"/>
+            <span>Transfer</span>
+          </label>
+        </div>
+        <div class="space-y-3">
+          <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Description</label><input class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold" id="input-desc" placeholder="Details..." required="" type="text"/></div>
+          <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Amount (EGP)</label><input class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold" id="input-amount" placeholder="0.00" required="" step="0.01" type="number"/></div>
+          <div id="wrapper-category"><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Category</label><select class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold" id="input-category"></select></div>
+          <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Date</label><input class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold" id="input-date" required="" type="date"/></div>
+          <div id="wrapper-account"><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label><select class="payment-account-select w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold" id="input-account"></select></div>
+        </div>
+        <button class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition" type="submit">Submit Ledger Entry</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- =================== SAAS SUBSCRIPTION MODAL =================== -->
+  <div class="hidden fixed inset-0 z-[70] overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" id="saas-subscription-modal">
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl max-w-2xl w-full p-6 md:p-8 shadow-2xl relative space-y-6">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+        <div>
+          <span class="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">Enterprise Cloud Editions</span>
+          <h3 class="text-xl font-extrabold text-slate-900 dark:text-white">Forecaster Pro Subscriptions</h3>
+        </div>
+        <button class="text-slate-404 hover:text-slate-600 text-2xl leading-none" onclick="window.ForecasterSubscription.closeModal()">&times;</button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Pro Household -->
+        <div class="border-2 border-blue-600 dark:border-blue-500 rounded-2xl p-5 bg-blue-50/20 dark:bg-blue-950/20 space-y-4 flex flex-col justify-between">
+          <div class="space-y-2">
+            <span class="text-xs font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">Most Popular</span>
+            <h4 class="text-lg font-black text-slate-900 dark:text-white">Pro Household</h4>
+            <div class="text-2xl font-black text-slate-900 dark:text-white" id="sub-price-pro">$9.99 / month</div>
+            <ul class="text-xs space-y-2 text-slate-600 dark:text-slate-300 font-medium">
+              <li>✓ Intelligent Depletion Forecaster</li>
+              <li>✓ Clinical Expiry Safeguard</li>
+              <li>✓ GitHub Cloud Sync &amp; Backup</li>
+              <li>✓ PDF Digest &amp; Excel Reports</li>
+              <li>✓ Multi-Account Transfer Tracking</li>
+            </ul>
+          </div>
+          <button id="sub-btn-pro" class="w-full py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition" onclick="window.ForecasterSubscription.checkout('pro')">Select Pro Plan</button>
+        </div>
+
+        <!-- Enterprise VIP -->
+        <div class="border border-purple-200 dark:border-purple-800 rounded-2xl p-5 bg-purple-50/20 dark:bg-purple-950/20 space-y-4 flex flex-col justify-between">
+          <div class="space-y-2">
+            <span class="text-xs font-bold px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300">Fleet &amp; Commercial</span>
+            <h4 class="text-lg font-black text-slate-900 dark:text-white">Fleet &amp; Landlord</h4>
+            <div class="text-2xl font-black text-slate-900 dark:text-white" id="sub-price-ent">$24.99 / month</div>
+            <ul class="text-xs space-y-2 text-slate-600 dark:text-slate-300 font-medium">
+              <li>✓ Everything in Pro Household</li>
+              <li>✓ Unlimited Rental Contracts &amp; Units</li>
+              <li>✓ Tenant SMS &amp; Email Webhook Broadcasts</li>
+              <li>✓ Multi-Vehicle Fleet &amp; Maintenance Logs</li>
+              <li>✓ Commercial Spare Parts Lifespan Tracking</li>
+            </ul>
+          </div>
+          <button id="sub-btn-ent" class="w-full py-2.5 rounded-xl text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 transition" onclick="window.ForecasterSubscription.checkout('enterprise')">Select Enterprise Plan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== GITHUB CLOUD SYNC MODAL =================== -->
+  <div class="hidden fixed inset-0 z-[70] overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" id="github-sync-modal">
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-5">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+        <div>
+          <span class="text-[10px] font-black uppercase tracking-wider text-slate-404">Decentralized Cloud Storage</span>
+          <h3 class="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+            <i class="fa-brands fa-github text-xl"></i> GitHub Cloud Sync
+          </h3>
+        </div>
+        <button class="text-slate-404 hover:text-slate-600 text-2xl leading-none" onclick="window.ForecasterGitHubSync.closeModal()">&times;</button>
+      </div>
+
+      <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl">
+        <span class="text-xs font-bold text-slate-600 dark:text-slate-400">Sync Status:</span>
+        <span id="gh-sync-status-badge"></span>
+      </div>
+
+      <form id="github-sync-form" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">GitHub Personal Access Token (PAT)</label>
+          <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="gh-sync-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" type="password" required/>
+          <p class="text-[10px] text-slate-404 mt-1">Token with <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">gist</code> or <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">repo</code> scope.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Sync Target</label>
+          <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="gh-sync-mode" onchange="window.ForecasterGitHubSync.toggleModeFields(this.value)">
+            <option value="gist">Private GitHub Gist (Easiest)</option>
+            <option value="repo">GitHub Repository (username/repo)</option>
+          </select>
+        </div>
+
+        <div id="gh-sync-gist-wrap">
+          <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Existing Gist ID (Optional)</label>
+          <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="gh-sync-gist-id" placeholder="Leave blank to auto-create a private Gist" type="text"/>
+        </div>
+
+        <div class="hidden space-y-3" id="gh-sync-repo-wrap">
+          <div>
+            <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Repository Name</label>
+            <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="gh-sync-repo" placeholder="owner/repo" type="text"/>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Branch</label>
+            <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="gh-sync-branch" value="main" type="text"/>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="gh-sync-autosync" class="rounded border-slate-300 text-blue-600"/>
+          <label for="gh-sync-autosync" class="text-xs font-semibold text-slate-600 dark:text-slate-400">Save settings for automatic future backups</label>
+        </div>
+
+        <div class="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+          <button type="button" id="gh-push-btn" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" onclick="window.ForecasterGitHubSync.pushToGitHub()">
+            <span>☁️</span> Push to GitHub
+          </button>
+          <button type="button" id="gh-pull-btn" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" onclick="window.ForecasterGitHubSync.pullFromGitHub()">
+            <span>⬇️</span> Pull &amp; Restore
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =================== IOS PWA INSTALLATION GUIDE MODAL =================== -->
+  <div class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" id="pwa-ios-guide-modal">
+    <div class="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+          <i class="fa-brands fa-apple text-lg"></i> Install on iPhone / iPad
+        </h3>
+        <button class="text-slate-404 hover:text-slate-600 text-xl leading-none" onclick="window.closeIOSInstallGuide()">&times;</button>
+      </div>
+      <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+        1. Tap the <strong>Share</strong> button <i class="fa-solid fa-arrow-up-from-bracket mx-1"></i> in Safari toolbar.<br />
+        2. Scroll down and tap <strong>Add to Home Screen</strong> <i class="fa-solid fa-plus-square mx-1"></i>.<br />
+        3. Launch Forecaster Pro from your home screen for full standalone app experience.
+      </p>
+      <button class="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold" onclick="window.closeIOSInstallGuide()">Close Guide</button>
+    </div>
+  </div>
+
+  <!-- APP ENGINE SCRIPTS -->
+  <script src="/src/scripts/app-core.js"></script>
+  <script src="/src/scripts/app-modules.js"></script>
+  <script src="/src/scripts/extended-features.js"></script>
+  <script src="/src/scripts/pwa-bridge.js"></script>
+  <script src="/src/scripts/github-sync.js"></script>
+  <script src="/src/scripts/saas-subscription.js"></script>
+</body>
+</html>
