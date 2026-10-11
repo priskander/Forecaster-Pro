@@ -63,7 +63,105 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
 
-  <link rel="stylesheet" href="/src/styles/forecaster.css" />
+  <!-- Critical CSS Tokens & View Switcher Engine -->
+  <style>
+    :root {
+      --color-bg-app: #f8fafc;
+      --color-bg-surface: #ffffff;
+      --color-bg-subtle: #f1f5f9;
+      --color-bg-muted: #e2e8f0;
+      --color-border-default: #e2e8f0;
+      --color-text-primary: #0f172a;
+      --color-text-secondary: #334155;
+      --color-text-muted: #64748b;
+      --color-brand-600: #2563eb;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+    }
+
+    html.dark {
+      --color-bg-app: #0f172a;
+      --color-bg-surface: #1e293b;
+      --color-bg-subtle: #253449;
+      --color-bg-muted: #334155;
+      --color-border-default: #334155;
+      --color-text-primary: #f8fafc;
+      --color-text-secondary: #e2e8f0;
+      --color-text-muted: #94a3b8;
+      --color-brand-600: #3b82f6;
+    }
+
+    html {
+      -webkit-text-size-adjust: 100%;
+      -webkit-font-smoothing: antialiased;
+      scroll-behavior: smooth;
+      touch-action: manipulation;
+    }
+
+    body {
+      font-family: 'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background-color: var(--color-bg-app);
+      color: var(--color-text-primary);
+      overscroll-behavior-y: contain;
+      -webkit-tap-highlight-color: transparent;
+      padding-top: var(--safe-top);
+      padding-left: var(--safe-left);
+      padding-right: var(--safe-right);
+    }
+
+    /* CRITICAL VIEW SWITCHER RULES */
+    .view-section {
+      display: none !important;
+    }
+    .view-section.active {
+      display: block !important;
+      animation: fadeIn 0.15s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(2px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Scrollbars */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+
+    .flash-red-batch {
+      animation: pulse-red-alert 1.5s infinite;
+    }
+    @keyframes pulse-red-alert {
+      0%, 100% { opacity: 1; color: #dc2626; }
+      50% { opacity: 0.45; color: #ef4444; }
+    }
+
+    @media screen and (max-width: 768px) {
+      input, select, textarea {
+        font-size: 16px !important;
+      }
+      main {
+        padding-bottom: 5.5rem !important;
+      }
+    }
+
+    #mobile-bottom-nav {
+      padding-bottom: max(var(--safe-bottom), 8px);
+    }
+  </style>
 </head>
 
 <body class="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-blue-600 selection:text-white">
@@ -164,16 +262,16 @@
     </div>
   </header>
 
-  <!-- DESKTOP NAVIGATION BAR (Hidden on small screens, thumb nav used instead) -->
-  <nav class="hidden md:flex bg-white dark:bg-slate-900 px-8 py-3.5 flex-wrap items-center gap-3 border-b border-slate-200 dark:border-slate-800">
-    <a class="nav-link flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold shadow-sm transition-all" href="#" onclick="switchView('dashboard', this)"><span>📊</span> Dashboard</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('insights', this)"><span>👁️</span> Insights &amp; Alerts</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('transactions', this)"><span>📝</span> Transactions</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('rentals', this)"><span>🏠</span> Rentals</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('vehicles', this)"><span>🚗</span> Vehicles</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('stock', this); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('accounts', this)"><span>💳</span> Accounts</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all" href="#" onclick="switchView('reports', this)"><span>📄</span> Reports &amp; Backups</a>
+  <!-- NAVIGATION BAR (Always visible & responsive across desktop, tablet, and mobile) -->
+  <nav class="bg-white dark:bg-slate-900 px-4 md:px-8 py-3 flex items-center gap-2 md:gap-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto custom-scrollbar flex-nowrap md:flex-wrap">
+    <a class="nav-link flex items-center gap-2 bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold shadow-sm transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('dashboard', this)"><span>📊</span> Dashboard</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('insights', this)"><span>👁️</span> Insights &amp; Alerts</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('transactions', this)"><span>📝</span> Transactions</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('rentals', this)"><span>🏠</span> Rentals</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('vehicles', this)"><span>🚗</span> Vehicles</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('stock', this); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('accounts', this)"><span>💳</span> Accounts</a>
+    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('reports', this)"><span>📄</span> Reports &amp; Backups</a>
   </nav>
 
   <!-- TOAST NOTIFICATION HOST -->

@@ -1,367 +1,457 @@
 /**
  * ============================================================================
  * FORECASTER PRO - ENTERPRISE EXTENSION MODULES
- * Payment Accounts, Fleet, Rentals, Popovers, Mobile Navigation & Backup
+ * Payment Accounts, Settings, Dark Mode, Notification Center, Widgets & Analytics
  * ============================================================================
  */
 (function() {
   'use strict';
 
   /* -------------------------------------------------------------------------
-   * MODULE 1: PAYMENT ACCOUNTS & TRANSFERS
+   * 1. THEME & DARK MODE CONTROLLER
    * ------------------------------------------------------------------------- */
-  window.accounts = [];
-  window.accountTransfers = [];
-  let editingAccountId = null;
-
-  const EGYPT_BANKS_LIST = [
-    "National Bank of Egypt (NBE)", "Banque Misr", "Commercial International Bank (CIB)",
-    "QNB Alahli", "HSBC Egypt", "Arab African International Bank (AAIB)", "Banque du Caire",
-    "Al Baraka Bank Egypt", "Faisal Islamic Bank of Egypt", "Emirates NBD Egypt",
-    "Credit Agricole Egypt", "Abu Dhabi Islamic Bank Egypt (ADIB)", "Attijariwafa Bank Egypt",
-    "Suez Canal Bank", "Egyptian Gulf Bank", "Housing and Development Bank",
-    "Arab Investment Bank", "National Bank of Kuwait Egypt", "Alexbank", "Mashreq Bank Egypt",
-    "Bank Audi Egypt", "First Abu Dhabi Bank Egypt", "Societe Arabe Internationale de Banque (SAIB)",
-    "Nasser Social Bank", "Industrial Development Bank", "Egypt Post (Postal Savings)", "Other"
-  ];
-
-  const WALLET_PROVIDERS_TELECOM = ["Vodafone Cash", "Orange Money", "Etisalat Cash (Flous)", "WE Pay", "Other"];
-  const WALLET_PROVIDERS_BANK = [
-    "Meeza Digital Wallet", "InstaPay", "CIB Smart Wallet", "NBE Wallet", "Banque Misr Wallet",
-    "AAIB Wallet", "QNB Alahli Mobile Wallet", "Fawry Wallet", "Other"
-  ];
-
-  window.loadAccountsDatabase = function() {
-    const saved = localStorage.getItem('pro_accounts');
-    if (saved) {
-      try { window.accounts = JSON.parse(saved) || []; } catch (err) { window.accounts = []; }
-    }
-    if (!window.accounts.find(a => a.id === 'acc_general')) {
-      window.accounts.push({ id: 'acc_general', type: 'general', label: 'General / Unidentified', locked: true });
-    }
-    if (!window.accounts.find(a => a.id === 'acc_cash')) {
-      window.accounts.unshift({ id: 'acc_cash', type: 'cash', label: 'Cash', locked: true });
-    }
-    window.saveAccountsDatabase();
+  window.syncChartDefaultsToTheme = function() {
+    if (typeof Chart === 'undefined') return;
+    const isDark = document.documentElement.classList.contains('dark');
+    Chart.defaults.color = isDark ? '#94a3b8' : '#64748b';
+    Chart.defaults.borderColor = isDark ? '#334155' : '#e2e8f0';
   };
 
-  window.saveAccountsDatabase = function() {
-    localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
-  };
+  window.toggleDarkMode = function() {
+    const isDark = document.documentElement.classList.toggle('dark');
+    try { localStorage.setItem('pro_theme', isDark ? 'dark' : 'light'); } catch (err) {}
+    
+    // Update theme toggle icon
+    const moonIcon = document.querySelector('#theme-toggle-btn .moon-icon');
+    const sunIcon = document.querySelector('#theme-toggle-btn .sun-icon');
+    if (moonIcon && sunIcon) {
+      moonIcon.classList.toggle('hidden', isDark);
+      sunIcon.classList.toggle('hidden', !isDark);
+    }
 
-  window.loadAccountTransfers = function() {
-    const saved = localStorage.getItem('pro_account_transfers');
-    if (saved) {
-      try { window.accountTransfers = JSON.parse(saved) || []; } catch (err) { window.accountTransfers = []; }
+    window.syncChartDefaultsToTheme();
+    if (typeof window.renderAllViews === 'function') {
+      window.renderAllViews();
     }
   };
 
-  window.saveAccountTransfers = function() {
-    localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers));
+  /* -------------------------------------------------------------------------
+   * 2. SETTINGS DROPDOWN & SANDBOX CONTROLLER
+   * ------------------------------------------------------------------------- */
+  window.toggleSettingsMenu = function(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('settings-dropdown-menu');
+    if (menu) menu.classList.toggle('hidden');
   };
 
-  window.accountIcon = function(type) {
-    if (type === 'cash') return '💵';
-    if (type === 'card') return '💳';
-    if (type === 'wallet') return '📱';
-    return '❔';
+  document.addEventListener('click', function(e) {
+    const menu = document.getElementById('settings-dropdown-menu');
+    if (!menu || menu.classList.contains('hidden')) return;
+    if (!menu.contains(e.target) && !e.target.closest('[title="Configuration"]')) {
+      menu.classList.add('hidden');
+    }
+  });
+
+  window.confirmRefreshSandbox = function() {
+    const menu = document.getElementById('settings-dropdown-menu');
+    if (menu) menu.classList.add('hidden');
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast('Refreshing sandbox environment...', 'info');
+    }
+    setTimeout(() => location.reload(), 500);
   };
 
-  window.getAccountLabel = function(id) {
-    const acc = (window.accounts || []).find(a => a.id === id);
-    return acc ? acc.label : 'General / Unidentified';
+  window.confirmDeleteAllData = function() {
+    const menu = document.getElementById('settings-dropdown-menu');
+    if (menu) menu.classList.add('hidden');
+
+    const sure = confirm(
+      'This will PERMANENTLY delete ALL data in this sandbox — every transaction, ' +
+      'inventory batch, pharmacy record, payment account, and transfer. ' +
+      'This cannot be undone.\n\nAre you sure you want to continue?'
+    );
+    if (!sure) return;
+
+    const keysToWipe = [
+      'pro_transactions', 'pro_stock', 'pro_pharmacy', 'pro_budget_limits',
+      'pro_accounts', 'pro_account_transfers', 'pro_expenses', 'pro_income',
+      'pro_vehicles', 'pro_vehicle_fuel', 'pro_vehicle_maintenance',
+      'pro_rental_contracts_v1', 'pro_rental_properties_v1'
+    ];
+    keysToWipe.forEach(key => {
+      try { localStorage.removeItem(key); } catch (err) {}
+    });
+
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast('All database input deleted. Reloading a fresh sandbox...', 'success');
+    }
+    setTimeout(() => location.reload(), 700);
   };
 
-  window.populateAccountSelects = function() {
-    const selects = document.querySelectorAll('.payment-account-select');
-    selects.forEach(sel => {
-      const prevValue = sel.value;
-      sel.innerHTML = '';
-      (window.accounts || []).forEach(acc => {
-        const opt = document.createElement('option');
-        opt.value = acc.id;
-        opt.textContent = `${window.accountIcon(acc.type)} ${acc.label}`;
-        sel.appendChild(opt);
-      });
-      if (prevValue && window.accounts.find(a => a.id === prevValue)) {
-        sel.value = prevValue;
-      } else if (window.accounts.find(a => a.id === 'acc_cash')) {
-        sel.value = 'acc_cash';
-      } else if (window.accounts.length) {
-        sel.value = window.accounts[0].id;
+  /* -------------------------------------------------------------------------
+   * 3. HIDE & UNHIDE ITEMS MODAL
+   * ------------------------------------------------------------------------- */
+  window.openUnhideItemsModal = function() {
+    const menu = document.getElementById('settings-dropdown-menu');
+    if (menu) menu.classList.add('hidden');
+
+    const hiddenStock = (window.stockData || []).filter(s => s.isHidden);
+    const hiddenPharmacy = (window.pharmacyData || []).filter(p => p.isHidden);
+    const list = document.getElementById('unhide-items-list');
+    if (list) {
+      let html = '';
+
+      if (hiddenStock.length) {
+        html += `<p class="text-[10px] font-black uppercase text-slate-404 pt-1">📦 Hidden Inventory Batches</p>`;
+        hiddenStock.forEach(s => {
+          html += `
+            <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800 p-3 rounded-xl">
+              <div>
+                <p class="text-xs font-bold text-slate-900 dark:text-white">${s.name}</p>
+                <p class="text-[10px] text-slate-404 font-semibold uppercase mt-0.5">${s.quantity} ${s.unit} • Exp: ${s.expDate || 'N/A'}</p>
+              </div>
+              <button onclick="unhideStockBatch('${s.id}')" class="text-[10px] text-blue-600 font-bold hover:underline">Unhide</button>
+            </div>
+          `;
+        });
       }
-    });
-  };
 
-  window.populateAccountFilterSelect = function() {
-    const sel = document.getElementById('filter-txn-account');
-    if (!sel) return;
-    const prevValue = sel.value;
-    sel.innerHTML = '<option value="">All Accounts</option>';
-    (window.accounts || []).forEach(acc => {
-      const opt = document.createElement('option');
-      opt.value = acc.id;
-      opt.textContent = `${window.accountIcon(acc.type)} ${acc.label}`;
-      sel.appendChild(opt);
-    });
-    if (prevValue && (prevValue === '' || window.accounts.find(a => a.id === prevValue))) {
-      sel.value = prevValue;
-    }
-  };
-
-  window.toggleAccountTypeFields = function() {
-    const typeEl = document.getElementById('account-type');
-    if (!typeEl) return;
-    const type = typeEl.value;
-    const cardFields = document.getElementById('account-card-fields');
-    const walletFields = document.getElementById('account-wallet-fields');
-    if (cardFields) cardFields.classList.toggle('hidden', type !== 'card');
-    if (walletFields) walletFields.classList.toggle('hidden', type !== 'wallet');
-
-    if (type === 'card') window.populateBankSelect();
-    if (type === 'wallet') window.toggleWalletProviderOptions();
-  };
-
-  window.populateBankSelect = function() {
-    const sel = document.getElementById('account-card-bank');
-    if (!sel || sel.options.length) return;
-    EGYPT_BANKS_LIST.forEach(bank => {
-      const opt = document.createElement('option');
-      opt.value = bank;
-      opt.textContent = bank;
-      sel.appendChild(opt);
-    });
-    window.toggleCardBankOtherField();
-  };
-
-  window.toggleCardBankOtherField = function() {
-    const sel = document.getElementById('account-card-bank');
-    const other = document.getElementById('account-card-bank-other');
-    if (!sel || !other) return;
-    other.classList.toggle('hidden', sel.value !== 'Other');
-  };
-
-  window.toggleWalletProviderOptions = function() {
-    const kindEl = document.getElementById('account-wallet-kind');
-    const sel = document.getElementById('account-wallet-provider');
-    if (!kindEl || !sel) return;
-    const list = kindEl.value === 'Bank' ? WALLET_PROVIDERS_BANK : WALLET_PROVIDERS_TELECOM;
-    sel.innerHTML = '';
-    list.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p;
-      opt.textContent = p;
-      sel.appendChild(opt);
-    });
-    window.toggleWalletProviderOtherField();
-  };
-
-  window.toggleWalletProviderOtherField = function() {
-    const sel = document.getElementById('account-wallet-provider');
-    const other = document.getElementById('account-wallet-provider-other');
-    if (!sel || !other) return;
-    other.classList.toggle('hidden', sel.value !== 'Other');
-  };
-
-  window.handleAddAccountSubmit = function(e) {
-    e.preventDefault();
-    const type = document.getElementById('account-type').value;
-    const nickname = (document.getElementById('account-nickname')?.value || '').trim();
-
-    let label = '';
-    let extra = {};
-
-    if (type === 'cash') {
-      label = nickname || 'Cash';
-    } else if (type === 'general') {
-      label = nickname || 'General / Unidentified';
-    } else if (type === 'card') {
-      const network = document.getElementById('account-card-network').value;
-      const mode = document.getElementById('account-card-mode').value;
-      const bankSelVal = document.getElementById('account-card-bank').value;
-      const bank = bankSelVal === 'Other' ? (document.getElementById('account-card-bank-other')?.value || '').trim() : bankSelVal;
-      extra = { network, mode, bank };
-      label = nickname || `${network} ${mode} - ${bank || 'Unspecified Bank'}`;
-    } else if (type === 'wallet') {
-      const kind = document.getElementById('account-wallet-kind').value;
-      const providerSelVal = document.getElementById('account-wallet-provider').value;
-      const provider = providerSelVal === 'Other' ? (document.getElementById('account-wallet-provider-other')?.value || '').trim() : providerSelVal;
-      extra = { kind, provider };
-      label = nickname || `${provider || 'Unspecified Provider'} Wallet (${kind})`;
-    }
-
-    if (editingAccountId) {
-      const idx = window.accounts.findIndex(a => a.id === editingAccountId);
-      if (idx !== -1) {
-        window.accounts[idx] = Object.assign({ id: editingAccountId, type, label, locked: window.accounts[idx].locked }, extra);
-        window.saveAccountsDatabase();
-        window.populateAccountSelects();
-        window.populateAccountFilterSelect();
-        window.renderAccountsView();
-        window.triggerToast('Payment account updated successfully!', 'success');
+      if (hiddenPharmacy.length) {
+        html += `<p class="text-[10px] font-black uppercase text-slate-404 pt-2">💊 Hidden Medication Batches</p>`;
+        hiddenPharmacy.forEach(p => {
+          html += `
+            <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800 p-3 rounded-xl">
+              <div>
+                <p class="text-xs font-bold text-slate-900 dark:text-white">${p.name}</p>
+                <p class="text-[10px] text-slate-404 font-semibold uppercase mt-0.5">${p.quantity} ${p.unit} • Exp: ${p.expDate || 'N/A'}</p>
+              </div>
+              <button onclick="unhidePharmacyBatch('${p.id}')" class="text-[10px] text-blue-600 font-bold hover:underline">Unhide</button>
+            </div>
+          `;
+        });
       }
-      window.cancelAccountEdit();
-      return;
+
+      if (!hiddenStock.length && !hiddenPharmacy.length) {
+        html = `<div class="text-center py-8 text-slate-404 font-semibold text-xs">No hidden items — everything you've registered is currently visible.</div>`;
+      }
+
+      list.innerHTML = html;
     }
 
-    const account = Object.assign({
-      id: 'acc_' + Date.now(),
-      type: type,
-      label: label,
-      locked: false
-    }, extra);
-
-    window.accounts.push(account);
-    window.saveAccountsDatabase();
-    window.populateAccountSelects();
-    window.populateAccountFilterSelect();
-    window.renderAccountsView();
-    window.triggerToast('Payment account registered successfully!', 'success');
-    e.target.reset();
-    window.toggleAccountTypeFields();
+    const modal = document.getElementById('custom-modal');
+    if (modal) modal.classList.remove('hidden');
+    const unhideModal = document.getElementById('unhide-items-modal');
+    if (unhideModal) unhideModal.classList.remove('hidden');
   };
 
-  window.editAccountEntry = function(id) {
-    const acc = window.accounts.find(a => a.id === id);
-    if (!acc) return;
-    editingAccountId = id;
-
-    const typeEl = document.getElementById('account-type');
-    if (typeEl) typeEl.value = acc.type;
-    window.toggleAccountTypeFields();
-
-    const nickEl = document.getElementById('account-nickname');
-    if (nickEl) nickEl.value = acc.label || '';
-
-    const submitBtn = document.querySelector('#account-form button[type="submit"]');
-    if (submitBtn) submitBtn.textContent = 'Update Account';
-    const cancelBtn = document.getElementById('account-edit-cancel-btn');
-    if (cancelBtn) cancelBtn.classList.remove('hidden');
-
-    const formEl = document.getElementById('account-form');
-    if (formEl) formEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
-
-  window.cancelAccountEdit = function() {
-    editingAccountId = null;
-    const formEl = document.getElementById('account-form');
-    if (formEl) formEl.reset();
-    window.toggleAccountTypeFields();
-    const submitBtn = document.querySelector('#account-form button[type="submit"]');
-    if (submitBtn) submitBtn.textContent = 'Add Account';
-    const cancelBtn = document.getElementById('account-edit-cancel-btn');
-    if (cancelBtn) cancelBtn.classList.add('hidden');
-  };
-
-  window.deleteAccountEntry = function(id) {
-    const acc = window.accounts.find(a => a.id === id);
-    if (!acc) return;
-    if (acc.locked) {
-      window.triggerToast('This is a default account and cannot be removed.', 'error');
-      return;
-    }
-
-    window.transactions.forEach(t => { if (t.accountId === id) { t.accountId = 'acc_general'; t.accountLabel = window.getAccountLabel('acc_general'); } });
-    window.stockData.forEach(s => { if (s.accountId === id) { s.accountId = 'acc_general'; s.accountLabel = window.getAccountLabel('acc_general'); } });
-    window.pharmacyData.forEach(p => { if (p.accountId === id) { p.accountId = 'acc_general'; p.accountLabel = window.getAccountLabel('acc_general'); } });
-    window.accountTransfers.forEach(tr => {
-      if (tr.fromId === id) tr.fromId = 'acc_general';
-      if (tr.toId === id) tr.toId = 'acc_general';
-    });
-    window.saveAccountTransfers();
-    window.saveTransactionsDatabase();
+  window.hideStockBatch = function(id) {
+    const item = (window.stockData || []).find(s => s.id === id);
+    if (!item) return;
+    item.isHidden = true;
     localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
-    localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
-
-    window.accounts = window.accounts.filter(a => a.id !== id);
-    window.saveAccountsDatabase();
-    window.populateAccountSelects();
-    window.populateAccountFilterSelect();
-    window.renderAccountsView();
-    window.triggerToast('Payment account removed.', 'info');
+    if (typeof window.triggerToast === 'function') window.triggerToast('Batch hidden from active inventory.', 'info');
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
-  window.renderAccountsView = function() {
-    const container = document.getElementById('accounts-list-cards');
-    if (!container) return;
+  window.unhideStockBatch = function(id) {
+    const item = (window.stockData || []).find(s => s.id === id);
+    if (!item) return;
+    item.isHidden = false;
+    localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+    if (typeof window.triggerToast === 'function') window.triggerToast('Batch restored to active inventory.', 'success');
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+    window.openUnhideItemsModal();
+  };
 
-    container.innerHTML = '';
-    (window.accounts || []).forEach(acc => {
-      const income = window.transactions.filter(t => t.type === 'income' && t.accountId === acc.id).reduce((s, t) => s + parseFloat(t.amount), 0);
-      const expense = window.transactions.filter(t => t.type === 'expense' && t.accountId === acc.id).reduce((s, t) => s + parseFloat(t.amount), 0);
-      const invValue = window.stockData.filter(s => s.accountId === acc.id).reduce((s, i) => s + (parseFloat(i.price) * parseFloat(i.quantity)), 0);
-      const pharmValue = window.pharmacyData.filter(p => p.accountId === acc.id).reduce((s, i) => s + (parseFloat(i.price) * parseFloat(i.quantity)), 0);
-      const transfersIn = window.accountTransfers.filter(tr => tr.toId === acc.id).reduce((s, tr) => s + parseFloat(tr.amount), 0);
-      const transfersOut = window.accountTransfers.filter(tr => tr.fromId === acc.id).reduce((s, tr) => s + parseFloat(tr.amount), 0);
-      const netBalance = income - expense + transfersIn - transfersOut;
+  window.hidePharmacyBatch = function(id) {
+    const item = (window.pharmacyData || []).find(p => p.id === id);
+    if (!item) return;
+    item.isHidden = true;
+    localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+    if (typeof window.triggerToast === 'function') window.triggerToast('Batch hidden from medication database.', 'info');
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+  };
 
-      let subtitle = '';
-      if (acc.type === 'card') subtitle = `${acc.network || ''} ${acc.mode || ''} Card${acc.bank ? ' • ' + acc.bank : ''}`;
-      else if (acc.type === 'wallet') subtitle = `${acc.kind || ''} Wallet${acc.provider ? ' • ' + acc.provider : ''}`;
-      else if (acc.type === 'cash') subtitle = 'Physical Cash';
-      else subtitle = 'Unidentified / Fallback Account';
+  window.unhidePharmacyBatch = function(id) {
+    const item = (window.pharmacyData || []).find(p => p.id === id);
+    if (!item) return;
+    item.isHidden = false;
+    localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+    if (typeof window.triggerToast === 'function') window.triggerToast('Batch restored to medication database.', 'success');
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+    window.openUnhideItemsModal();
+  };
 
-      container.innerHTML += `
-        <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
-          <div class="flex items-start justify-between">
-            <div>
-              <h3 class="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-                <span>${window.accountIcon(acc.type)}</span> ${acc.label}
-              </h3>
-              <p class="text-[10px] text-slate-404 font-bold uppercase mt-0.5">${subtitle}</p>
-            </div>
-            <div class="flex items-center gap-3">
-              <button onclick="editAccountEntry('${acc.id}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit</button>
-              ${acc.locked ? '<span class="text-[10px] font-bold text-slate-404 uppercase">Default</span>' : `<button onclick="deleteAccountEntry('${acc.id}')" class="text-[10px] text-rose-600 font-bold hover:underline">Remove</button>`}
-            </div>
-          </div>
-          <div class="bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl flex items-center justify-between text-xs font-medium">
-            <span class="text-[10px] text-slate-404 uppercase font-bold">Net Balance</span>
-            <span class="font-extrabold ${netBalance < 0 ? 'text-rose-600' : 'text-slate-900 dark:text-white'}">EGP ${netBalance.toFixed(2)}</span>
-          </div>
-          <div class="grid grid-cols-2 gap-2 text-xs font-medium">
-            <div class="bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-xl">
-              <span class="text-[10px] text-emerald-700 dark:text-emerald-400 block uppercase font-bold">Income</span>
-              <span class="font-extrabold text-emerald-700 dark:text-emerald-400">EGP ${income.toFixed(2)}</span>
-            </div>
-            <div class="bg-rose-50 dark:bg-rose-950/40 p-2 rounded-xl">
-              <span class="text-[10px] text-rose-700 dark:text-rose-400 block uppercase font-bold">Expenses</span>
-              <span class="font-extrabold text-rose-700 dark:text-rose-400">EGP ${expense.toFixed(2)}</span>
-            </div>
-            <div class="bg-blue-50 dark:bg-blue-950/40 p-2 rounded-xl">
-              <span class="text-[10px] text-blue-700 dark:text-blue-400 block uppercase font-bold">Inventory</span>
-              <span class="font-extrabold text-blue-700 dark:text-blue-400">EGP ${invValue.toFixed(2)}</span>
-            </div>
-            <div class="bg-indigo-50 dark:bg-indigo-950/40 p-2 rounded-xl">
-              <span class="text-[10px] text-indigo-700 dark:text-indigo-400 block uppercase font-bold">Transfers</span>
-              <span class="font-extrabold text-indigo-700 dark:text-indigo-400">+${transfersIn.toFixed(0)} / -${transfersOut.toFixed(0)}</span>
-            </div>
-          </div>
-        </div>
-      `;
+  /* -------------------------------------------------------------------------
+   * 4. NOTIFICATION CENTER SYSTEM
+   * ------------------------------------------------------------------------- */
+  const NOTIFICATION_READ_KEY = 'pro_notification_read_signatures';
+  let notificationReadSignatures = new Set();
+
+  function loadNotificationReadState() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(NOTIFICATION_READ_KEY) || '[]');
+      notificationReadSignatures = new Set(Array.isArray(stored) ? stored : []);
+    } catch (err) {
+      notificationReadSignatures = new Set();
+    }
+  }
+
+  function saveNotificationReadState() {
+    try {
+      localStorage.setItem(NOTIFICATION_READ_KEY, JSON.stringify(Array.from(notificationReadSignatures)));
+    } catch (err) {}
+  }
+
+  window.toggleNotificationCenter = function(event) {
+    if (event) event.stopPropagation();
+    const menu = document.getElementById('notification-dropdown');
+    const bell = document.getElementById('notification-bell-btn');
+    if (!menu || !bell) return;
+    const willOpen = menu.classList.contains('hidden');
+    menu.classList.toggle('hidden', !willOpen);
+    bell.setAttribute('aria-expanded', String(willOpen));
+  };
+
+  window.reviewNotification = function(event, element) {
+    if (event) event.stopPropagation();
+    if (!element) return;
+    const signature = decodeURIComponent(element.dataset.signature || '');
+    if (signature) {
+      notificationReadSignatures.add(signature);
+      saveNotificationReadState();
+    }
+    element.classList.add('notification-read');
+    window.syncNotificationUnreadBadge();
+  };
+
+  window.markAllNotificationsRead = function(event) {
+    if (event) event.stopPropagation();
+    document.querySelectorAll('#notification-list .notification-item').forEach(element => {
+      const signature = decodeURIComponent(element.dataset.signature || '');
+      if (signature) notificationReadSignatures.add(signature);
+      element.classList.add('notification-read');
+    });
+    saveNotificationReadState();
+    window.syncNotificationUnreadBadge();
+  };
+
+  window.syncNotificationUnreadBadge = function() {
+    const badge = document.getElementById('notification-unread-badge');
+    const list = document.getElementById('notification-list');
+    if (!badge || !list) return;
+    const unread = list.querySelectorAll('.notification-item:not(.notification-read)').length;
+    badge.textContent = unread > 99 ? '99+' : String(unread);
+    badge.classList.toggle('hidden', unread === 0);
+  };
+
+  function renderNotificationCenter(alertHTML) {
+    const list = document.getElementById('notification-list');
+    const badge = document.getElementById('notification-unread-badge');
+    if (!list || !badge) return;
+
+    if (!alertHTML || !alertHTML.length) {
+      list.innerHTML = '<div class="text-center py-8 text-xs font-semibold text-slate-404">No active notifications.</div>';
+      badge.classList.add('hidden');
+      badge.textContent = '0';
+      return;
+    }
+
+    let unreadCount = 0;
+    list.innerHTML = alertHTML.map(html => {
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      const title = temp.querySelector('h5')?.innerText?.trim() || '';
+      const desc = temp.querySelector('p')?.innerText?.trim() || '';
+      const signature = `${title}::${desc}`;
+      const isRead = notificationReadSignatures.has(signature);
+      if (!isRead) unreadCount++;
+      return `<div class="notification-item ${isRead ? 'notification-read opacity-60' : ''} p-2 rounded-xl bg-slate-50 dark:bg-slate-700/50 mb-1 cursor-pointer" data-signature="${encodeURIComponent(signature)}" onclick="reviewNotification(event, this)">${html}</div>`;
+    }).join('');
+
+    badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+    badge.classList.toggle('hidden', unreadCount === 0);
+  }
+
+  document.addEventListener('click', function(event) {
+    const center = document.getElementById('notification-center');
+    const menu = document.getElementById('notification-dropdown');
+    const bell = document.getElementById('notification-bell-btn');
+    if (!center || !menu || !bell) return;
+    if (!center.contains(event.target)) {
+      menu.classList.add('hidden');
+      bell.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  /* -------------------------------------------------------------------------
+   * 5. SPENDING LAST 7 DAYS WIDGET
+   * ------------------------------------------------------------------------- */
+  let spend7dChartInstance = null;
+
+  window.renderSpend7DaysWidget = function() {
+    const canvas = document.getElementById('spend7dChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push(d);
+    }
+    const dayKey = d => d.toISOString().split('T')[0];
+    const dayLabel = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    const dailyExpense = days.map(d => {
+      const key = dayKey(d);
+      return (window.transactions || [])
+        .filter(t => t.type === 'expense' && t.date === key)
+        .reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+    });
+
+    const totalExpense7d = dailyExpense.reduce((s, v) => s + v, 0);
+    const totalIncome7d = days.reduce((sum, d) => {
+      const key = dayKey(d);
+      return sum + (window.transactions || [])
+        .filter(t => t.type === 'income' && t.date === key)
+        .reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+    }, 0);
+
+    const totalEl = document.getElementById('spend7d-total');
+    const incomeEl = document.getElementById('spend7d-income-pill');
+    const expenseEl = document.getElementById('spend7d-expense-pill');
+    const startEl = document.getElementById('spend7d-date-start');
+    const endEl = document.getElementById('spend7d-date-end');
+
+    if (totalEl) totalEl.innerText = `EGP ${totalExpense7d.toFixed(2)}`;
+    if (incomeEl) incomeEl.innerText = `EGP ${totalIncome7d.toFixed(2)}`;
+    if (expenseEl) expenseEl.innerText = `EGP ${totalExpense7d.toFixed(2)}`;
+    if (startEl) startEl.innerText = dayLabel(days[0]);
+    if (endEl) endEl.innerText = dayLabel(days[days.length - 1]);
+
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, 0, 160);
+    gradient.addColorStop(0, 'rgba(244, 63, 94, 0.35)');
+    gradient.addColorStop(1, 'rgba(244, 63, 94, 0)');
+
+    if (spend7dChartInstance) spend7dChartInstance.destroy();
+
+    spend7dChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: days.map(dayLabel),
+        datasets: [{
+          data: dailyExpense,
+          borderColor: '#f43f5e',
+          backgroundColor: gradient,
+          borderWidth: 2.5,
+          fill: true,
+          tension: 0.45,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHoverBackgroundColor: '#f43f5e'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: true } },
+        scales: {
+          x: { display: false, grid: { display: false } },
+          y: { display: false, grid: { display: false }, beginAtZero: true }
+        },
+        interaction: { intersect: false, mode: 'index' }
+      }
     });
   };
 
   /* -------------------------------------------------------------------------
-   * MODULE 2: MOBILE NAVIGATION & DRAWER
+   * 6. DASHBOARD PAYMENT ACCOUNTS ANALYSIS DOUGHNUT CHART
    * ------------------------------------------------------------------------- */
-  window.toggleMobileDrawer = function(force) {
-    const drawer = document.getElementById('mobile-more-drawer');
-    if (!drawer) return;
-    const isHidden = drawer.classList.contains('hidden');
-    const open = typeof force === 'boolean' ? force : isHidden;
-    drawer.classList.toggle('hidden', !open);
+  let dashboardAccountsChartInstance = null;
+
+  window.renderDashboardAccountsAnalysis = function() {
+    const tbody = document.getElementById('dashboard-accounts-table-body');
+    const canvas = document.getElementById('dashboardAccountsChart');
+    if (!tbody) return;
+
+    const data = (window.accounts || []).map(acc => {
+      const income = (window.transactions || []).filter(t => t.type === 'income' && t.accountId === acc.id).reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+      const expense = (window.transactions || []).filter(t => t.type === 'expense' && t.accountId === acc.id).reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+      const transfersIn = (window.accountTransfers || []).filter(tr => tr.toId === acc.id).reduce((s, tr) => s + parseFloat(tr.amount || 0), 0);
+      const transfersOut = (window.accountTransfers || []).filter(tr => tr.fromId === acc.id).reduce((s, tr) => s + parseFloat(tr.amount || 0), 0);
+      const netBalance = income - expense + transfersIn - transfersOut;
+      return { acc, income, expense, transfersIn, transfersOut, netBalance };
+    });
+
+    tbody.innerHTML = data.map(d => `
+      <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+        <td class="py-2 px-2 font-semibold text-slate-900 dark:text-white">${window.accountIcon(d.acc.type)} ${d.acc.label}</td>
+        <td class="py-2 px-2 text-right text-emerald-700 dark:text-emerald-400 font-bold">EGP ${d.income.toFixed(2)}</td>
+        <td class="py-2 px-2 text-right text-rose-600 dark:text-rose-400 font-bold">EGP ${d.expense.toFixed(2)}</td>
+        <td class="py-2 px-2 text-right text-indigo-700 dark:text-indigo-400 font-bold">+${d.transfersIn.toFixed(0)} / -${d.transfersOut.toFixed(0)}</td>
+        <td class="py-2 px-2 text-right font-extrabold ${d.netBalance < 0 ? 'text-rose-600' : 'text-slate-900 dark:text-white'}">EGP ${d.netBalance.toFixed(2)}</td>
+      </tr>
+    `).join('') || `<tr><td colspan="5" class="py-6 text-center text-slate-404 font-semibold">No accounts registered yet.</td></tr>`;
+
+    if (!canvas || typeof Chart === 'undefined') return;
+    const chartData = data.filter(d => d.expense > 0);
+    const labels = chartData.map(d => d.acc.label);
+    const values = chartData.map(d => d.expense);
+
+    if (dashboardAccountsChartInstance) dashboardAccountsChartInstance.destroy();
+    if (!labels.length) return;
+
+    dashboardAccountsChartInstance = new Chart(canvas.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: ['#2563eb', '#f43f5e', '#10b981', '#f59e0b', '#6366f1', '#0ea5e9', '#a855f7', '#84cc16']
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 9 } } } }
+      }
+    });
   };
 
   /* -------------------------------------------------------------------------
-   * INITIALIZE MODULES ON DOM READY
+   * 7. MASTER RENDER HOOK - EXTENDS RENDER ALL VIEWS
    * ------------------------------------------------------------------------- */
+  const originalRenderAllViews = window.renderAllViews;
+  window.renderAllViews = function() {
+    if (typeof originalRenderAllViews === 'function') {
+      try { originalRenderAllViews(); } catch(err) { console.error(err); }
+    }
+
+    try {
+      if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+      if (typeof window.populateAccountFilterSelect === 'function') window.populateAccountFilterSelect();
+      if (typeof window.renderAccountsView === 'function') window.renderAccountsView();
+      if (typeof window.renderDashboardAccountsAnalysis === 'function') window.renderDashboardAccountsAnalysis();
+      if (typeof window.renderSpend7DaysWidget === 'function') window.renderSpend7DaysWidget();
+      if (typeof window.renderRentalManagement === 'function') window.renderRentalManagement();
+      if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
+    } catch(err) {
+      console.error('[Forecaster Modules] render error:', err);
+    }
+
+    // Redirect alerts to notification center
+    const alertsSource = document.getElementById('alerts-container');
+    if (alertsSource) {
+      const alertHTML = Array.from(alertsSource.children)
+        .filter(child => (child.querySelector('h5')?.innerText || '').trim() !== 'All calculations on track')
+        .map(child => child.outerHTML);
+      renderNotificationCenter(alertHTML);
+    }
+  };
+
   window.addEventListener('DOMContentLoaded', () => {
-    window.loadAccountsDatabase();
-    window.loadAccountTransfers();
-    window.populateAccountSelects();
-    window.populateAccountFilterSelect();
-    window.renderAccountsView();
-    window.toggleAccountTypeFields();
+    loadNotificationReadState();
+    window.syncChartDefaultsToTheme();
   });
 })();

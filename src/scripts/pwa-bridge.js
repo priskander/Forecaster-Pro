@@ -42,7 +42,7 @@
   // 3. In-App PWA Install Flow
   let deferredPrompt = null;
   const isIOS = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+  const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
                        window.navigator.standalone === true;
 
   window.addEventListener('beforeinstallprompt', function(e) {

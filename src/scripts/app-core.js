@@ -149,59 +149,81 @@
 
   /* VIEW NAVIGATION ROUTER */
   window.switchView = function(viewId, element) {
+    if (typeof event !== 'undefined' && event) {
+      try { event.preventDefault(); } catch(e) {}
+    }
     const requestedStockModule = viewId === 'pharmacy' ? 'pharmacy' : (viewId === 'inventory' ? 'inventory' : null);
     if (requestedStockModule) viewId = 'stock';
 
+    // 1. Hide all view sections
     document.querySelectorAll('.view-section').forEach(section => {
       section.classList.remove('active');
     });
     
+    // 2. Show requested view section
     const activeView = document.getElementById('view-' + viewId);
-    if (activeView) activeView.classList.add('active');
+    if (activeView) {
+      activeView.classList.add('active');
+    }
     
-    // Update desktop nav links
+    // 3. Update desktop nav links
     document.querySelectorAll('.nav-link').forEach(link => {
-      link.className = "nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all";
+      link.className = "nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3.5 py-2 rounded-lg transition-all flex-shrink-0";
     });
     
-    if (element) {
-      element.className = "nav-link flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold shadow-sm transition-all";
+    if (element && element.classList && element.classList.contains('nav-link')) {
+      element.className = "nav-link flex items-center gap-2 bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold shadow-sm transition-all flex-shrink-0";
     } else {
-      const selector = document.querySelector(`[onclick*='${viewId}']`);
+      const selector = document.querySelector(`.nav-link[onclick*='${viewId}']`);
       if (selector) {
-        selector.className = "nav-link flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold shadow-sm transition-all";
+        selector.className = "nav-link flex items-center gap-2 bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold shadow-sm transition-all flex-shrink-0";
       }
     }
 
-    // Sync mobile bottom nav items if present
+    // 4. Sync mobile bottom nav items if present
     document.querySelectorAll('.mobile-nav-item').forEach(btn => {
       const targetView = btn.getAttribute('data-target-view');
       if (targetView === viewId) {
         btn.classList.add('text-blue-600', 'dark:text-blue-400');
-        btn.classList.remove('text-slate-500', 'dark:text-slate-400');
+        btn.classList.remove('text-slate-500', 'dark:text-slate-404');
       } else {
         btn.classList.remove('text-blue-600', 'dark:text-blue-400');
-        btn.classList.add('text-slate-500', 'dark:text-slate-400');
+        btn.classList.add('text-slate-500', 'dark:text-slate-404');
       }
     });
 
-    // Close mobile drawer if open
+    // 5. Close mobile drawer if open
     const drawer = document.getElementById('mobile-more-drawer');
     if (drawer && !drawer.classList.contains('hidden')) {
       drawer.classList.add('hidden');
     }
 
-    if (typeof window.renderAllViews === 'function') {
-      window.renderAllViews();
+    // 6. Scroll to top
+    window.scrollTo({ top: 0, behavior: 'instant' });
+
+    // 7. Render views safely
+    try {
+      if (typeof window.renderAllViews === 'function') {
+        window.renderAllViews();
+      }
+    } catch(err) {
+      console.error('[Forecaster] renderAllViews error during switchView:', err);
     }
+
     if (requestedStockModule && typeof window.setStockPharmacyModule === 'function') {
-      window.setStockPharmacyModule(requestedStockModule);
+      try {
+        window.setStockPharmacyModule(requestedStockModule);
+      } catch(err) {
+        console.error('[Forecaster] setStockPharmacyModule error during switchView:', err);
+      }
     }
 
     setTimeout(() => {
-      if (typeof lucide !== 'undefined' && lucide.createIcons) {
-        lucide.createIcons();
-      }
+      try {
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+          lucide.createIcons();
+        }
+      } catch(e) {}
     }, 50);
   };
 
