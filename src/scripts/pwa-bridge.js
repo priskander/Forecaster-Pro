@@ -31,7 +31,7 @@
   // 2. Service Worker Registration
   if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost')) {
     window.addEventListener('load', function() {
-      navigator.serviceWorker.register('./sw.js').then(function(reg) {
+      navigator.serviceWorker.register('/sw.js').then(function(reg) {
         console.log('[Forecaster PWA] Service Worker registered with scope:', reg.scope);
       }).catch(function(err) {
         console.warn('[Forecaster PWA] Service Worker registration failed:', err);
