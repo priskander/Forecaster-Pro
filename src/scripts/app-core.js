@@ -148,59 +148,78 @@
   };
 
   /* VIEW NAVIGATION ROUTER */
-  window.switchView = function(viewId, element, clickEvent) {
-    if (clickEvent && typeof clickEvent.preventDefault === 'function') {
-      clickEvent.preventDefault();
+  window.switchView = function(viewId, element) {
+    if (typeof event !== 'undefined' && event) {
+      try { event.preventDefault(); } catch(e) {}
     }
-
-    const requestedStockModule = viewId === 'pharmacy' ? 'pharmacy' : (viewId === 'inventory' ? 'inventory' : null);
+    const requestedStockModule = (viewId === 'pharmacy' || viewId === 'inventory' || viewId === 'spareparts') ? viewId : null;
     if (requestedStockModule) viewId = 'stock';
 
-    // 1. Hide all view sections
+    const cleanId = String(viewId || 'dashboard').replace(/^view-/, '');
+
+    // 1. Hide every single view section cleanly (isolated panel architecture)
     document.querySelectorAll('.view-section').forEach(section => {
       section.classList.remove('active');
+      section.classList.add('hidden');
+      section.style.display = 'none';
     });
     
     // 2. Show requested view section
-    const activeView = document.getElementById('view-' + viewId);
+    const activeView = document.getElementById('view-' + cleanId);
     if (activeView) {
+      activeView.classList.remove('hidden');
       activeView.classList.add('active');
+      activeView.style.display = 'block';
+    } else {
+      console.warn('[Forecaster] View section not found for id: view-' + cleanId);
+      const fallback = document.getElementById('view-dashboard');
+      if (fallback) {
+        fallback.classList.remove('hidden');
+        fallback.classList.add('active');
+        fallback.style.display = 'block';
+      }
     }
     
     // 3. Update desktop nav links
     document.querySelectorAll('.nav-link').forEach(link => {
-      link.className = "nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3.5 py-2 rounded-lg transition-all flex-shrink-0";
+      link.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
+      link.classList.add('text-slate-700', 'dark:text-slate-300');
     });
     
-    if (element && element.classList && element.classList.contains('nav-link')) {
-      element.className = "nav-link flex items-center gap-2 bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold shadow-sm transition-all flex-shrink-0";
-    } else {
-      const selector = document.querySelector(`.nav-link[onclick*='${viewId}']`);
-      if (selector) {
-        selector.className = "nav-link flex items-center gap-2 bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold shadow-sm transition-all flex-shrink-0";
-      }
+    let activeLink = element;
+    if (!activeLink || !activeLink.classList || !activeLink.classList.contains('nav-link')) {
+      activeLink = document.querySelector(`.nav-link[onclick*="'${cleanId}'"]`) ||
+                   document.querySelector(`.nav-link[onclick*='"${cleanId}"']`);
+    }
+    if (activeLink) {
+      activeLink.classList.remove('text-slate-700', 'dark:text-slate-300');
+      activeLink.classList.add('bg-blue-600', 'text-white', 'shadow-sm');
     }
 
     // 4. Sync mobile bottom nav items if present
     document.querySelectorAll('.mobile-nav-item').forEach(btn => {
       const targetView = btn.getAttribute('data-target-view');
-      if (targetView === viewId) {
+      if (targetView === cleanId) {
         btn.classList.add('text-blue-600', 'dark:text-blue-400');
-        btn.classList.remove('text-slate-500', 'dark:text-slate-404');
+        btn.classList.remove('text-slate-500', 'dark:text-slate-400');
       } else {
         btn.classList.remove('text-blue-600', 'dark:text-blue-400');
-        btn.classList.add('text-slate-500', 'dark:text-slate-404');
+        btn.classList.add('text-slate-500', 'dark:text-slate-400');
       }
     });
 
     // 5. Close mobile drawer if open
-    const drawer = document.getElementById('mobile-more-drawer');
-    if (drawer && !drawer.classList.contains('hidden')) {
-      drawer.classList.add('hidden');
+    if (typeof window.toggleMobileDrawer === 'function') {
+      window.toggleMobileDrawer(false);
+    } else {
+      const drawer = document.getElementById('mobile-more-drawer');
+      if (drawer && !drawer.classList.contains('hidden')) {
+        drawer.classList.add('hidden');
+      }
     }
 
-    // 6. Scroll to top
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    // 6. Scroll to top safely
+    try { window.scrollTo(0, 0); } catch(e) {}
 
     // 7. Render views safely
     try {
@@ -225,7 +244,7 @@
           lucide.createIcons();
         }
       } catch(e) {}
-    }, 50);
+    }, 30);
   };
 
   /* STOCK & PHARMACY SWITCHER */
@@ -929,8 +948,8 @@
           
           <div class="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl flex items-center justify-between text-xs font-medium">
             <div class="space-y-0.5">
-              <span class="text-[10px] text-slate-404 block uppercase font-bold">Avg Value</span>
-              <span class="font-extrabold text-slate-900 dark:text-slate-100">EGP ${(batches[0].price).toFixed(2)} / base</span>
+              <span class="text-[10px] text-slate-400 block uppercase font-bold">Avg Value</span>
+              <span class="font-extrabold text-slate-900 dark:text-slate-100">EGP ${Number(batches[0]?.price || 0).toFixed(2)} / base</span>
             </div>
             <div class="space-y-0.5 text-right">
               <span class="text-[10px] text-slate-404 block uppercase font-bold">Buffer Limit</span>
@@ -1240,7 +1259,7 @@
         const batchListHTML = group.batches.map(b => `
           <div class="flash-red-batch text-[10px] font-bold mt-1 pl-4 flex items-center gap-1.5">
             <span class="inline-block w-1.5 h-1.5 rounded-full bg-red-600"></span>
-            <span>Batch [ID: ${b.id.split('_')[1] || b.id}]: ${b.quantity.toFixed(1)} ${group.unit} (Exp: ${b.expDate || 'N/A'})</span>
+            <span>Batch [ID: ${(b.id && String(b.id).includes('_')) ? String(b.id).split('_')[1] : (b.id || 'N/A')}]: ${Number(b.quantity ?? b.currentStock ?? 0).toFixed(1)} ${group.unit} (Exp: ${b.expDate || b.expiryDate || 'N/A'})</span>
           </div>
         `).join('');
 
@@ -1270,7 +1289,7 @@
         const batchListHTML = group.batches.map(b => `
           <div class="flash-red-batch text-[10px] font-bold mt-1 pl-4 flex items-center gap-1.5">
             <span class="inline-block w-1.5 h-1.5 rounded-full bg-red-650 animate-pulse"></span>
-            <span>Batch [Code: ${b.id.split('_')[1] || b.id}]: ${b.quantity.toFixed(0)} ${group.unit} (Exp: ${b.expDate || 'N/A'})</span>
+            <span>Batch [Code: ${(b.id && String(b.id).includes('_')) ? String(b.id).split('_')[1] : (b.id || 'N/A')}]: ${Number(b.quantity ?? b.currentStock ?? 0).toFixed(0)} ${group.unit} (Exp: ${b.expDate || b.expiryDate || 'N/A'})</span>
           </div>
         `).join('');
 
@@ -1822,6 +1841,241 @@
     }
   };
 
+  /* ============================================================================
+   * BACKUP & RESTORE DATA ENGINE (LOCAL JSON IMPORT/EXPORT)
+   * ============================================================================ */
+  window.downloadBackupJSON = function() {
+    try {
+      const A = (k) => {
+        try {
+          const v = JSON.parse(localStorage.getItem(k) || '[]');
+          return Array.isArray(v) ? v : [];
+        } catch (e) { return []; }
+      };
+      const O = (k, def = null) => {
+        try {
+          const v = JSON.parse(localStorage.getItem(k) || 'null');
+          return (v && typeof v === 'object') ? v : def;
+        } catch (e) { return def; }
+      };
+
+      const backupData = {
+        version: 'ForecasterPro-v1.06.12-enterprise',
+        exportedAt: new Date().toISOString(),
+        transactions: Array.isArray(window.transactions) && window.transactions.length > 0 ? window.transactions : A('pro_transactions'),
+        stockData: Array.isArray(window.stockData) && window.stockData.length > 0 ? window.stockData : A('pro_stock'),
+        pharmacyData: Array.isArray(window.pharmacyData) && window.pharmacyData.length > 0 ? window.pharmacyData : A('pro_pharmacy'),
+        budgetLimits: (window.budgetLimits && typeof window.budgetLimits === 'object') ? window.budgetLimits : O('pro_budget_limits', { income: 3500, expense: 2000 }),
+        accounts: Array.isArray(window.accounts) && window.accounts.length > 0 ? window.accounts : A('pro_accounts'),
+        accountTransfers: Array.isArray(window.accountTransfers) ? window.accountTransfers : A('pro_account_transfers'),
+        pro_vehicles: A('pro_vehicles'),
+        pro_vehicle_fuel: A('pro_vehicle_fuel'),
+        pro_vehicle_maintenance: A('pro_vehicle_maintenance'),
+        pro_rental_contracts_v1: A('pro_rental_contracts_v1'),
+        pro_rental_properties_v1: A('pro_rental_properties_v1'),
+        pro_rental_notifications_v1: A('pro_rental_notifications_v1'),
+        pro_rental_notification_config_v1: O('pro_rental_notification_config_v1', {}),
+        forecaster_profile_user: O('forecaster_profile_user', null),
+      };
+
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const downloadAnchor = document.createElement('a');
+      const filename = `forecaster_pro_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      downloadAnchor.href = url;
+      downloadAnchor.download = filename;
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      URL.revokeObjectURL(url);
+
+      if (typeof window.triggerToast === 'function') {
+        window.triggerToast('Backup JSON exported successfully!', 'success');
+      }
+    } catch (err) {
+      console.error('[Forecaster Backup Export Error]', err);
+      if (typeof window.triggerToast === 'function') {
+        window.triggerToast('Failed to export backup: ' + err.message, 'error');
+      }
+    }
+  };
+
+  window.importBackupJSON = function(event) {
+    const fileInput = (event && event.target) ? event.target : document.getElementById('import-json-file');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+      return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+      try {
+        const text = e.target.result;
+        const data = JSON.parse(text);
+
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid JSON structure');
+        }
+
+        let datasetCount = 0;
+
+        // 1. Transactions
+        if (Array.isArray(data.transactions)) {
+          window.transactions = data.transactions;
+          localStorage.setItem('pro_transactions', JSON.stringify(data.transactions));
+          datasetCount++;
+        } else if (Array.isArray(data.pro_transactions)) {
+          window.transactions = data.pro_transactions;
+          localStorage.setItem('pro_transactions', JSON.stringify(data.pro_transactions));
+          datasetCount++;
+        }
+
+        // 2. Stock / Inventory
+        if (Array.isArray(data.stockData)) {
+          window.stockData = data.stockData;
+          localStorage.setItem('pro_stock', JSON.stringify(data.stockData));
+          datasetCount++;
+        } else if (Array.isArray(data.pro_stock)) {
+          window.stockData = data.pro_stock;
+          localStorage.setItem('pro_stock', JSON.stringify(data.pro_stock));
+          datasetCount++;
+        }
+
+        // 3. Pharmacy / Medications
+        if (Array.isArray(data.pharmacyData)) {
+          window.pharmacyData = data.pharmacyData;
+          localStorage.setItem('pro_pharmacy', JSON.stringify(data.pharmacyData));
+          datasetCount++;
+        } else if (Array.isArray(data.pro_pharmacy)) {
+          window.pharmacyData = data.pro_pharmacy;
+          localStorage.setItem('pro_pharmacy', JSON.stringify(data.pro_pharmacy));
+          datasetCount++;
+        }
+
+        // 4. Budget Limits
+        if (data.budgetLimits && typeof data.budgetLimits === 'object') {
+          window.budgetLimits = data.budgetLimits;
+          localStorage.setItem('pro_budget_limits', JSON.stringify(data.budgetLimits));
+          datasetCount++;
+        } else if (data.pro_budget_limits && typeof data.pro_budget_limits === 'object') {
+          window.budgetLimits = data.pro_budget_limits;
+          localStorage.setItem('pro_budget_limits', JSON.stringify(data.pro_budget_limits));
+          datasetCount++;
+        }
+
+        // 5. Payment Accounts & Transfers
+        if (Array.isArray(data.accounts)) {
+          window.accounts = data.accounts;
+          localStorage.setItem('pro_accounts', JSON.stringify(data.accounts));
+          datasetCount++;
+        } else if (Array.isArray(data.pro_accounts)) {
+          window.accounts = data.pro_accounts;
+          localStorage.setItem('pro_accounts', JSON.stringify(data.pro_accounts));
+          datasetCount++;
+        }
+
+        if (Array.isArray(data.accountTransfers)) {
+          window.accountTransfers = data.accountTransfers;
+          localStorage.setItem('pro_account_transfers', JSON.stringify(data.accountTransfers));
+          datasetCount++;
+        } else if (Array.isArray(data.pro_account_transfers)) {
+          window.accountTransfers = data.pro_account_transfers;
+          localStorage.setItem('pro_account_transfers', JSON.stringify(data.pro_account_transfers));
+          datasetCount++;
+        }
+
+        // 6. Vehicles, Fuel, Maintenance
+        if (Array.isArray(data.pro_vehicles) || Array.isArray(data.vehicles)) {
+          const v = data.pro_vehicles || data.vehicles;
+          localStorage.setItem('pro_vehicles', JSON.stringify(v));
+          datasetCount++;
+        }
+        if (Array.isArray(data.pro_vehicle_fuel) || Array.isArray(data.vehicleFuel)) {
+          const vf = data.pro_vehicle_fuel || data.vehicleFuel;
+          localStorage.setItem('pro_vehicle_fuel', JSON.stringify(vf));
+          datasetCount++;
+        }
+        if (Array.isArray(data.pro_vehicle_maintenance) || Array.isArray(data.vehicleMaintenance)) {
+          const vm = data.pro_vehicle_maintenance || data.vehicleMaintenance;
+          localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(vm));
+          datasetCount++;
+        }
+
+        // 7. Rental Contracts & Properties
+        if (Array.isArray(data.pro_rental_contracts_v1) || Array.isArray(data.rentalContracts)) {
+          const rc = data.pro_rental_contracts_v1 || data.rentalContracts;
+          localStorage.setItem('pro_rental_contracts_v1', JSON.stringify(rc));
+          datasetCount++;
+        }
+        if (Array.isArray(data.pro_rental_properties_v1) || Array.isArray(data.rentalProperties)) {
+          const rp = data.pro_rental_properties_v1 || data.rentalProperties;
+          localStorage.setItem('pro_rental_properties_v1', JSON.stringify(rp));
+          datasetCount++;
+        }
+        if (Array.isArray(data.pro_rental_notifications_v1)) {
+          localStorage.setItem('pro_rental_notifications_v1', JSON.stringify(data.pro_rental_notifications_v1));
+        }
+        if (data.pro_rental_notification_config_v1) {
+          localStorage.setItem('pro_rental_notification_config_v1', JSON.stringify(data.pro_rental_notification_config_v1));
+        }
+
+        // 8. User Profile
+        if (data.forecaster_profile_user) {
+          localStorage.setItem('forecaster_profile_user', JSON.stringify(data.forecaster_profile_user));
+        }
+
+        if (datasetCount === 0) {
+          throw new Error('No recognized Forecaster Pro datasets found in the backup file.');
+        }
+
+        // Reset file input so re-selecting same file triggers change
+        fileInput.value = '';
+
+        // Reload data into memory
+        if (typeof window.loadIntegratedDatabases === 'function') window.loadIntegratedDatabases();
+        if (typeof window.loadRentalDatabase === 'function') window.loadRentalDatabase();
+        if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
+        if (typeof window.rpmLoad === 'function') window.rpmLoad();
+
+        // Re-render UI
+        if (typeof window.renderAllViews === 'function') {
+          window.renderAllViews();
+        }
+
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast(`Backup successfully imported! (${datasetCount} datasets restored)`, 'success');
+        }
+
+        // Return to dashboard cleanly
+        setTimeout(() => {
+          if (typeof window.switchView === 'function') {
+            window.switchView('dashboard');
+          }
+        }, 400);
+
+      } catch (err) {
+        console.error('[Forecaster Backup Import Error]', err);
+        fileInput.value = '';
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Failed to import backup: ' + err.message, 'error');
+        }
+      }
+    };
+
+    reader.onerror = function() {
+      fileInput.value = '';
+      if (typeof window.triggerToast === 'function') {
+        window.triggerToast('Failed to read backup file.', 'error');
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
   /* QUICK ADD TRANSACTION MODAL */
   window.openAddTransactionModal = function() {
     document.getElementById('custom-modal').classList.remove('hidden');
@@ -1918,6 +2172,7 @@
     window.setFormType('expense');
     window.populateCategoryFilters();
     window.selectInsight('spending');
+    window.switchView('dashboard');
     window.renderAllViews();
 
     if (typeof lucide !== 'undefined' && lucide.createIcons) {

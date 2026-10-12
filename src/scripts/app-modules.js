@@ -11,10 +11,12 @@
    * 1. THEME & DARK MODE CONTROLLER
    * ------------------------------------------------------------------------- */
   window.syncChartDefaultsToTheme = function() {
-    if (typeof Chart === 'undefined') return;
-    const isDark = document.documentElement.classList.contains('dark');
-    Chart.defaults.color = isDark ? '#94a3b8' : '#64748b';
-    Chart.defaults.borderColor = isDark ? '#334155' : '#e2e8f0';
+    try {
+      if (typeof Chart === 'undefined' || !Chart.defaults) return;
+      const isDark = document.documentElement.classList.contains('dark');
+      Chart.defaults.color = isDark ? '#94a3b8' : '#64748b';
+      Chart.defaults.borderColor = isDark ? '#334155' : '#e2e8f0';
+    } catch (e) {}
   };
 
   window.toggleDarkMode = function() {
@@ -370,6 +372,13 @@
    * ------------------------------------------------------------------------- */
   let dashboardAccountsChartInstance = null;
 
+  window.accountIcon = function(type) {
+    if (type === 'bank') return '🏦';
+    if (type === 'wallet') return '📱';
+    if (type === 'credit') return '💳';
+    return '💵';
+  };
+
   window.renderDashboardAccountsAnalysis = function() {
     const tbody = document.getElementById('dashboard-accounts-table-body');
     const canvas = document.getElementById('dashboardAccountsChart');
@@ -441,12 +450,16 @@
     }
 
     // Redirect alerts to notification center
-    const alertsSource = document.getElementById('alerts-container');
-    if (alertsSource) {
-      const alertHTML = Array.from(alertsSource.children)
-        .filter(child => (child.querySelector('h5')?.innerText || '').trim() !== 'All calculations on track')
-        .map(child => child.outerHTML);
-      renderNotificationCenter(alertHTML);
+    try {
+      const alertsSource = document.getElementById('alerts-container');
+      if (alertsSource && alertsSource.children) {
+        const alertHTML = Array.from(alertsSource.children)
+          .filter(child => child && (child.querySelector('h5')?.innerText || '').trim() !== 'All calculations on track')
+          .map(child => child.outerHTML);
+        renderNotificationCenter(alertHTML);
+      }
+    } catch(err) {
+      console.warn('[Forecaster Modules] alerts extraction error:', err);
     }
   };
 

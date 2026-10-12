@@ -15,10 +15,10 @@
   <meta name="apple-mobile-web-app-title" content="Forecaster Pro" />
 
   <!-- PWA Manifest & App Icons -->
-  <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
-  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
 
   <!-- Instant Theme Bootstrapping -->
   <script>
@@ -35,6 +35,7 @@
   <!-- Typography & Component Libraries -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/styles/forecaster.css" />
 
   <!-- Engine Libraries -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -158,25 +159,10 @@
       }
     }
 
-    /* Keep the mobile navigation separate from page content even if
-       the external utility stylesheet fails to load. */
     #mobile-bottom-nav {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 40;
-      display: flex;
       padding-bottom: max(var(--safe-bottom), 8px);
     }
-
-    @media screen and (min-width: 768px) {
-      #mobile-bottom-nav {
-        display: none !important;
-      }
-    }
   </style>
-  <link rel="stylesheet" href="./src/styles/navigation.css" />
 </head>
 
 <body class="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-blue-600 selection:text-white">
@@ -278,15 +264,15 @@
   </header>
 
   <!-- NAVIGATION BAR (Always visible & responsive across desktop, tablet, and mobile) -->
-  <nav id="desktop-navigation" class="bg-white dark:bg-slate-900 px-4 md:px-8 py-3 flex items-center gap-2 md:gap-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto custom-scrollbar flex-nowrap md:flex-wrap">
-    <a class="nav-link flex items-center gap-2 bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold shadow-sm transition-all flex-shrink-0" href="#" onclick="switchView('dashboard', this, event)"><span>📊</span> Dashboard</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('insights', this, event)"><span>👁️</span> Insights &amp; Alerts</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('transactions', this, event)"><span>📝</span> Transactions</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('rentals', this, event)"><span>🏠</span> Rentals</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('vehicles', this, event)"><span>🚗</span> Vehicles</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('stock', this, event); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('accounts', this, event)"><span>💳</span> Accounts</a>
-    <a class="nav-link flex items-center gap-2 text-slate-707 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="#" onclick="switchView('reports', this, event)"><span>📄</span> Reports &amp; Backups</a>
+  <nav class="bg-white dark:bg-slate-900 px-4 md:px-8 py-3 flex items-center gap-2 md:gap-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto custom-scrollbar flex-nowrap md:flex-wrap">
+    <a class="nav-link flex items-center gap-2 bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold shadow-sm transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('dashboard', this)"><span>📊</span> Dashboard</a>
+    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('insights', this)"><span>👁️</span> Insights &amp; Alerts</a>
+    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('transactions', this)"><span>📝</span> Transactions</a>
+    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('rentals', this)"><span>🏠</span> Rentals</a>
+    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('vehicles', this)"><span>🚗</span> Vehicles</a>
+    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('stock', this); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
+    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('accounts', this)"><span>💳</span> Accounts</a>
+    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('reports', this)"><span>📄</span> Reports &amp; Backups</a>
   </nav>
 
   <!-- TOAST NOTIFICATION HOST -->
@@ -299,7 +285,7 @@
   <main class="max-w-7xl w-full mx-auto p-4 md:p-8 flex-grow space-y-6">
 
     <!-- =================== DASHBOARD VIEW =================== -->
-    <div class="view-section active space-y-6" id="view-dashboard">
+    <div class="view-section active space-y-6" id="view-dashboard" style="display: block;">
       <!-- SPENDING LAST 7 DAYS CARD -->
       <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
         <div>
@@ -566,7 +552,7 @@
     </div>
 
     <!-- =================== INSIGHTS & ALERTS TAB =================== -->
-    <div class="view-section space-y-6" id="view-insights">
+    <div class="view-section hidden space-y-6" id="view-insights" style="display: none;">
       <div class="space-y-3" id="alerts-container"></div>
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
@@ -605,7 +591,7 @@
     </div>
 
     <!-- =================== UNIFIED TRANSACTIONS VIEW =================== -->
-    <div class="view-section space-y-6" id="view-transactions">
+    <div class="view-section hidden space-y-6" id="view-transactions" style="display: none;">
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Log Form -->
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-fit">
@@ -745,7 +731,7 @@
     </div>
 
     <!-- =================== STOCK INVENTORY & PHARMACY TAB =================== -->
-    <div class="view-section space-y-6" id="view-stock">
+    <div class="view-section hidden space-y-6" id="view-stock" style="display: none;">
       <div id="stock-module-panel">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-fit space-y-4">
@@ -986,7 +972,7 @@
     </div>
 
     <!-- =================== RENTAL MANAGEMENT TAB =================== -->
-    <div class="view-section space-y-6" id="view-rentals">
+    <div class="view-section hidden space-y-6" id="view-rentals" style="display: none;">
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-fit space-y-4">
           <div class="flex items-center justify-between gap-2">
@@ -1126,7 +1112,7 @@
     </div>
 
     <!-- =================== VEHICLES MANAGEMENT TAB =================== -->
-    <div class="view-section space-y-6" id="view-vehicles">
+    <div class="view-section hidden space-y-6" id="view-vehicles" style="display: none;">
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="vehicle-kpi bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-404">Registered Vehicles</p><p class="text-2xl font-black text-slate-900 dark:text-white mt-1" id="vehicle-kpi-count">0</p></div>
         <div class="vehicle-kpi bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-404">Fuel Spend</p><p class="text-2xl font-black text-slate-900 dark:text-white mt-1" id="vehicle-kpi-fuel">EGP 0.00</p></div>
@@ -1213,7 +1199,7 @@
     </div>
 
     <!-- =================== ACCOUNTS TAB =================== -->
-    <div class="view-section space-y-6" id="view-accounts">
+    <div class="view-section hidden space-y-6" id="view-accounts" style="display: none;">
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-fit space-y-4">
           <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>💳</span> Register Payment Account</h2>
@@ -1286,7 +1272,7 @@
     </div>
 
     <!-- =================== REPORTS & BACKUPS =================== -->
-    <div class="view-section space-y-6" id="view-reports">
+    <div class="view-section hidden space-y-6" id="view-reports" style="display: none;">
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-5 bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
           <div class="border-b border-slate-100 dark:border-slate-700 pb-3">
@@ -1347,15 +1333,17 @@
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <h2 class="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white mb-2"><span>☁️</span> Database Sync &amp; Backup</h2>
           <div class="space-y-3">
-            <div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition" onclick="downloadBackupJSON()">
-              <div class="flex items-center gap-3 text-slate-707 dark:text-slate-200 font-bold text-sm"><span>📋</span> Download Backup JSON</div><span>📥</span>
+            <div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm" onclick="downloadBackupJSON()">
+              <div class="flex items-center gap-3 text-slate-700 dark:text-slate-200 font-bold text-sm"><span>📋</span> Download Backup JSON</div><span>📥</span>
             </div>
-            <div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition" onclick="window.ForecasterGitHubSync.openModal()">
-              <div class="flex items-center gap-3 text-slate-707 dark:text-slate-200 font-bold text-sm"><span>☁️</span> GitHub Cloud Sync &amp; Backup</div><span>↗️</span>
+            <div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm" onclick="window.ForecasterGitHubSync.openModal()">
+              <div class="flex items-center gap-3 text-slate-700 dark:text-slate-200 font-bold text-sm"><span>☁️</span> GitHub Cloud Sync &amp; Backup</div><span>↗️</span>
             </div>
-            <div class="border-2 border-dashed border-slate-200 dark:border-slate-700 p-4 rounded-2xl flex flex-col items-center justify-center text-slate-404 hover:border-blue-400 hover:bg-blue-50/50 transition cursor-pointer relative">
-              <input accept=".json" class="absolute inset-0 opacity-0 cursor-pointer" id="import-json-file" onchange="importBackupJSON(event)" type="file"/>
-              <p class="font-bold text-slate-707 dark:text-slate-200 text-xs">Import Local JSON Backup File</p>
+            <div class="border-2 border-dashed border-slate-300 dark:border-slate-700 p-5 rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:bg-blue-50/40 dark:hover:bg-slate-800/60 transition cursor-pointer relative text-center" onclick="document.getElementById('import-json-file')?.click()">
+              <input accept=".json,application/json" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full" id="import-json-file" onchange="importBackupJSON(event)" type="file"/>
+              <span class="text-2xl mb-1">📁</span>
+              <p class="font-bold text-slate-700 dark:text-slate-200 text-xs">Import Local JSON Backup File</p>
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Click or drag &amp; drop to restore your saved ledger datasets</p>
             </div>
           </div>
         </div>
@@ -1636,12 +1624,11 @@
   </div>
 
   <!-- APP ENGINE SCRIPTS -->
-  <script src="./src/scripts/app-core.js"></script>
-  <script src="./src/scripts/app-modules.js"></script>
-  <script src="./src/scripts/extended-features.js"></script>
-  <script src="./src/scripts/pwa-bridge.js"></script>
-  <script src="./src/scripts/github-sync.js"></script>
-  <script src="./src/scripts/saas-subscription.js"></script>
-  <script src="./src/scripts/navigation.js"></script>
+  <script src="/src/scripts/app-core.js"></script>
+  <script src="/src/scripts/app-modules.js"></script>
+  <script src="/src/scripts/extended-features.js"></script>
+  <script src="/src/scripts/pwa-bridge.js"></script>
+  <script src="/src/scripts/github-sync.js"></script>
+  <script src="/src/scripts/saas-subscription.js"></script>
 </body>
 </html>

@@ -483,6 +483,7 @@
   Object.defineProperty(window,'maint',{get:()=>maint,configurable:true});
 
   const load=()=>{try{vehicles=JSON.parse(localStorage.getItem(VDB)||'[]')}catch(e){vehicles=[]}try{fuels=JSON.parse(localStorage.getItem(VFU)||'[]')}catch(e){fuels=[]}try{maint=JSON.parse(localStorage.getItem(VMN)||'[]')}catch(e){maint=[]}};
+  window.loadVehicleDatabase = load;
   const save=()=>{localStorage.setItem(VDB,JSON.stringify(vehicles));localStorage.setItem(VFU,JSON.stringify(fuels));localStorage.setItem(VMN,JSON.stringify(maint))};
   const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const money=v=>`EGP ${Number(v||0).toFixed(2)}`;
@@ -710,6 +711,7 @@
     try { rpmProperties = JSON.parse(localStorage.getItem(RPM_DB_KEY) || '[]'); }
     catch (e) { rpmProperties = []; }
   }
+  window.rpmLoad = rpmLoad;
 
   function rpmSave() {
     localStorage.setItem(RPM_DB_KEY, JSON.stringify(rpmProperties));

@@ -122,10 +122,10 @@ button, a, input, select, textarea {
 
 /* Tab View Switcher */
 .view-section {
-  display: none;
+  display: none !important;
 }
 .view-section.active {
-  display: block;
+  display: block !important;
   animation: fadeIn 0.18s ease-in-out;
 }
 
