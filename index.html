@@ -20,7 +20,7 @@
   <link rel="icon" type="image/svg+xml" href="/icon.svg" />
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
 
-  <!-- Instant Theme Bootstrapping -->
+  <!-- Instant Theme & View Switcher Bootstrapping -->
   <script>
     (function() {
       try {
@@ -30,12 +30,109 @@
         if (shouldBeDark) document.documentElement.classList.add('dark');
       } catch (err) { /* default to light mode */ }
     })();
+
+    // Early Router: Available immediately before any body elements render
+    window.switchView = function(viewId, element) {
+      if (typeof event !== 'undefined' && event) {
+        try { event.preventDefault(); } catch(e) {}
+      }
+      const requestedStockModule = (viewId === 'pharmacy' || viewId === 'inventory' || viewId === 'spareparts') ? viewId : null;
+      if (requestedStockModule) viewId = 'stock';
+
+      const cleanId = String(viewId || 'dashboard').replace(/^view-/, '');
+
+      // 1. Hide every single view section
+      document.querySelectorAll('.view-section').forEach(function(section) {
+        section.classList.remove('active');
+        section.classList.add('hidden');
+        section.style.display = 'none';
+      });
+      
+      // 2. Show target view section
+      const activeView = document.getElementById('view-' + cleanId);
+      if (activeView) {
+        activeView.classList.remove('hidden');
+        activeView.classList.add('active');
+        activeView.style.display = 'block';
+      }
+      
+      // 3. Update desktop nav links
+      document.querySelectorAll('.nav-link').forEach(function(link) {
+        link.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
+        link.classList.add('text-slate-700', 'dark:text-slate-300');
+      });
+      
+      let activeLink = element;
+      if (!activeLink || !activeLink.classList || !activeLink.classList.contains('nav-link')) {
+        activeLink = document.querySelector(".nav-link[onclick*=\"'" + cleanId + "'\"]") ||
+                     document.querySelector('.nav-link[onclick*=\'"' + cleanId + '"\']');
+      }
+      if (activeLink) {
+        activeLink.classList.remove('text-slate-700', 'dark:text-slate-300');
+        activeLink.classList.add('bg-blue-600', 'text-white', 'shadow-sm');
+      }
+
+      // 4. Update mobile bottom nav items
+      document.querySelectorAll('.mobile-nav-item').forEach(function(btn) {
+        const targetView = btn.getAttribute('data-target-view');
+        if (targetView === cleanId) {
+          btn.classList.add('text-blue-600', 'dark:text-blue-400');
+          btn.classList.remove('text-slate-500', 'dark:text-slate-400');
+        } else {
+          btn.classList.remove('text-blue-600', 'dark:text-blue-400');
+          btn.classList.add('text-slate-500', 'dark:text-slate-400');
+        }
+      });
+
+      // 5. Close mobile drawer
+      if (typeof window.toggleMobileDrawer === 'function') {
+        window.toggleMobileDrawer(false);
+      } else {
+        const drawer = document.getElementById('mobile-more-drawer');
+        if (drawer && !drawer.classList.contains('hidden')) drawer.classList.add('hidden');
+      }
+
+      try { window.scrollTo(0, 0); } catch(e) {}
+
+      // 6. Safe render hook
+      try {
+        if (typeof window.renderAllViews === 'function') {
+          window.renderAllViews();
+        }
+      } catch(err) {
+        console.warn('[Forecaster] renderAllViews during switchView:', err);
+      }
+
+      if (requestedStockModule && typeof window.setStockPharmacyModule === 'function') {
+        try {
+          window.setStockPharmacyModule(requestedStockModule);
+        } catch(err) {}
+      }
+
+      setTimeout(function() {
+        try {
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        } catch(e) {}
+      }, 20);
+    };
+
+    // Capture-phase event delegator for bulletproof link clicking
+    document.addEventListener('click', function(e) {
+      const trigger = e.target.closest('[onclick*="switchView"]');
+      if (trigger) {
+        const match = (trigger.getAttribute('onclick') || '').match(/switchView\(['"]([^'"]+)['"]/);
+        if (match && match[1]) {
+          try { e.preventDefault(); } catch(err) {}
+          window.switchView(match[1], trigger);
+        }
+      }
+    }, true);
   </script>
 
   <!-- Typography & Component Libraries -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
-  <link rel="stylesheet" href="/src/styles/forecaster.css" />
+  <link rel="stylesheet" href="/styles/forecaster.css" />
 
   <!-- Engine Libraries -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -1624,11 +1721,11 @@
   </div>
 
   <!-- APP ENGINE SCRIPTS -->
-  <script src="/src/scripts/app-core.js"></script>
-  <script src="/src/scripts/app-modules.js"></script>
-  <script src="/src/scripts/extended-features.js"></script>
-  <script src="/src/scripts/pwa-bridge.js"></script>
-  <script src="/src/scripts/github-sync.js"></script>
-  <script src="/src/scripts/saas-subscription.js"></script>
+  <script src="/scripts/app-core.js"></script>
+  <script src="/scripts/app-modules.js"></script>
+  <script src="/scripts/extended-features.js"></script>
+  <script src="/scripts/pwa-bridge.js"></script>
+  <script src="/scripts/github-sync.js"></script>
+  <script src="/scripts/saas-subscription.js"></script>
 </body>
 </html>
