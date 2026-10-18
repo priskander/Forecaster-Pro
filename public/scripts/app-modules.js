@@ -373,10 +373,10 @@
   let dashboardAccountsChartInstance = null;
 
   window.accountIcon = function(type) {
-    if (type === 'bank') return '🏦';
+    if (type === 'card' || type === 'credit' || type === 'bank') return '💳';
     if (type === 'wallet') return '📱';
-    if (type === 'credit') return '💳';
-    return '💵';
+    if (type === 'cash') return '💵';
+    return '🏦';
   };
 
   window.renderDashboardAccountsAnalysis = function() {
@@ -427,6 +427,435 @@
       }
     });
   };
+
+  /* -------------------------------------------------------------------------
+   * PAYMENT ACCOUNTS CONTROLLER & REPOSITORY ENGINE
+   * ------------------------------------------------------------------------- */
+  const EGYPT_BANKS = [
+    'National Bank of Egypt (NBE)',
+    'Banque Misr',
+    'Commercial International Bank (CIB)',
+    'Banque du Caire',
+    'QNB Alahli',
+    'Alex Bank',
+    'Faisal Islamic Bank',
+    'Arab African International Bank (AAIB)',
+    'HSBC Egypt',
+    'Emirates NBD',
+    'Abu Dhabi Islamic Bank (ADIB)',
+    'Credit Agricole Egypt',
+    'Other'
+  ];
+
+  const WALLET_TELECOM_PROVIDERS = [
+    'Vodafone Cash',
+    'Orange Money',
+    'Etisalat Cash',
+    'WE Pay',
+    'Other'
+  ];
+
+  const WALLET_BANK_PROVIDERS = [
+    'Instapay / IPN',
+    'Smart Wallet (CIB)',
+    'BM Wallet (Banque Misr)',
+    'Al Ahly Phone Cash (NBE)',
+    'QNB Wallet',
+    'Other'
+  ];
+
+  const TRANSFER_METHODS = [
+    'Instapay',
+    'ATM Cash Deposit',
+    'ATM Cash Withdrawal',
+    'Bank ACH / Wire Transfer',
+    'Mobile Wallet Transfer',
+    'Cash Hand-to-Hand'
+  ];
+
+  let editingAccountId = null;
+
+  window.toggleAccountTypeFields = function() {
+    const typeSelect = document.getElementById('account-type');
+    const cardFields = document.getElementById('account-card-fields');
+    const walletFields = document.getElementById('account-wallet-fields');
+    if (!typeSelect) return;
+
+    const val = typeSelect.value;
+    if (cardFields) cardFields.classList.toggle('hidden', val !== 'card');
+    if (walletFields) walletFields.classList.toggle('hidden', val !== 'wallet');
+  };
+
+  window.toggleCardBankOtherField = function() {
+    const bankSelect = document.getElementById('account-card-bank');
+    const otherInput = document.getElementById('account-card-bank-other');
+    if (bankSelect && otherInput) {
+      otherInput.classList.toggle('hidden', bankSelect.value !== 'Other');
+    }
+  };
+
+  window.toggleWalletProviderOptions = function() {
+    const kindSelect = document.getElementById('account-wallet-kind');
+    const providerSelect = document.getElementById('account-wallet-provider');
+    if (!kindSelect || !providerSelect) return;
+
+    const isBank = kindSelect.value === 'Bank';
+    const list = isBank ? WALLET_BANK_PROVIDERS : WALLET_TELECOM_PROVIDERS;
+    providerSelect.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
+    window.toggleWalletProviderOtherField();
+  };
+
+  window.toggleWalletProviderOtherField = function() {
+    const providerSelect = document.getElementById('account-wallet-provider');
+    const otherInput = document.getElementById('account-wallet-provider-other');
+    if (providerSelect && otherInput) {
+      otherInput.classList.toggle('hidden', providerSelect.value !== 'Other');
+    }
+  };
+
+  window.populateAccountBankAndProviderOptions = function() {
+    const bankSelect = document.getElementById('account-card-bank');
+    if (bankSelect && bankSelect.options.length === 0) {
+      bankSelect.innerHTML = EGYPT_BANKS.map(b => `<option value="${b}">${b}</option>`).join('');
+    }
+
+    const walletProviderSelect = document.getElementById('account-wallet-provider');
+    if (walletProviderSelect && walletProviderSelect.options.length === 0) {
+      window.toggleWalletProviderOptions();
+    }
+
+    const transferMethodSelect = document.getElementById('form-transfer-method');
+    if (transferMethodSelect && transferMethodSelect.options.length === 0) {
+      transferMethodSelect.innerHTML = TRANSFER_METHODS.map(m => `<option value="${m}">${m}</option>`).join('');
+      transferMethodSelect.addEventListener('change', () => {
+        const feeWrap = document.getElementById('form-transfer-instapay-fee-wrap');
+        if (feeWrap) feeWrap.classList.toggle('hidden', transferMethodSelect.value !== 'Instapay');
+      });
+    }
+  };
+
+  window.handleAddAccountSubmit = function(e) {
+    if (e) e.preventDefault();
+    const type = document.getElementById('account-type')?.value || 'cash';
+    const nickname = (document.getElementById('account-nickname')?.value || '').trim();
+
+    let network = '';
+    let mode = '';
+    let bank = '';
+    let kind = '';
+    let provider = '';
+    let autoLabel = '';
+
+    if (type === 'card') {
+      network = document.getElementById('account-card-network')?.value || 'Visa';
+      mode = document.getElementById('account-card-mode')?.value || 'Debit';
+      bank = document.getElementById('account-card-bank')?.value || 'Bank';
+      if (bank === 'Other') {
+        bank = (document.getElementById('account-card-bank-other')?.value || '').trim() || 'Bank';
+      }
+      autoLabel = `${bank} ${network} (${mode})`;
+    } else if (type === 'wallet') {
+      kind = document.getElementById('account-wallet-kind')?.value || 'Telecom';
+      provider = document.getElementById('account-wallet-provider')?.value || 'Wallet';
+      if (provider === 'Other') {
+        provider = (document.getElementById('account-wallet-provider-other')?.value || '').trim() || 'Wallet';
+      }
+      autoLabel = `${provider} (${kind})`;
+    } else if (type === 'cash') {
+      autoLabel = 'Cash Wallet';
+    } else {
+      autoLabel = 'General Account';
+    }
+
+    const label = nickname || autoLabel;
+
+    if (!Array.isArray(window.accounts)) window.accounts = [];
+
+    if (editingAccountId) {
+      const idx = window.accounts.findIndex(a => a.id === editingAccountId);
+      if (idx !== -1) {
+        window.accounts[idx] = {
+          ...window.accounts[idx],
+          type,
+          label,
+          nickname,
+          network,
+          mode,
+          bank,
+          kind,
+          provider,
+          updatedAt: new Date().toISOString()
+        };
+        if (typeof window.triggerToast === 'function') window.triggerToast('Payment account updated.', 'success');
+      }
+      editingAccountId = null;
+      const submitBtn = document.querySelector('#account-form button[type="submit"]');
+      if (submitBtn) submitBtn.textContent = 'Add Account';
+      const cancelBtn = document.getElementById('account-edit-cancel-btn');
+      if (cancelBtn) cancelBtn.classList.add('hidden');
+    } else {
+      const newAcc = {
+        id: 'acc_' + Date.now(),
+        type,
+        label,
+        nickname,
+        network,
+        mode,
+        bank,
+        kind,
+        provider,
+        initialBalance: 0,
+        createdAt: new Date().toISOString()
+      };
+      window.accounts.push(newAcc);
+      if (typeof window.triggerToast === 'function') window.triggerToast(`Payment account "${label}" created.`, 'success');
+    }
+
+    window.saveAccountsDatabase();
+    document.getElementById('account-form')?.reset();
+    window.toggleAccountTypeFields();
+    window.renderAccountsView();
+    window.populateAccountSelects();
+    window.renderDashboardAccountsAnalysis();
+  };
+
+  window.editAccount = function(id) {
+    const acc = (window.accounts || []).find(a => a.id === id);
+    if (!acc) return;
+
+    editingAccountId = id;
+    const typeSelect = document.getElementById('account-type');
+    if (typeSelect) {
+      typeSelect.value = acc.type;
+      window.toggleAccountTypeFields();
+    }
+
+    if (acc.type === 'card') {
+      const netSelect = document.getElementById('account-card-network');
+      const modeSelect = document.getElementById('account-card-mode');
+      const bankSelect = document.getElementById('account-card-bank');
+      const bankOther = document.getElementById('account-card-bank-other');
+      if (netSelect && acc.network) netSelect.value = acc.network;
+      if (modeSelect && acc.mode) modeSelect.value = acc.mode;
+      if (bankSelect) {
+        if (EGYPT_BANKS.includes(acc.bank)) {
+          bankSelect.value = acc.bank;
+          if (bankOther) bankOther.classList.add('hidden');
+        } else {
+          bankSelect.value = 'Other';
+          if (bankOther) {
+            bankOther.classList.remove('hidden');
+            bankOther.value = acc.bank || '';
+          }
+        }
+      }
+    } else if (acc.type === 'wallet') {
+      const kindSelect = document.getElementById('account-wallet-kind');
+      const provSelect = document.getElementById('account-wallet-provider');
+      const provOther = document.getElementById('account-wallet-provider-other');
+      if (kindSelect && acc.kind) {
+        kindSelect.value = acc.kind;
+        window.toggleWalletProviderOptions();
+      }
+      if (provSelect) {
+        provSelect.value = acc.provider;
+        window.toggleWalletProviderOtherField();
+        if (provSelect.value === 'Other' && provOther) {
+          provOther.value = acc.provider || '';
+        }
+      }
+    }
+
+    const nickInput = document.getElementById('account-nickname');
+    if (nickInput) nickInput.value = acc.nickname || '';
+
+    const submitBtn = document.querySelector('#account-form button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Update Account';
+
+    const cancelBtn = document.getElementById('account-edit-cancel-btn');
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
+
+    document.getElementById('view-accounts')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  window.cancelAccountEdit = function() {
+    editingAccountId = null;
+    document.getElementById('account-form')?.reset();
+    window.toggleAccountTypeFields();
+    const submitBtn = document.querySelector('#account-form button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Add Account';
+    const cancelBtn = document.getElementById('account-edit-cancel-btn');
+    if (cancelBtn) cancelBtn.classList.add('hidden');
+  };
+
+  window.deleteAccount = function(id) {
+    const acc = (window.accounts || []).find(a => a.id === id);
+    if (!acc) return;
+
+    const sure = confirm(`Are you sure you want to delete payment account "${acc.label}"? Associated transaction records will remain in the audit ledger.`);
+    if (!sure) return;
+
+    window.accounts = (window.accounts || []).filter(a => a.id !== id);
+    window.saveAccountsDatabase();
+    if (typeof window.triggerToast === 'function') window.triggerToast(`Account "${acc.label}" removed.`, 'info');
+
+    window.renderAccountsView();
+    window.populateAccountSelects();
+    window.renderDashboardAccountsAnalysis();
+  };
+
+  window.deleteAccountTransfer = function(id) {
+    const tr = (window.accountTransfers || []).find(t => t.id === id);
+    if (!tr) return;
+
+    const sure = confirm(`Delete transfer of EGP ${parseFloat(tr.amount || 0).toFixed(2)} from ${tr.fromLabel || tr.fromId} to ${tr.toLabel || tr.toId}?`);
+    if (!sure) return;
+
+    window.accountTransfers = (window.accountTransfers || []).filter(t => t.id !== id);
+    window.saveAccountsDatabase();
+    if (typeof window.triggerToast === 'function') window.triggerToast('Transfer entry deleted.', 'info');
+
+    window.renderAccountsView();
+    window.renderDashboardAccountsAnalysis();
+  };
+
+  window.renderAccountsView = function() {
+    const cardsContainer = document.getElementById('accounts-list-cards');
+    const transfersContainer = document.getElementById('account-transfers-list');
+    if (!cardsContainer) return;
+
+    const accounts = Array.isArray(window.accounts) ? window.accounts : [];
+
+    if (accounts.length === 0) {
+      cardsContainer.innerHTML = `
+        <div class="md:col-span-2 border-2 border-dashed border-slate-200 dark:border-slate-700 p-8 rounded-2xl text-center space-y-2">
+          <span class="text-3xl">💳</span>
+          <h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">No Payment Accounts Registered Yet</h4>
+          <p class="text-xs text-slate-404 max-w-sm mx-auto">Register bank cards, cash wallets, or mobile wallets (Vodafone Cash, Instapay) on the left to track multi-account balances.</p>
+        </div>
+      `;
+    } else {
+      cardsContainer.innerHTML = accounts.map(acc => {
+        const income = (window.transactions || []).filter(t => t.type === 'income' && t.accountId === acc.id).reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+        const expense = (window.transactions || []).filter(t => t.type === 'expense' && t.accountId === acc.id).reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+        const transfersIn = (window.accountTransfers || []).filter(tr => tr.toId === acc.id).reduce((s, tr) => s + parseFloat(tr.amount || 0), 0);
+        const transfersOut = (window.accountTransfers || []).filter(tr => tr.fromId === acc.id).reduce((s, tr) => s + parseFloat(tr.amount || 0), 0);
+        const netBalance = (acc.initialBalance || 0) + income - expense + transfersIn - transfersOut;
+
+        const subdetail = acc.type === 'card'
+          ? `${acc.bank || 'Bank'} • ${acc.network || 'Visa'} ${acc.mode || 'Card'}`
+          : (acc.type === 'wallet' ? `${acc.provider || 'Wallet'} • ${acc.kind || 'Telecom'}` : (acc.type === 'cash' ? 'Physical Cash Reserve' : 'General Ledger Account'));
+
+        return `
+          <div class="bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/80 p-5 rounded-2xl shadow-sm hover:shadow transition space-y-3 relative overflow-hidden">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-2.5">
+                <span class="text-2xl">${window.accountIcon(acc.type)}</span>
+                <div>
+                  <h3 class="font-bold text-sm text-slate-900 dark:text-white leading-tight">${acc.label}</h3>
+                  <p class="text-[10px] font-semibold text-slate-404 uppercase tracking-wider">${subdetail}</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-1">
+                <button type="button" onclick="window.editAccount('${acc.id}')" class="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Edit Account">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                </button>
+                <button type="button" onclick="window.deleteAccount('${acc.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Delete Account">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-200/70 dark:border-slate-700/60 flex items-end justify-between">
+              <div>
+                <span class="text-[10px] font-bold text-slate-404 uppercase">Current Balance</span>
+                <p class="text-lg font-black ${netBalance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}">EGP ${netBalance.toFixed(2)}</p>
+              </div>
+              <div class="text-right text-[10px] space-y-0.5">
+                <p class="text-emerald-600 dark:text-emerald-400 font-bold">+EGP ${income.toFixed(0)} in</p>
+                <p class="text-rose-600 dark:text-rose-400 font-bold">-EGP ${expense.toFixed(0)} out</p>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    if (transfersContainer) {
+      const transfers = Array.isArray(window.accountTransfers) ? window.accountTransfers : [];
+      if (transfers.length === 0) {
+        transfersContainer.innerHTML = `
+          <div class="text-center py-8 text-xs font-semibold text-slate-404 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+            No inter-account transfers recorded yet. Use the "Transfer" tab in Log New Transaction to move funds between accounts.
+          </div>
+        `;
+      } else {
+        transfersContainer.innerHTML = transfers.map(tr => `
+          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-xs">
+            <div class="flex items-center gap-3">
+              <span class="text-lg">🔁</span>
+              <div>
+                <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <span>${tr.fromLabel || tr.fromId}</span>
+                  <span class="text-slate-400">➜</span>
+                  <span class="text-blue-600 dark:text-blue-400 font-extrabold">${tr.toLabel || tr.toId}</span>
+                </div>
+                <div class="text-[10px] text-slate-404 font-semibold mt-0.5 flex items-center gap-2">
+                  <span>📅 ${tr.date || 'N/A'}</span>
+                  <span>• Method: ${tr.method || 'Transfer'}</span>
+                  ${tr.fee > 0 ? `<span class="text-amber-600 font-bold">(Fee: EGP ${parseFloat(tr.fee).toFixed(2)})</span>` : ''}
+                  ${tr.notes ? `<span>• "${tr.notes}"</span>` : ''}
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="text-sm font-black text-indigo-600 dark:text-indigo-400">EGP ${parseFloat(tr.amount || 0).toFixed(2)}</span>
+              <button type="button" onclick="window.deleteAccountTransfer('${tr.id}')" class="text-slate-400 hover:text-rose-600 p-1" title="Delete Transfer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+              </button>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+  };
+
+  window.populateAccountSelects = function() {
+    const selects = document.querySelectorAll('.payment-account-select');
+    const accounts = Array.isArray(window.accounts) ? window.accounts : [];
+
+    selects.forEach(sel => {
+      const currentVal = sel.value;
+      let optionsHTML = '';
+
+      if (sel.id === 'form-transfer-from' || sel.id === 'form-transfer-to') {
+        optionsHTML = accounts.map(a => `<option value="${a.id}">${window.accountIcon(a.type)} ${a.label}</option>`).join('');
+      } else {
+        optionsHTML = accounts.map(a => `<option value="${a.id}">${window.accountIcon(a.type)} ${a.label}</option>`).join('');
+      }
+
+      sel.innerHTML = optionsHTML || `<option value="">No Accounts Registered</option>`;
+      if (currentVal && accounts.some(a => a.id === currentVal)) {
+        sel.value = currentVal;
+      } else if (sel.id === 'form-transfer-to' && accounts.length > 1) {
+        sel.value = accounts[1].id;
+      }
+    });
+  };
+
+  window.populateAccountFilterSelect = function() {
+    const filterSel = document.getElementById('filter-account');
+    if (!filterSel) return;
+    const currentVal = filterSel.value;
+    const accounts = Array.isArray(window.accounts) ? window.accounts : [];
+    filterSel.innerHTML = `<option value="">All Accounts</option>` +
+      accounts.map(a => `<option value="${a.id}">${window.accountIcon(a.type)} ${a.label}</option>`).join('');
+    if (currentVal) filterSel.value = currentVal;
+  };
+
+  window.addEventListener('DOMContentLoaded', () => {
+    window.populateAccountBankAndProviderOptions();
+  });
 
   /* -------------------------------------------------------------------------
    * 7. MASTER RENDER HOOK - EXTENDS RENDER ALL VIEWS

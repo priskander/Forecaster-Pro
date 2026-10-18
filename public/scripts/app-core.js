@@ -111,10 +111,51 @@
     if (storedLimits) {
       window.budgetLimits = JSON.parse(storedLimits);
     }
+
+    // Load Payment Accounts
+    const savedAccounts = localStorage.getItem('pro_accounts');
+    if (savedAccounts) {
+      try {
+        window.accounts = JSON.parse(savedAccounts);
+      } catch (e) {
+        window.accounts = [];
+      }
+    }
+    if (!Array.isArray(window.accounts) || window.accounts.length === 0) {
+      window.accounts = [
+        { id: 'acc_cash_main', type: 'cash', label: '💵 Cash Wallet', initialBalance: 1500, createdAt: '2026-07-01T00:00:00.000Z' },
+        { id: 'acc_bank_cib', type: 'card', label: '💳 CIB Debit Card', network: 'Visa', mode: 'Debit', bank: 'Commercial International Bank (CIB)', initialBalance: 12000, createdAt: '2026-07-01T00:00:00.000Z' },
+        { id: 'acc_wallet_vodafone', type: 'wallet', label: '📱 Vodafone Cash', kind: 'Telecom', provider: 'Vodafone Cash', initialBalance: 2500, createdAt: '2026-07-01T00:00:00.000Z' }
+      ];
+      localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+    }
+
+    // Load Account Transfers
+    const savedTransfers = localStorage.getItem('pro_account_transfers');
+    if (savedTransfers) {
+      try {
+        window.accountTransfers = JSON.parse(savedTransfers);
+      } catch (e) {
+        window.accountTransfers = [];
+      }
+    } else {
+      window.accountTransfers = [];
+    }
   };
 
   window.saveTransactionsDatabase = function() {
     localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
+  };
+
+  window.saveAccountsDatabase = function() {
+    localStorage.setItem('pro_accounts', JSON.stringify(window.accounts || []));
+    localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers || []));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
   };
 
   /* TOAST NOTIFICATION */
@@ -407,38 +448,63 @@
   window.setFormType = function(type) {
     const expenseBtn = document.getElementById('form-type-expense');
     const incomeBtn = document.getElementById('form-type-income');
+    const transferBtn = document.getElementById('form-type-transfer');
     const typeInput = document.getElementById('form-txn-type');
     const tipEl = document.getElementById('form-txn-tip');
     const selectEl = document.getElementById('form-txn-category');
+    const categoryWrap = document.getElementById('form-txn-category-wrap');
+    const accountWrap = document.getElementById('form-txn-account-wrap');
+    const transferFields = document.getElementById('form-transfer-fields');
+    const utilityWrap = document.getElementById('form-txn-utility-wrap');
+    const utilityDueDateWrap = document.getElementById('form-txn-utility-duedate-wrap');
 
-    if (!typeInput || !selectEl) return;
+    if (!typeInput) return;
     typeInput.value = type;
-    selectEl.innerHTML = '';
 
-    if (type === 'expense') {
-      if (expenseBtn) expenseBtn.className = "py-2 px-3 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5";
-      if (incomeBtn) incomeBtn.className = "py-2 px-3 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5";
-      if (tipEl) tipEl.classList.remove('hidden');
+    // Reset button styles
+    const activeClass = "py-2 px-3 border-2 border-blue-600 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm";
+    const inactiveClass = "py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5";
 
-      const expCats = window.expenseCategoriesForPropertyRole();
-      expCats.forEach(cat => {
-        const opt = document.createElement('option');
-        opt.value = cat;
-        opt.innerHTML = cat === "Groceries" ? "🥦 Groceries" : (cat === "Medical" ? "💊 Medical" : cat === "Tobacco" ? "🚬 Tobacco" : cat);
-        selectEl.appendChild(opt);
-      });
-    } else {
-      if (incomeBtn) incomeBtn.className = "py-2 px-3 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5";
-      if (expenseBtn) expenseBtn.className = "py-2 px-3 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5";
+    if (expenseBtn) expenseBtn.className = (type === 'expense') ? activeClass : inactiveClass;
+    if (incomeBtn) incomeBtn.className = (type === 'income') ? activeClass : inactiveClass;
+    if (transferBtn) transferBtn.className = (type === 'transfer') ? activeClass : inactiveClass;
+
+    if (type === 'transfer') {
+      if (categoryWrap) categoryWrap.classList.add('hidden');
+      if (accountWrap) accountWrap.classList.add('hidden');
+      if (transferFields) transferFields.classList.remove('hidden');
       if (tipEl) tipEl.classList.add('hidden');
+      if (utilityWrap) utilityWrap.classList.add('hidden');
+      if (utilityDueDateWrap) utilityDueDateWrap.classList.add('hidden');
+    } else {
+      if (categoryWrap) categoryWrap.classList.remove('hidden');
+      if (accountWrap) accountWrap.classList.remove('hidden');
+      if (transferFields) transferFields.classList.add('hidden');
 
-      const incCats = window.incomeCategoriesForPropertyRole();
-      incCats.forEach(cat => {
-        const opt = document.createElement('option');
-        opt.value = cat;
-        opt.innerHTML = cat;
-        selectEl.appendChild(opt);
-      });
+      if (selectEl) {
+        selectEl.innerHTML = '';
+        if (type === 'expense') {
+          if (tipEl) tipEl.classList.remove('hidden');
+          const expCats = window.expenseCategoriesForPropertyRole();
+          expCats.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat;
+            opt.innerHTML = cat === "Groceries" ? "🥦 Groceries" : (cat === "Medical" ? "💊 Medical" : cat === "Tobacco" ? "🚬 Tobacco" : cat);
+            selectEl.appendChild(opt);
+          });
+        } else {
+          if (tipEl) tipEl.classList.add('hidden');
+          if (utilityWrap) utilityWrap.classList.add('hidden');
+          if (utilityDueDateWrap) utilityDueDateWrap.classList.add('hidden');
+          const incCats = window.incomeCategoriesForPropertyRole();
+          incCats.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat;
+            opt.innerHTML = cat;
+            selectEl.appendChild(opt);
+          });
+        }
+      }
     }
   };
 
@@ -446,9 +512,66 @@
     e.preventDefault();
     const type = document.getElementById('form-txn-type').value;
     const date = document.getElementById('form-txn-date').value;
-    const category = document.getElementById('form-txn-category').value;
     const amount = parseFloat(document.getElementById('form-txn-amount').value);
-    const desc = document.getElementById('form-txn-desc').value.trim();
+    const desc = (document.getElementById('form-txn-desc')?.value || '').trim();
+
+    if (type === 'transfer') {
+      const fromId = document.getElementById('form-transfer-from')?.value;
+      const toId = document.getElementById('form-transfer-to')?.value;
+      const method = document.getElementById('form-transfer-method')?.value || 'Instapay';
+      const fee = parseFloat(document.getElementById('form-transfer-instapay-fee')?.value || '0') || 0;
+
+      if (!fromId || !toId) {
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Please select both Origin and Destination accounts.', 'error');
+        }
+        return;
+      }
+
+      if (fromId === toId) {
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Origin and Destination accounts cannot be the same.', 'error');
+        }
+        return;
+      }
+
+      const fromAcc = (window.accounts || []).find(a => a.id === fromId);
+      const toAcc = (window.accounts || []).find(a => a.id === toId);
+
+      const transferEntry = {
+        id: 'tr_' + Date.now(),
+        date: date,
+        fromId: fromId,
+        toId: toId,
+        fromLabel: fromAcc ? fromAcc.label : fromId,
+        toLabel: toAcc ? toAcc.label : toId,
+        amount: amount,
+        fee: fee,
+        method: method,
+        notes: desc || `Transfer from ${fromAcc ? fromAcc.label : fromId} to ${toAcc ? toAcc.label : toId}`,
+        createdAt: new Date().toISOString()
+      };
+
+      if (!Array.isArray(window.accountTransfers)) window.accountTransfers = [];
+      window.accountTransfers.unshift(transferEntry);
+      window.saveAccountsDatabase();
+
+      if (typeof window.triggerToast === 'function') {
+        window.triggerToast(`Transfer of EGP ${amount.toFixed(2)} recorded successfully!`, 'success');
+      }
+
+      e.target.reset();
+      window.setFormType('expense');
+      const today = new Date().toISOString().split('T')[0];
+      const dateInput = document.getElementById('form-txn-date');
+      if (dateInput) dateInput.value = today;
+
+      if (typeof window.renderAllViews === 'function') window.renderAllViews();
+      return;
+    }
+
+    const category = document.getElementById('form-txn-category')?.value || 'General';
+    const accountId = document.getElementById('form-txn-account')?.value || '';
 
     const entry = {
       id: 'tx_' + Date.now(),
@@ -456,7 +579,8 @@
       category: category,
       amount: amount,
       description: desc || `${type.charAt(0).toUpperCase() + type.slice(1)} Entry`,
-      type: type
+      type: type,
+      accountId: accountId
     };
 
     window.transactions.push(entry);
@@ -2050,6 +2174,10 @@
           window.triggerToast(`Backup successfully imported! (${datasetCount} datasets restored)`, 'success');
         }
 
+        if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+          window.ForecasterCloudSync.notifyDataChanged();
+        }
+
         // Return to dashboard cleanly
         setTimeout(() => {
           if (typeof window.switchView === 'function') {
@@ -2066,10 +2194,119 @@
       }
     };
 
-    reader.onerror = function() {
-      fileInput.value = '';
+    reader.readAsText(file);
+  };
+
+  /* ============================================================================
+   * PAYMENT ACCOUNTS SPECIFIC BACKUP & UPLOAD BACKUP ENGINE
+   * ============================================================================ */
+  window.backupPaymentAccounts = function() {
+    try {
+      const accounts = Array.isArray(window.accounts) && window.accounts.length > 0
+        ? window.accounts
+        : JSON.parse(localStorage.getItem('pro_accounts') || '[]');
+      const transfers = Array.isArray(window.accountTransfers)
+        ? window.accountTransfers
+        : JSON.parse(localStorage.getItem('pro_account_transfers') || '[]');
+
+      const backupData = {
+        version: 'ForecasterPro-Accounts-v1.0',
+        exportedAt: new Date().toISOString(),
+        type: 'payment_accounts_backup',
+        accounts: accounts,
+        accountTransfers: transfers,
+        accountCount: accounts.length,
+        transferCount: transfers.length
+      };
+
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const downloadAnchor = document.createElement('a');
+      const filename = `payment_accounts_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      downloadAnchor.href = url;
+      downloadAnchor.download = filename;
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      URL.revokeObjectURL(url);
+
       if (typeof window.triggerToast === 'function') {
-        window.triggerToast('Failed to read backup file.', 'error');
+        window.triggerToast(`Payment accounts backup (${accounts.length} accounts, ${transfers.length} transfers) exported!`, 'success');
+      }
+    } catch (err) {
+      console.error('[Payment Accounts Backup Export Error]', err);
+      if (typeof window.triggerToast === 'function') {
+        window.triggerToast('Failed to export payment accounts: ' + err.message, 'error');
+      }
+    }
+  };
+
+  window.importPaymentAccountsBackup = function(event) {
+    const fileInput = (event && event.target) ? event.target : document.getElementById('upload-accounts-backup-file');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+      return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+      try {
+        const text = e.target.result;
+        const data = JSON.parse(text);
+
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid JSON file format');
+        }
+
+        let newAccounts = null;
+        let newTransfers = null;
+
+        if (Array.isArray(data.accounts)) newAccounts = data.accounts;
+        else if (Array.isArray(data.pro_accounts)) newAccounts = data.pro_accounts;
+
+        if (Array.isArray(data.accountTransfers)) newTransfers = data.accountTransfers;
+        else if (Array.isArray(data.pro_account_transfers)) newTransfers = data.pro_account_transfers;
+
+        if (!newAccounts && !newTransfers) {
+          throw new Error('No payment accounts or transfers found in this backup file.');
+        }
+
+        if (newAccounts && newAccounts.length > 0) {
+          window.accounts = newAccounts;
+          localStorage.setItem('pro_accounts', JSON.stringify(newAccounts));
+        }
+
+        if (newTransfers) {
+          window.accountTransfers = newTransfers;
+          localStorage.setItem('pro_account_transfers', JSON.stringify(newTransfers));
+        }
+
+        fileInput.value = '';
+
+        // Re-render UI and dropdowns
+        if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+        if (typeof window.renderAccountsView === 'function') window.renderAccountsView();
+        if (typeof window.renderDashboardAccountsAnalysis === 'function') window.renderDashboardAccountsAnalysis();
+        if (typeof window.renderAllViews === 'function') window.renderAllViews();
+
+        if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+          window.ForecasterCloudSync.notifyDataChanged();
+        }
+
+        const restoredCount = newAccounts ? newAccounts.length : 0;
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast(`Successfully uploaded payment accounts backup! (${restoredCount} accounts restored)`, 'success');
+        }
+      } catch (err) {
+        console.error('[Payment Accounts Backup Upload Error]', err);
+        fileInput.value = '';
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Failed to upload backup: ' + err.message, 'error');
+        }
       }
     };
 
@@ -2146,7 +2383,8 @@
       description,
       category,
       type,
-      amount
+      amount,
+      accountId: document.getElementById('input-account')?.value || ''
     };
 
     window.transactions.push(entry);

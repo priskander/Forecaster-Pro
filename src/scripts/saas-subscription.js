@@ -15,7 +15,7 @@
       priceMonthly: 0,
       priceAnnual: 0,
       badge: 'Free Tier',
-      badgeClass: 'bg-slate-100 text-slate-700 border-slate-200'
+      badgeClass: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
     },
     pro: {
       id: 'pro',
@@ -51,6 +51,23 @@
       }
     },
 
+    returnToFreeTier: function() {
+      const currentTier = this.getTier();
+      if (currentTier === 'free') {
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('You are already on the Free Tier.', 'info');
+        }
+        return;
+      }
+      localStorage.setItem(SUBSCRIPTION_STORAGE_KEY, 'free');
+      this.updateBadge();
+      this.renderPlans();
+      if (typeof window.triggerToast === 'function') {
+        window.triggerToast('Returned to Free Tier (Starter Sandbox). All local records preserved.', 'info');
+      }
+      this.closeModal();
+    },
+
     openModal: function() {
       const modal = document.getElementById('saas-subscription-modal');
       if (modal) {
@@ -76,28 +93,70 @@
       if (proPriceEl) proPriceEl.textContent = proPrice;
       if (entPriceEl) entPriceEl.textContent = entPrice;
 
+      // Update active plan banner
+      const bannerEl = document.getElementById('sub-current-plan-banner');
+      if (bannerEl) {
+        const curInfo = TIERS[currentTier] || TIERS.free;
+        if (currentTier === 'free') {
+          bannerEl.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="text-slate-500 dark:text-slate-400 font-semibold">Active Plan:</span>
+              <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">${curInfo.name} (${curInfo.badge})</span>
+            </div>
+            <span class="text-slate-400 dark:text-slate-500 text-[11px] font-medium">Free forever &bull; No card required &bull; Full local storage</span>
+          `;
+        } else {
+          bannerEl.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="text-slate-500 dark:text-slate-400 font-semibold">Active Plan:</span>
+              <span class="px-2.5 py-1 rounded-lg text-xs font-bold ${curInfo.badgeClass}">${curInfo.name} (${curInfo.badge})</span>
+            </div>
+            <button type="button" onclick="window.ForecasterSubscription.returnToFreeTier()" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition flex items-center gap-1.5 shadow-sm">
+              <span>↩️</span> Return to Free Tier
+            </button>
+          `;
+        }
+      }
+
       // Update button labels
+      const freeBtn = document.getElementById('sub-btn-free');
       const proBtn = document.getElementById('sub-btn-pro');
       const entBtn = document.getElementById('sub-btn-ent');
 
+      if (freeBtn) {
+        const isFree = currentTier === 'free';
+        freeBtn.textContent = isFree ? 'Current Plan' : 'Return to Free Tier';
+        freeBtn.disabled = isFree;
+        freeBtn.className = isFree
+          ? 'w-full py-2.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-default'
+          : 'w-full py-2.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-500/20 transition cursor-pointer';
+      }
+
       if (proBtn) {
-        proBtn.textContent = currentTier === 'pro' ? 'Current Plan' : 'Select Pro Plan';
-        proBtn.disabled = currentTier === 'pro';
-        proBtn.className = currentTier === 'pro'
-          ? 'w-full py-2.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-500 cursor-default'
-          : 'w-full py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 transition';
+        const isPro = currentTier === 'pro';
+        proBtn.textContent = isPro ? 'Current Plan' : 'Select Pro Plan';
+        proBtn.disabled = isPro;
+        proBtn.className = isPro
+          ? 'w-full py-2.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-default'
+          : 'w-full py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 transition cursor-pointer';
       }
 
       if (entBtn) {
-        entBtn.textContent = currentTier === 'enterprise' ? 'Current Plan' : 'Select Enterprise Plan';
-        entBtn.disabled = currentTier === 'enterprise';
-        entBtn.className = currentTier === 'enterprise'
-          ? 'w-full py-2.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-500 cursor-default'
-          : 'w-full py-2.5 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-500/20 transition';
+        const isEnt = currentTier === 'enterprise';
+        entBtn.textContent = isEnt ? 'Current Plan' : 'Select Enterprise Plan';
+        entBtn.disabled = isEnt;
+        entBtn.className = isEnt
+          ? 'w-full py-2.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-default'
+          : 'w-full py-2.5 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-500/20 transition cursor-pointer';
       }
     },
 
     checkout: function(planId, billingCycle = 'monthly') {
+      if (planId === 'free') {
+        this.returnToFreeTier();
+        return;
+      }
+
       // 1. Check if running inside App Store or Google Play WebView
       if (window.ForecasterNativeBridge && window.ForecasterNativeBridge.isWebView()) {
         window.ForecasterNativeBridge.postMessage('initiateInAppPurchase', {
@@ -131,9 +190,28 @@
 
       const headerBadges = document.querySelectorAll('.saas-subscription-badge');
       headerBadges.forEach(b => {
-        b.className = `saas-subscription-badge px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer transition ${tier.badgeClass}`;
+        b.className = `saas-subscription-badge inline-flex items-center px-2.5 py-1 rounded-xl text-[11px] font-bold border cursor-pointer transition ${tier.badgeClass}`;
         b.textContent = tier.badge;
       });
+
+      // Quick-action return buttons in dropdown and mobile drawer
+      const menuReturnBtn = document.getElementById('menu-return-free-btn');
+      if (menuReturnBtn) {
+        if (tierId !== 'free') {
+          menuReturnBtn.classList.remove('hidden');
+        } else {
+          menuReturnBtn.classList.add('hidden');
+        }
+      }
+
+      const drawerReturnBtn = document.getElementById('drawer-return-free-btn');
+      if (drawerReturnBtn) {
+        if (tierId !== 'free') {
+          drawerReturnBtn.classList.remove('hidden');
+        } else {
+          drawerReturnBtn.classList.add('hidden');
+        }
+      }
     }
   };
 

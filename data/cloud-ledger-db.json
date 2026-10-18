@@ -1,0 +1,104 @@
+{
+  "version": "1.0.0",
+  "vaults": {
+    "shared-main-vault": {
+      "vaultId": "shared-main-vault",
+      "updatedAt": "2026-10-18T17:02:45.802Z",
+      "transactions": [
+        {
+          "id": "tx_init_1",
+          "date": "2026-07-01",
+          "description": "Direct Deposit Monthly Salary",
+          "category": "Salary",
+          "type": "income",
+          "amount": 3100
+        },
+        {
+          "id": "tx_init_2",
+          "date": "2026-07-02",
+          "description": "Apartment Premium Rental Rent",
+          "category": "Rent",
+          "type": "expense",
+          "amount": 800
+        },
+        {
+          "id": "tx_init_3",
+          "date": "2026-07-04",
+          "description": "UI/UX Freelance App Project",
+          "category": "Freelance",
+          "type": "income",
+          "amount": 400
+        },
+        {
+          "id": "tx_init_4",
+          "date": "2026-07-05",
+          "description": "Monthly Power Utility Bills",
+          "category": "Utilities",
+          "type": "expense",
+          "amount": 150
+        }
+      ],
+      "accounts": [
+        {
+          "id": "acc_cash_main",
+          "type": "cash",
+          "label": "💵 Cash Wallet",
+          "initialBalance": 1500,
+          "createdAt": "2026-07-01T00:00:00.000Z"
+        },
+        {
+          "id": "acc_bank_cib",
+          "type": "card",
+          "label": "💳 CIB Debit Card",
+          "network": "Visa",
+          "mode": "Debit",
+          "bank": "Commercial International Bank (CIB)",
+          "initialBalance": 12000,
+          "createdAt": "2026-07-01T00:00:00.000Z"
+        },
+        {
+          "id": "acc_wallet_vodafone",
+          "type": "wallet",
+          "label": "📱 Vodafone Cash",
+          "kind": "Telecom",
+          "provider": "Vodafone Cash",
+          "initialBalance": 2500,
+          "createdAt": "2026-07-01T00:00:00.000Z"
+        }
+      ],
+      "accountTransfers": [],
+      "budgetLimits": {
+        "income": 3500,
+        "expense": 2000
+      },
+      "stockData": [],
+      "pharmacyData": []
+    }
+  },
+  "users": {
+    "usr_peter_badir": {
+      "id": "usr_peter_badir",
+      "name": "Peter W. Badir",
+      "email": "peter.w.badir@gmail.com",
+      "passwordHash": "e5ebde08cf42fffc93da31f709ea5d72934b204bd388ae8487662b35025ae819e0493762a27b29dc4ba58d10e9c01f34cc9d0e1f472cb4348615297434a30c40",
+      "salt": "f931a8924f18227d949cbb3eafa27e02",
+      "tier": "Pro Household",
+      "createdAt": "2026-10-18T17:03:16.856Z",
+      "lastLogin": "2026-10-18T17:03:19.482Z"
+    },
+    "usr_1792343003698": {
+      "id": "usr_1792343003698",
+      "name": "Sarah Connor",
+      "email": "sarah.connor@example.com",
+      "passwordHash": "1c5e085a8f1995504ebf2d93ebdfb5907415cad0a3d54ab191bd0b45cd4d2e04a2dc70b089c1ff5c9255d35c10ae05393c89fefc78b3109f77c54bd4dc05131c",
+      "salt": "8fab7f0f688123e0b746bb7e36518221",
+      "tier": "Free Tier",
+      "createdAt": "2026-10-18T17:03:23.698Z",
+      "lastLogin": "2026-10-18T17:03:23.698Z"
+    }
+  },
+  "tokens": {
+    "tok_a454ead800e8824f72858e988f3d4f9ac7fb6d1667bc15dc": "usr_peter_badir",
+    "tok_6595e63c396f52950e76854179be8a71b51f8aabd71a8a7f": "usr_1792343003698"
+  }
+}
