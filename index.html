@@ -116,6 +116,41 @@
       }, 20);
     };
 
+    // Mobile "More" Drawer Controller
+    window.toggleMobileDrawer = function(forceOpen) {
+      const drawer = document.getElementById('mobile-more-drawer');
+      if (!drawer) return;
+      const isCurrentlyOpen = !drawer.classList.contains('hidden');
+      const shouldOpen = (typeof forceOpen === 'boolean') ? forceOpen : !isCurrentlyOpen;
+      if (shouldOpen) {
+        drawer.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
+        try {
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        } catch (e) {}
+      } else {
+        drawer.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+      }
+    };
+
+    // Dark/Light Mode Theme Icon Sync Engine
+    window.syncThemeIcons = function() {
+      const isDark = document.documentElement.classList.contains('dark');
+      document.querySelectorAll('.moon-icon').forEach(function(el) {
+        el.classList.toggle('hidden', isDark);
+      });
+      document.querySelectorAll('.sun-icon').forEach(function(el) {
+        el.classList.toggle('hidden', !isDark);
+      });
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+      if (typeof window.syncThemeIcons === 'function') {
+        window.syncThemeIcons();
+      }
+    });
+
     // Capture-phase event delegator for bulletproof link clicking
     document.addEventListener('click', function(e) {
       const trigger = e.target.closest('[onclick*="switchView"]');
@@ -270,6 +305,20 @@
     Offline Mode Active — Working locally with cached database. Changes will sync when reconnected.
   </div>
 
+  <!-- =================== GLOBAL BROADCAST ANNOUNCEMENT BANNER =================== -->
+  <div id="system-broadcast-banner" class="hidden w-full px-4 py-2 bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700 text-white text-xs font-bold shadow-md z-40 relative">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2 min-w-0">
+        <span id="system-broadcast-icon" class="text-base shrink-0">📢</span>
+        <span id="system-broadcast-message" class="truncate font-semibold"></span>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <a id="system-broadcast-link" href="#" target="_blank" class="hidden underline text-xs font-bold hover:text-white/80">View Release &rarr;</a>
+        <button type="button" onclick="document.getElementById('system-broadcast-banner').classList.add('hidden')" class="w-5 h-5 rounded-md hover:bg-white/20 text-white flex items-center justify-center text-xs leading-none cursor-pointer" aria-label="Dismiss">&times;</button>
+      </div>
+    </div>
+  </div>
+
   <!-- APPLICATION HEADER -->
   <header class="bg-white dark:bg-slate-900 px-4 md:px-8 py-3.5 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 backdrop-blur-md bg-white/95 dark:bg-slate-900/95">
     <div class="flex items-center gap-3">
@@ -289,8 +338,14 @@
       </div>
     </div>
 
-    <!-- Header Actions (Top Right: Notification Icon + Profile Dropdown) -->
+    <!-- Header Actions (Top Right: Theme Toggle + Notification Bell + Profile Dropdown) -->
     <div class="flex items-center gap-2">
+      <!-- Theme Toggle (Sun & Moon Icon) -->
+      <button aria-label="Toggle dark mode" class="relative p-2 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-xs flex items-center justify-center cursor-pointer" id="header-theme-toggle-btn" onclick="toggleDarkMode()" title="Toggle Dark / Light Mode" type="button">
+        <span class="moon-icon text-base leading-none">🌙</span>
+        <span class="sun-icon text-base leading-none hidden">☀️</span>
+      </button>
+
       <!-- Notification Center Icon -->
       <div class="relative" id="notification-center">
         <button aria-expanded="false" aria-label="Open notifications" class="relative p-2 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-xs" id="notification-bell-btn" onclick="toggleNotificationCenter(event)" title="Notifications" type="button">
@@ -310,6 +365,13 @@
           </div>
         </div>
       </div>
+
+      <!-- Main Admin Control Panel Header Trigger (Exclusively for Peter W. Badir) -->
+      <button type="button" id="header-main-admin-btn" class="hidden px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700 hover:from-purple-800 hover:to-blue-800 text-white font-black text-xs shadow-md shadow-purple-500/25 items-center gap-1.5 transition cursor-pointer border border-purple-400/40" onclick="window.ForecasterAuth.openMainAdminPanel()" title="Master App Admin Control Panel (Peter W. Badir)">
+        <span>🛡️</span>
+        <span class="hidden sm:inline">Admin Panel</span>
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+      </button>
 
       <!-- Logged-In Profile Avatar & Unified Dropdown Menu (Accessible on Phone, Tablet, Laptop, Desktop) -->
       <div class="relative" id="header-profile-menu-wrap">
@@ -1604,41 +1666,77 @@
   </nav>
 
   <!-- =================== MOBILE "MORE" DRAWER =================== -->
-  <div id="mobile-more-drawer" class="hidden md:hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col justify-end">
+  <div id="mobile-more-drawer" class="hidden md:hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col justify-end" onclick="if (event.target === this) window.toggleMobileDrawer(false)">
     <div class="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
         <h3 class="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
           <span>⚡</span> Quick Navigation &amp; Tools
         </h3>
-        <button class="text-slate-404 hover:text-slate-600 text-2xl leading-none" onclick="window.toggleMobileDrawer(false)">&times;</button>
+        <button type="button" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none cursor-pointer" onclick="window.toggleMobileDrawer(false)">&times;</button>
       </div>
 
-      <div class="grid grid-cols-2 gap-3 text-sm font-bold">
-        <button class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700" onclick="switchView('rentals'); window.toggleMobileDrawer(false)">
-          <span>🏠</span> Rentals
+      <!-- Quick Theme & Cloud Sync Bar -->
+      <div class="grid grid-cols-2 gap-2 pb-2">
+        <button type="button" class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl text-left flex items-center justify-between border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer" onclick="toggleDarkMode()">
+          <span class="flex items-center gap-2">
+            <span class="moon-icon">🌙</span><span class="sun-icon hidden">☀️</span>
+            <span>Theme Mode</span>
+          </span>
+          <span class="text-[10px] text-slate-404 font-normal">Switch</span>
         </button>
-        <button class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700" onclick="switchView('accounts'); window.toggleMobileDrawer(false)">
-          <span>💳</span> Accounts
-        </button>
-        <button class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700" onclick="switchView('insights'); window.toggleMobileDrawer(false)">
-          <span>👁️</span> Insights
-        </button>
-        <button class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700" onclick="switchView('reports'); window.toggleMobileDrawer(false)">
-          <span>📄</span> Reports
+        <button type="button" class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl text-left flex items-center justify-between border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer" onclick="window.ForecasterCloudSync.syncNow(true); window.toggleMobileDrawer(false)">
+          <span class="flex items-center gap-1.5">
+            <span>☁️</span>
+            <span>Cloud Sync</span>
+          </span>
+          <span class="text-[10px] text-emerald-600 font-bold">Sync</span>
         </button>
       </div>
 
+      <!-- Main Modules Navigation Grid -->
+      <div class="grid grid-cols-2 gap-2.5 text-xs font-bold">
+        <button type="button" class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer" onclick="switchView('dashboard'); window.toggleMobileDrawer(false)">
+          <span>📊</span> Dashboard
+        </button>
+        <button type="button" class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer" onclick="switchView('transactions'); window.toggleMobileDrawer(false)">
+          <span>🧾</span> Ledger
+        </button>
+        <button type="button" class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer" onclick="switchView('stock'); setStockPharmacyModule('inventory'); window.toggleMobileDrawer(false)">
+          <span>📦</span> Stock &amp; Inventory
+        </button>
+        <button type="button" class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer" onclick="switchView('vehicles'); window.toggleMobileDrawer(false)">
+          <span>🚗</span> Vehicles Fleet
+        </button>
+        <button type="button" class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer" onclick="switchView('rentals'); window.toggleMobileDrawer(false)">
+          <span>🏠</span> Rentals &amp; Units
+        </button>
+        <button type="button" class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer" onclick="switchView('accounts'); window.toggleMobileDrawer(false)">
+          <span>💳</span> Payment Accounts
+        </button>
+        <button type="button" class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer" onclick="switchView('insights'); window.toggleMobileDrawer(false)">
+          <span>👁️</span> Insights &amp; Alerts
+        </button>
+        <button type="button" class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer" onclick="switchView('reports'); window.toggleMobileDrawer(false)">
+          <span>📄</span> Reports &amp; Backups
+        </button>
+      </div>
+
+      <!-- Quick Modals & Tool Buttons -->
       <div class="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-        <button id="drawer-pwa-install-btn" class="w-full p-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2" onclick="window.triggerPWAInstall(); window.toggleMobileDrawer(false)">
+        <button type="button" class="w-full p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-between cursor-pointer" onclick="window.backupPaymentAccounts(); window.toggleMobileDrawer(false)">
+          <span class="flex items-center gap-2"><span>💳</span> Download Accounts Backup</span>
+          <span class="text-[10px] text-blue-600 font-bold">JSON</span>
+        </button>
+        <button type="button" id="drawer-pwa-install-btn" class="w-full p-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer" onclick="window.triggerPWAInstall(); window.toggleMobileDrawer(false)">
           <i class="fa-solid fa-download"></i> Install Forecaster Pro PWA
         </button>
-        <button class="w-full p-3 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2" onclick="window.ForecasterGitHubSync.openModal(); window.toggleMobileDrawer(false)">
+        <button type="button" class="w-full p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer" onclick="window.ForecasterGitHubSync.openModal(); window.toggleMobileDrawer(false)">
           <i class="fa-brands fa-github"></i> GitHub Cloud Sync &amp; Backup
         </button>
-        <button class="w-full p-3 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2" onclick="window.ForecasterSubscription.openModal(); window.toggleMobileDrawer(false)">
+        <button type="button" class="w-full p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer" onclick="window.ForecasterSubscription.openModal(); window.toggleMobileDrawer(false)">
           <span>💎</span> SaaS Subscription Plans
         </button>
-        <button id="drawer-return-free-btn" class="hidden w-full p-3 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold flex items-center justify-center gap-2" onclick="window.ForecasterSubscription.returnToFreeTier(); window.toggleMobileDrawer(false)">
+        <button type="button" id="drawer-return-free-btn" class="hidden w-full p-2.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer" onclick="window.ForecasterSubscription.returnToFreeTier(); window.toggleMobileDrawer(false)">
           <span>↩️</span> Return to Free Tier
         </button>
       </div>
@@ -1934,8 +2032,8 @@
           <div class="flex-grow border-t border-slate-100 dark:border-slate-700"></div>
         </div>
 
-        <button type="button" class="w-full py-2.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer" onclick="window.ForecasterAuth.quickDemoLogin()">
-          <span>⚡</span> Quick Demo Login (Peter W. Badir)
+        <button type="button" class="w-full py-2.5 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 dark:from-purple-950/40 dark:to-indigo-950/40 text-purple-900 dark:text-purple-200 border border-purple-200 dark:border-purple-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs" onclick="window.ForecasterAuth.quickDemoLogin()">
+          <span>🛡️</span> Sign In as Master Main Admin (Peter W. Badir)
         </button>
       </form>
 
@@ -1963,7 +2061,728 @@
         <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-md shadow-blue-500/20 flex items-center justify-center gap-1.5 cursor-pointer">
           <span>✨</span> Create Account &amp; Access Ledger
         </button>
+
+        <!-- Sub-User Creation Hint for Primary Owner -->
+        <div id="auth-register-subuser-hint" class="hidden p-3.5 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200 dark:border-blue-800 text-xs text-blue-900 dark:text-blue-200 space-y-2 mt-3">
+          <div class="flex items-center justify-between">
+            <span class="font-bold flex items-center gap-1.5"><span>👥</span> Workspace Sub-Users</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800">Primary Admin</span>
+          </div>
+          <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+            Logged in as the primary account owner? You can provision team members with Manager, Member, or Viewer privileges directly.
+          </p>
+          <button type="button" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer" onclick="window.ForecasterAuth.closeAuthModal(); window.ForecasterAuth.openSubUsersModal('create');">
+            <span>➕</span> Open Sub-Users Creation Pop-Up
+          </button>
+        </div>
       </form>
+    </div>
+  </div>
+
+  <!-- =================== SUB-USERS MANAGEMENT POP-UP MODAL (PRIMARY USER ONLY) =================== -->
+  <div id="sub-users-modal" class="hidden fixed inset-0 z-[100] overflow-y-auto bg-slate-950/80 backdrop-blur-md p-3 sm:p-6 flex items-center justify-center transition-all duration-200" style="position: fixed; inset: 0; z-index: 100; overflow-y: auto; display: none;" onclick="if (event.target === this) window.ForecasterAuth.closeSubUsersModal()" role="dialog" aria-modal="true" aria-labelledby="sub-users-modal-title">
+    <div class="relative w-full max-w-2xl bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col my-auto max-h-[92vh] sm:max-h-[88vh] min-h-0 overflow-hidden animate-in fade-in zoom-in-95 duration-150" style="margin: auto;" onclick="event.stopPropagation()">
+      
+      <!-- Modal Fixed Header -->
+      <div class="p-4 sm:p-6 pb-3 border-b border-slate-100 dark:border-slate-700/80 shrink-0 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm z-10">
+        <div class="flex items-start justify-between gap-3 sm:gap-4">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-lg font-black shadow-md shadow-blue-500/25 shrink-0">
+              👥
+            </div>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h3 id="sub-users-modal-title" class="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white truncate">Workspace Team &amp; Sub-Users</h3>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
+                  👑 Primary Admin
+                </span>
+              </div>
+              <p class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Provision team members with Manager, Member, or Viewer roles and automated email credentials.
+              </p>
+            </div>
+          </div>
+          <button type="button" aria-label="Close modal" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700/80 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-white text-xl leading-none flex items-center justify-center cursor-pointer shrink-0 transition" onclick="window.ForecasterAuth.closeSubUsersModal()">&times;</button>
+        </div>
+
+        <!-- Responsive Segmented Tabs Navigation -->
+        <div class="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 dark:bg-slate-900/60 rounded-2xl mt-3 sm:mt-4 border border-slate-200/60 dark:border-slate-700/50">
+          <button type="button" id="sub-users-tab-btn-create" class="px-2 sm:px-4 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white shadow-xs flex items-center justify-center gap-1 sm:gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchSubUsersTab('create')">
+            <span>➕</span> <span class="hidden sm:inline">Create</span> Sub-User
+          </button>
+          <button type="button" id="sub-users-tab-btn-list" class="px-2 sm:px-4 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1 sm:gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchSubUsersTab('list')">
+            <span>👥</span> Team (<span id="sub-users-count-badge">0</span>)
+          </button>
+          <button type="button" id="sub-users-tab-btn-emails" class="px-2 sm:px-4 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1 sm:gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchSubUsersTab('emails')">
+            <span>📬</span> <span class="hidden sm:inline">Dispatched</span> Emails
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Scrollable Body -->
+      <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 sm:p-6 space-y-4">
+        
+        <!-- PANE 1: CREATE SUB-USER FORM -->
+        <div id="sub-users-tab-pane-create" class="space-y-4">
+          <!-- Error Banner -->
+          <div id="sub-user-error-banner" class="hidden p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-semibold"></div>
+
+          <!-- Form Card -->
+          <form id="create-sub-user-form" class="space-y-4" onsubmit="window.ForecasterAuth.handleCreateSubUserSubmit(event)">
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">Full Name</label>
+                <input type="text" id="sub-user-name" required class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="e.g. Alex Morgan"/>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">Email Address</label>
+                <input type="email" id="sub-user-email" required class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="alex.morgan@company.com"/>
+              </div>
+            </div>
+
+            <!-- Dynamic Role Selector -->
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-200">Select User Role</label>
+                <span class="text-[11px] text-slate-400 font-medium">Click card to select privileges</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <!-- Manager Card -->
+                <div id="role-card-manager" class="relative flex flex-col p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 transition-all cursor-pointer" onclick="window.ForecasterAuth.selectSubUserRole('manager')">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>👔</span> Manager
+                    </span>
+                    <span id="role-check-manager" class="hidden text-blue-600 font-bold text-xs">✓</span>
+                    <input type="radio" id="role-radio-manager" name="sub-user-role-input" value="manager" class="hidden"/>
+                  </div>
+                  <span class="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">Operations, financials, stock &amp; cloud sync.</span>
+                </div>
+
+                <!-- Member Card -->
+                <div id="role-card-member" class="relative flex flex-col p-3 rounded-2xl border-2 border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 shadow-xs transition-all cursor-pointer ring-2 ring-blue-500/20" onclick="window.ForecasterAuth.selectSubUserRole('member')">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>👤</span> Member
+                    </span>
+                    <span id="role-check-member" class="text-blue-600 font-bold text-xs">✓</span>
+                    <input type="radio" id="role-radio-member" name="sub-user-role-input" value="member" checked class="hidden"/>
+                  </div>
+                  <span class="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">Daily operational entry (ledger, vehicles, stock).</span>
+                </div>
+
+                <!-- Viewer Card -->
+                <div id="role-card-viewer" class="relative flex flex-col p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 transition-all cursor-pointer" onclick="window.ForecasterAuth.selectSubUserRole('viewer')">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>👁️</span> Viewer
+                    </span>
+                    <span id="role-check-viewer" class="hidden text-blue-600 font-bold text-xs">✓</span>
+                    <input type="radio" id="role-radio-viewer" name="sub-user-role-input" value="viewer" class="hidden"/>
+                  </div>
+                  <span class="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">Read-only oversight for reports &amp; analytics.</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Dynamic Role Privileges Matrix -->
+            <div id="role-privileges-matrix"></div>
+
+            <!-- Automated Email Notice -->
+            <div class="p-3.5 bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 rounded-2xl flex items-start gap-3 text-xs text-blue-900 dark:text-blue-200">
+              <span class="text-lg shrink-0">📨</span>
+              <div class="text-[11.5px] leading-relaxed">
+                <strong>Automatic Email Dispatch:</strong> When submitted, the server generates a secure <strong>temporary password</strong> and emails it to the sub-user with sign-in instructions. The sub-user will be required to create their permanent password on their first login.
+              </div>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" id="sub-user-submit-btn" class="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl text-xs font-bold transition shadow-md shadow-blue-500/25 flex items-center justify-center gap-2 cursor-pointer">
+              <span>✨</span> Create Sub-User &amp; Send Automated Email
+            </button>
+          </form>
+
+          <!-- Email Notification Dispatch Preview Card -->
+          <div id="sub-user-email-preview-card" class="hidden"></div>
+        </div>
+
+        <!-- PANE 2: SUB-USERS LIST -->
+        <div id="sub-users-tab-pane-list" class="hidden space-y-3">
+          <div class="flex items-center justify-between pb-1">
+            <p class="text-xs text-slate-500 dark:text-slate-400">All team members provisioned under your primary account.</p>
+            <button type="button" class="text-xs font-bold text-blue-600 hover:underline cursor-pointer flex items-center gap-1" onclick="window.ForecasterAuth.loadSubUsers()">
+              <span>🔄</span> Refresh
+            </button>
+          </div>
+          <div id="sub-users-list"></div>
+        </div>
+
+        <!-- PANE 3: DISPATCHED EMAILS OUTBOX -->
+        <div id="sub-users-tab-pane-emails" class="hidden space-y-3">
+          <div class="flex items-center justify-between pb-1">
+            <p class="text-xs text-slate-500 dark:text-slate-400">Audit log of automated welcome emails dispatched by Forecaster Pro.</p>
+            <button type="button" class="text-xs font-bold text-blue-600 hover:underline cursor-pointer flex items-center gap-1" onclick="window.ForecasterAuth.loadDispatchedEmails()">
+              <span>🔄</span> Refresh Outbox
+            </button>
+          </div>
+          <div id="dispatched-emails-list"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== MANDATORY FIRST-LOGIN PASSWORD CHANGE POP-UP MODAL =================== -->
+  <div id="first-login-change-password-modal" class="hidden fixed inset-0 z-[100] overflow-y-auto bg-slate-950/80 backdrop-blur-md p-4 flex items-center justify-center transition-all duration-200" style="position: fixed; inset: 0; z-index: 100; overflow-y: auto; display: none;" role="dialog" aria-modal="true">
+    <div class="relative w-full max-w-md rounded-3xl bg-white dark:bg-slate-800 p-6 sm:p-7 shadow-2xl border-2 border-amber-400 dark:border-amber-600 space-y-4 animate-in fade-in zoom-in-95 duration-200 my-auto" style="margin: auto;" onclick="event.stopPropagation()">
+      
+      <div class="flex items-start gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-lg font-black shrink-0 shadow-md shadow-amber-500/25">
+          🔐
+        </div>
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Mandatory Password Change</h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Welcome to Forecaster Pro! You logged in with a temporary password sent via email. For your security, please create your permanent password.
+          </p>
+        </div>
+      </div>
+
+      <div id="change-pass-error-banner" class="hidden p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-semibold"></div>
+
+      <form class="space-y-3.5" onsubmit="window.ForecasterAuth.handleChangePasswordSubmit(event)">
+        <div>
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Temporary Password (from Email)</label>
+          <div class="relative">
+            <input type="password" id="change-pass-current" required class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 pr-10 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter temporary password"/>
+            <button type="button" class="absolute right-3 top-3 text-slate-400 hover:text-slate-600 text-sm" onclick="window.ForecasterAuth.togglePasswordVisibility('change-pass-current', this)">👁️</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">New Permanent Password (min 6 characters)</label>
+          <div class="relative">
+            <input type="password" id="change-pass-new" required minlength="6" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 pr-10 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Choose a secure permanent password"/>
+            <button type="button" class="absolute right-3 top-3 text-slate-400 hover:text-slate-600 text-sm" onclick="window.ForecasterAuth.togglePasswordVisibility('change-pass-new', this)">👁️</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Confirm Permanent Password</label>
+          <input type="password" id="change-pass-confirm" required minlength="6" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Repeat your new password"/>
+        </div>
+
+        <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-md shadow-blue-500/25 flex items-center justify-center gap-1.5 cursor-pointer">
+          <span>🛡️</span> Set Permanent Password &amp; Continue
+        </button>
+
+        <div class="text-center pt-1">
+          <button type="button" class="text-xs text-rose-500 hover:underline cursor-pointer" onclick="window.ForecasterAuth.logout()">
+            Sign out instead
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =================== MASTER MAIN ADMIN SUITE & CONTROL PANEL (PETER W. BADIR) =================== -->
+  <div id="main-admin-panel-modal" class="hidden fixed inset-0 z-[120] overflow-y-auto bg-slate-950/85 backdrop-blur-md p-2 sm:p-4 md:p-6 flex items-center justify-center transition-all duration-200" style="position: fixed; inset: 0; z-index: 120; overflow-y: auto; display: none;" onclick="if (event.target === this) window.ForecasterAuth.closeMainAdminPanel()" role="dialog" aria-modal="true" aria-labelledby="main-admin-panel-title">
+    <div class="relative w-full max-w-5xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-purple-200/80 dark:border-purple-900/60 flex flex-col my-auto max-h-[94vh] sm:max-h-[90vh] min-h-0 overflow-hidden animate-in fade-in zoom-in-95 duration-150" style="margin: auto;" onclick="event.stopPropagation()">
+      
+      <!-- Modal Fixed Header -->
+      <div class="p-4 sm:p-6 pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10">
+        <div class="flex items-start justify-between gap-3 sm:gap-4">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-700 via-indigo-600 to-blue-600 text-white flex items-center justify-center text-xl font-black shadow-lg shadow-purple-500/30 shrink-0">
+              🛡️
+            </div>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h3 id="main-admin-panel-title" class="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white truncate">
+                  Master Admin Suite &amp; Control Center
+                </h3>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 shrink-0">
+                  👑 Peter W. Badir (Main Admin)
+                </span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0 flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Full Authority
+                </span>
+              </div>
+              <p class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Central command for Website, Desktop (PWA/Electron) &amp; Mobile (iOS/Android) deployments, releases, feature flags, and multi-tenant user databases.
+              </p>
+            </div>
+          </div>
+          <button type="button" aria-label="Close modal" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-white text-xl leading-none flex items-center justify-center cursor-pointer shrink-0 transition" onclick="window.ForecasterAuth.closeMainAdminPanel()">&times;</button>
+        </div>
+
+        <!-- Responsive Segmented Admin Tabs Navigation -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl mt-3 sm:mt-4 border border-slate-200/80 dark:border-slate-700/60">
+          <button type="button" id="admin-tab-btn-overview" class="px-2.5 sm:px-3 py-2 text-xs font-bold rounded-xl bg-purple-600 text-white shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('overview')">
+            <span>📊</span> Overview
+          </button>
+          <button type="button" id="admin-tab-btn-releases" class="px-2.5 sm:px-3 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('releases')">
+            <span>🚀</span> Releases
+          </button>
+          <button type="button" id="admin-tab-btn-features" class="px-2.5 sm:px-3 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('features')">
+            <span>⚙️</span> Feature Flags
+          </button>
+          <button type="button" id="admin-tab-btn-users" class="px-2.5 sm:px-3 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('users')">
+            <span>👥</span> Users &amp; Vaults (<span id="admin-users-badge-count">0</span>)
+          </button>
+          <button type="button" id="admin-tab-btn-audit" class="col-span-2 sm:col-span-1 px-2.5 sm:px-3 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('audit')">
+            <span>📜</span> Audit Logs
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Scrollable Content Panes -->
+      <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 sm:p-6 space-y-5">
+        
+        <!-- PANE 1: OVERVIEW & TELEMETRY -->
+        <div id="admin-tab-pane-overview" class="space-y-5">
+          <!-- 8 KPI Metrics Grid -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Registered Accounts</div>
+              <div class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-0.5" id="admin-kpi-users">--</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">Primary owners &amp; sub-users</div>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Database Vaults</div>
+              <div class="text-xl sm:text-2xl font-black text-purple-600 dark:text-purple-400 mt-0.5" id="admin-kpi-vaults">--</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">Isolated multi-tenant partitions</div>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cross-Device Transactions</div>
+              <div class="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 mt-0.5" id="admin-kpi-txns">--</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">Persistent across all vaults</div>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Server Uptime</div>
+              <div class="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5" id="admin-kpi-uptime">--</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">Continuous runtime health</div>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Database On-Disk Size</div>
+              <div class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-0.5" id="admin-kpi-dbsize">--</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">cloud-ledger-db.json</div>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Tokens / Sessions</div>
+              <div class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-0.5" id="admin-kpi-tokens">--</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">Live authenticated users</div>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Outbox Email Invites</div>
+              <div class="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 mt-0.5" id="admin-kpi-outbox">--</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">Credentials dispatched</div>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Server Memory (RSS)</div>
+              <div class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-0.5" id="admin-kpi-memory">--</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">Node.js process footprint</div>
+            </div>
+          </div>
+
+          <!-- Platform Deployment Live Status Cards -->
+          <div>
+            <div class="flex items-center justify-between mb-2.5">
+              <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Target Platform Deployments Status (Website • Desktop • Mobile)
+              </h4>
+              <button type="button" class="text-xs font-bold text-purple-600 hover:text-purple-700 dark:text-purple-400 flex items-center gap-1 cursor-pointer" onclick="window.ForecasterAuth.loadAdminDashboard()">
+                <span>🔄</span> Refresh Telemetry
+              </button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <!-- Web Platform Card -->
+              <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xl">🌐</span>
+                      <span class="font-extrabold text-sm text-slate-900 dark:text-white">Website &amp; PWA</span>
+                    </div>
+                    <span id="admin-platform-web-channel" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">Production</span>
+                  </div>
+                  <div class="mt-2.5 space-y-1 text-xs">
+                    <div class="flex justify-between"><span class="text-slate-400">Current Version:</span> <span id="admin-platform-web-ver" class="font-bold text-slate-900 dark:text-white">v2.5.0</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Min Supported:</span> <span id="admin-platform-web-min" class="font-semibold text-slate-600 dark:text-slate-300">v2.0.0</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Deployment Status:</span> <span class="font-bold text-emerald-600">✓ Active &amp; Synced</span></div>
+                  </div>
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                  <span class="text-[10px] text-slate-400" id="admin-platform-web-time">Updated today</span>
+                  <button type="button" class="px-2 py-1 text-[11px] font-bold bg-purple-100 hover:bg-purple-200 dark:bg-purple-950 dark:hover:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-lg transition cursor-pointer" onclick="window.ForecasterAuth.prepareReleaseModal('web')">Deploy vUpdate</button>
+                </div>
+              </div>
+
+              <!-- Desktop App Card -->
+              <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xl">💻</span>
+                      <span class="font-extrabold text-sm text-slate-900 dark:text-white">Desktop App (PWA &amp; Electron)</span>
+                    </div>
+                    <span id="admin-platform-desktop-channel" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">Production</span>
+                  </div>
+                  <div class="mt-2.5 space-y-1 text-xs">
+                    <div class="flex justify-between"><span class="text-slate-400">Current Version:</span> <span id="admin-platform-desktop-ver" class="font-bold text-slate-900 dark:text-white">v2.5.0</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Min Supported:</span> <span id="admin-platform-desktop-min" class="font-semibold text-slate-600 dark:text-slate-300">v2.0.0</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Offline SQLite Cache:</span> <span class="font-bold text-emerald-600">✓ Enabled</span></div>
+                  </div>
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                  <span class="text-[10px] text-slate-400" id="admin-platform-desktop-time">Updated today</span>
+                  <button type="button" class="px-2 py-1 text-[11px] font-bold bg-purple-100 hover:bg-purple-200 dark:bg-purple-950 dark:hover:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-lg transition cursor-pointer" onclick="window.ForecasterAuth.prepareReleaseModal('desktop')">Deploy vUpdate</button>
+                </div>
+              </div>
+
+              <!-- Mobile App Card -->
+              <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xl">📱</span>
+                      <span class="font-extrabold text-sm text-slate-900 dark:text-white">Mobile (iOS &amp; Android WebAPK)</span>
+                    </div>
+                    <span id="admin-platform-mobile-channel" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">Production</span>
+                  </div>
+                  <div class="mt-2.5 space-y-1 text-xs">
+                    <div class="flex justify-between"><span class="text-slate-400">Current Version:</span> <span id="admin-platform-mobile-ver" class="font-bold text-slate-900 dark:text-white">v2.5.0</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Min Supported:</span> <span id="admin-platform-mobile-min" class="font-semibold text-slate-600 dark:text-slate-300">v2.0.0</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Touch &amp; Biometrics:</span> <span class="font-bold text-emerald-600">✓ Hardware Ready</span></div>
+                  </div>
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                  <span class="text-[10px] text-slate-400" id="admin-platform-mobile-time">Updated today</span>
+                  <button type="button" class="px-2 py-1 text-[11px] font-bold bg-purple-100 hover:bg-purple-200 dark:bg-purple-950 dark:hover:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-lg transition cursor-pointer" onclick="window.ForecasterAuth.prepareReleaseModal('mobile')">Deploy vUpdate</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PANE 2: RELEASES & UPDATES MANAGER -->
+        <div id="admin-tab-pane-releases" class="hidden space-y-5">
+          <!-- Release Push Form Card -->
+          <div class="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>🚀</span> Deploy New Version Release Across Platforms
+                </h4>
+                <p class="text-xs text-slate-500 mt-0.5">
+                  Publish updates to Website, Desktop, or Mobile clients with custom changelogs, channel routing, and optional force-refresh.
+                </p>
+              </div>
+            </div>
+
+            <form id="admin-release-form" class="space-y-4" onsubmit="window.ForecasterAuth.handleDeployReleaseSubmit(event)">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Target Platform</label>
+                  <select id="admin-release-platform" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white">
+                    <option value="all">⚡ All Platforms (Web, Desktop, Mobile)</option>
+                    <option value="web">🌐 Website &amp; PWA Only</option>
+                    <option value="desktop">💻 Desktop App Only</option>
+                    <option value="mobile">📱 Mobile App Only</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">New Release Version (SemVer)</label>
+                  <input type="text" id="admin-release-version" required placeholder="e.g. 2.5.1" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-bold text-slate-900 dark:text-white"/>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Release Channel</label>
+                  <select id="admin-release-channel" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white">
+                    <option value="production">🟢 Production (Public Live)</option>
+                    <option value="staging">🟡 Staging (Pre-Release)</option>
+                    <option value="canary">🟣 Canary / Beta</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Release Notes &amp; Changelog (one note per line)</label>
+                <textarea id="admin-release-notes" rows="3" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-mono" placeholder="• Enhanced offline multi-device transaction sync&#10;• Added Main Admin Master Dashboard&#10;• Performance fixes on low-power devices"></textarea>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-purple-50/50 dark:bg-purple-950/30 rounded-xl border border-purple-200/60 dark:border-purple-800/40">
+                <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <input type="checkbox" id="admin-release-force" class="w-4 h-4 text-purple-600 rounded"/>
+                  <span>⚡ Force Client Reload / Update (Mandatory version)</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <input type="checkbox" id="admin-release-broadcast" checked class="w-4 h-4 text-purple-600 rounded"/>
+                  <span>📢 Broadcast Update Alert Banner to All Active Users</span>
+                </label>
+              </div>
+
+              <div class="flex justify-end gap-2">
+                <button type="submit" class="px-5 py-2.5 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white font-extrabold text-xs rounded-xl shadow-md shadow-purple-500/25 flex items-center gap-2 cursor-pointer">
+                  <span>🚀</span> Deploy &amp; Broadcast Release
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Maintenance Mode & Broadcast Controls Card -->
+          <div class="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>🚧</span> Maintenance Mode &amp; Global Broadcast Announcements
+                </h4>
+                <p class="text-xs text-slate-500 mt-0.5">Control live site availability and broadcast urgent announcements across all connected clients.</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Maintenance Mode -->
+              <div class="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>⚠️</span> System Maintenance Mode
+                  </span>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="admin-maint-toggle" class="sr-only peer" onchange="window.ForecasterAuth.handleMaintenanceToggleChange()"/>
+                    <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
+                  </label>
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Maintenance Banner Message</label>
+                  <input type="text" id="admin-maint-message" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs text-slate-900 dark:text-white" value="Forecaster Pro is undergoing planned infrastructure updates."/>
+                </div>
+                <div class="text-[11px] text-slate-400">
+                  <span class="font-bold text-amber-600">Note:</span> Peter W. Badir (Main Admin) maintains full bypass access during maintenance.
+                </div>
+              </div>
+
+              <!-- Broadcast Banner Announcement -->
+              <div class="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>📢</span> Global Broadcast Banner
+                  </span>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="admin-broadcast-toggle" class="sr-only peer"/>
+                    <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Broadcast Banner Text</label>
+                  <input type="text" id="admin-broadcast-message" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs text-slate-900 dark:text-white" placeholder="e.g. Welcome to Forecaster Pro v2.5.0!"/>
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Optional Announcement Link</label>
+                  <input type="url" id="admin-broadcast-link" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs text-slate-900 dark:text-white" placeholder="https://..."/>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex justify-end">
+              <button type="button" class="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer" onclick="window.ForecasterAuth.saveMaintenanceAndBroadcastSettings()">
+                💾 Save Maintenance &amp; Broadcast Settings
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PANE 3: FEATURE FLAGS & APP EDITS -->
+        <div id="admin-tab-pane-features" class="hidden space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>⚙️</span> Platform Feature Flags &amp; Module Controls
+              </h4>
+              <p class="text-xs text-slate-500 mt-0.5">Toggle and edit modules on/off dynamically across Web, Desktop, and Mobile clients without redeploying code.</p>
+            </div>
+            <button type="button" class="px-4 py-2 bg-gradient-to-r from-purple-700 to-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer hover:from-purple-800 hover:to-indigo-800 transition" onclick="window.ForecasterAuth.saveFeatureFlags()">
+              💾 Apply Feature Flags
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="admin-feature-flags-grid">
+            <!-- Feature Flag items dynamically or pre-rendered with toggle switches -->
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>🤖</span> AI Financial Health &amp; Runway Forecasting
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Enables AI health score computation and predictive chart models.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-featureAiForecasting" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>📈</span> Stock &amp; Equity Portfolio Module
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Enables live stock quotes, portfolio holdings, and capital gain calculations.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-featureStockMarket" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>💊</span> Medical &amp; Pharmacy Ledger
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Enables prescription replenishment alerts and medication cost tracking.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-featurePharmacyLedger" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>💱</span> Multi-Currency &amp; FX Rates Engine
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Provides real-time exchange rates (USD, EUR, EGP, GBP, SAR, AED).</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-featureMultiCurrency" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>☁️</span> Cross-Device Cloud Sync Engine
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Background database push and pull between web, mobile, and desktop.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-featureCloudSync" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>👥</span> Team Sub-Users &amp; Email Invitations
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Allows primary account owners to provision Managers, Members, and Viewers.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-featureSubUsers" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>🔒</span> Biometric Authentication Lock
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Hardware FaceID / TouchID security check for desktop and mobile clients.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-featureBiometricLock" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>📥</span> Financial Export Engine (PDF &amp; Excel)
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Generates encrypted PDF statements and multi-sheet Excel files.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-featureExportReports" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>💾</span> Desktop &amp; Mobile Persistent Cache
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Enables offline IndexedDB store &amp; service worker background prefetching.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-desktopOfflinePwaCache" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>🚪</span> Public New User Registrations
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Allow visitors to create new primary accounts on the registration screen.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-allowNewRegistrations" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- PANE 4: USERS & DATABASE VAULTS -->
+        <div id="admin-tab-pane-users" class="hidden space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>👥</span> Complete User Directory &amp; Database Vaults
+              </h4>
+              <p class="text-xs text-slate-500 mt-0.5">Manage permissions, subscription tiers, account suspensions, and isolated vaults.</p>
+            </div>
+            <div class="w-full sm:w-64">
+              <input type="text" id="admin-user-search-input" placeholder="Search by name, email, role..." oninput="window.ForecasterAuth.filterAdminUsersList(this.value)" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"/>
+            </div>
+          </div>
+
+          <!-- Users List Container -->
+          <div class="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800" id="admin-users-table-body">
+            <div class="p-8 text-center text-xs text-slate-400">Loading user directory...</div>
+          </div>
+        </div>
+
+        <!-- PANE 5: AUDIT & SYSTEM LOGS -->
+        <div id="admin-tab-pane-audit" class="hidden space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>📜</span> Live System Audit &amp; Event Stream
+              </h4>
+              <p class="text-xs text-slate-500 mt-0.5">Immutable record of releases, configuration adjustments, and security operations.</p>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('all')">All</button>
+              <button type="button" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('platform_release')">Releases</button>
+              <button type="button" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('feature_flag')">Features</button>
+              <button type="button" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('user_management')">Users</button>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50/50 dark:bg-slate-900/60 divide-y divide-slate-100 dark:divide-slate-800 font-mono text-xs max-h-[460px] overflow-y-auto custom-scrollbar" id="admin-audit-logs-list">
+            <div class="p-6 text-center text-xs text-slate-400 font-sans">Loading audit stream...</div>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
 

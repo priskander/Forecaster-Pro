@@ -18,6 +18,14 @@
 
   function getStoredVaultId() {
     try {
+      // First check if a user session is active with an assigned vault
+      const authUserStr = localStorage.getItem('forecaster_auth_user');
+      if (authUserStr) {
+        const u = JSON.parse(authUserStr);
+        if (u && u.vaultId) {
+          return u.vaultId.trim().toLowerCase();
+        }
+      }
       const v = localStorage.getItem(VAULT_STORAGE_KEY);
       return (v && v.trim()) ? v.trim().toLowerCase() : DEFAULT_VAULT_ID;
     } catch (e) {
@@ -53,12 +61,66 @@
       return getStoredVaultId();
     },
 
-    setVaultId: function(newId) {
+    setVaultId: function(newId, triggerSync = false) {
       const cleanId = (newId || DEFAULT_VAULT_ID).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
       localStorage.setItem(VAULT_STORAGE_KEY, cleanId);
       this.updateUI();
-      this.syncNow(true);
+      if (triggerSync) {
+        this.syncNow(true);
+      }
       return cleanId;
+    },
+
+    pullVault: async function(targetVaultId, forceReplace = false) {
+      const vaultId = (targetVaultId || this.getVaultId()).trim().toLowerCase();
+      try {
+        const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
+          ? window.ForecasterAuth.getToken()
+          : (localStorage.getItem('forecaster_auth_token') || '');
+
+        const headers = { 'Accept': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`/api/cloud-sync/vault/${encodeURIComponent(vaultId)}`, { headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!data || !data.ok || !data.vault) return false;
+
+        const remote = data.vault;
+
+        if (forceReplace) {
+          // Complete clean database replacement for true account isolation
+          window.transactions = Array.isArray(remote.transactions) ? remote.transactions : [];
+          localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+
+          window.accounts = Array.isArray(remote.accounts) ? remote.accounts : [];
+          localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+
+          window.accountTransfers = Array.isArray(remote.accountTransfers) ? remote.accountTransfers : [];
+          localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers));
+
+          window.budgetLimits = (remote.budgetLimits && typeof remote.budgetLimits === 'object') ? remote.budgetLimits : {};
+          localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
+
+          window.stockData = Array.isArray(remote.stockData) ? remote.stockData : [];
+          localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+
+          window.pharmacyData = Array.isArray(remote.pharmacyData) ? remote.pharmacyData : [];
+          localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+
+          localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+
+          if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+          if (typeof window.renderAllViews === 'function') window.renderAllViews();
+          this.updateUI();
+          return true;
+        } else {
+          return this.applyRemoteData(remote);
+        }
+      } catch (err) {
+        console.warn('[Forecaster CloudSync] pullVault notice:', err);
+        return false;
+      }
     },
 
     isAutoSync: function() {
@@ -176,12 +238,19 @@
       try {
         // Step 1: Push local state to server to merge
         const localData = this.getLocalData();
+        const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
+          ? window.ForecasterAuth.getToken()
+          : (localStorage.getItem('forecaster_auth_token') || '');
+
+        const headers = {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
         const res = await fetch(`/api/cloud-sync/vault/${encodeURIComponent(vaultId)}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
+          headers,
           body: JSON.stringify(localData)
         });
 

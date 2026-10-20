@@ -96,15 +96,16 @@
         });
       });
 
-      if (window.transactions.length === 0) {
+      const hasAuth = localStorage.getItem('forecaster_auth_user');
+      if (window.transactions.length === 0 && !hasAuth) {
         window.transactions = [
           { id: "tx_init_1", date: "2026-07-01", description: "Direct Deposit Monthly Salary", category: "Salary", type: "income", amount: 3100.00 },
           { id: "tx_init_2", date: "2026-07-02", description: "Apartment Premium Rental Rent", category: "Rent", type: "expense", amount: 800.00 },
           { id: "tx_init_3", date: "2026-07-04", description: "UI/UX Freelance App Project", category: "Freelance", type: "income", amount: 400.00 },
           { id: "tx_init_4", date: "2026-07-05", description: "Monthly Power Utility Bills", category: "Utilities", type: "expense", amount: 150.00 }
         ];
+        window.saveTransactionsDatabase();
       }
-      window.saveTransactionsDatabase();
     }
 
     const storedLimits = localStorage.getItem('pro_budget_limits');
@@ -122,11 +123,19 @@
       }
     }
     if (!Array.isArray(window.accounts) || window.accounts.length === 0) {
-      window.accounts = [
-        { id: 'acc_cash_main', type: 'cash', label: '💵 Cash Wallet', initialBalance: 1500, createdAt: '2026-07-01T00:00:00.000Z' },
-        { id: 'acc_bank_cib', type: 'card', label: '💳 CIB Debit Card', network: 'Visa', mode: 'Debit', bank: 'Commercial International Bank (CIB)', initialBalance: 12000, createdAt: '2026-07-01T00:00:00.000Z' },
-        { id: 'acc_wallet_vodafone', type: 'wallet', label: '📱 Vodafone Cash', kind: 'Telecom', provider: 'Vodafone Cash', initialBalance: 2500, createdAt: '2026-07-01T00:00:00.000Z' }
-      ];
+      const hasAuth = localStorage.getItem('forecaster_auth_user');
+      if (!hasAuth) {
+        window.accounts = [
+          { id: 'acc_cash_main', type: 'cash', label: '💵 Cash Wallet', initialBalance: 1500, createdAt: '2026-07-01T00:00:00.000Z' },
+          { id: 'acc_bank_cib', type: 'card', label: '💳 CIB Debit Card', network: 'Visa', mode: 'Debit', bank: 'Commercial International Bank (CIB)', initialBalance: 12000, createdAt: '2026-07-01T00:00:00.000Z' },
+          { id: 'acc_wallet_vodafone', type: 'wallet', label: '📱 Vodafone Cash', kind: 'Telecom', provider: 'Vodafone Cash', initialBalance: 2500, createdAt: '2026-07-01T00:00:00.000Z' }
+        ];
+      } else {
+        window.accounts = [
+          { id: 'acc_cash_personal', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
+          { id: 'acc_bank_personal', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
+        ];
+      }
       localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
     }
 

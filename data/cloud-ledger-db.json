@@ -3,7 +3,7 @@
   "vaults": {
     "shared-main-vault": {
       "vaultId": "shared-main-vault",
-      "updatedAt": "2026-10-18T17:02:45.802Z",
+      "updatedAt": "2026-10-20T12:36:46.477Z",
       "transactions": [
         {
           "id": "tx_init_1",
@@ -73,6 +73,87 @@
       },
       "stockData": [],
       "pharmacyData": []
+    },
+    "vault_usr_1792343003698": {
+      "vaultId": "vault_usr_1792343003698",
+      "updatedAt": "2026-10-20T11:50:43.900Z",
+      "transactions": [],
+      "accounts": [
+        {
+          "id": "acc_cash_usr_1792343003698",
+          "type": "cash",
+          "label": "💵 Cash Wallet",
+          "initialBalance": 0,
+          "createdAt": "2026-10-20T11:50:43.900Z"
+        },
+        {
+          "id": "acc_bank_usr_1792343003698",
+          "type": "card",
+          "label": "💳 Main Bank Account",
+          "network": "Visa",
+          "mode": "Debit",
+          "bank": "Primary Bank",
+          "initialBalance": 0,
+          "createdAt": "2026-10-20T11:50:43.900Z"
+        }
+      ],
+      "accountTransfers": []
+    },
+    "vault_usr_1792497387408": {
+      "vaultId": "vault_usr_1792497387408",
+      "updatedAt": "2026-10-20T11:56:27.408Z",
+      "transactions": [],
+      "accounts": [
+        {
+          "id": "acc_cash_usr_1792497387408",
+          "type": "cash",
+          "label": "💵 Cash Wallet",
+          "initialBalance": 0,
+          "createdAt": "2026-10-20T11:56:27.409Z"
+        },
+        {
+          "id": "acc_bank_usr_1792497387408",
+          "type": "card",
+          "label": "💳 Main Bank Account",
+          "network": "Visa",
+          "mode": "Debit",
+          "bank": "Primary Bank",
+          "initialBalance": 0,
+          "createdAt": "2026-10-20T11:56:27.409Z"
+        }
+      ],
+      "accountTransfers": [],
+      "budgetLimits": {},
+      "stockData": [],
+      "pharmacyData": []
+    },
+    "vault_usr_1792497420289": {
+      "vaultId": "vault_usr_1792497420289",
+      "updatedAt": "2026-10-20T11:57:00.289Z",
+      "transactions": [],
+      "accounts": [
+        {
+          "id": "acc_cash_usr_1792497420289",
+          "type": "cash",
+          "label": "💵 Cash Wallet",
+          "initialBalance": 0,
+          "createdAt": "2026-10-20T11:57:00.289Z"
+        },
+        {
+          "id": "acc_bank_usr_1792497420289",
+          "type": "card",
+          "label": "💳 Main Bank Account",
+          "network": "Visa",
+          "mode": "Debit",
+          "bank": "Primary Bank",
+          "initialBalance": 0,
+          "createdAt": "2026-10-20T11:57:00.289Z"
+        }
+      ],
+      "accountTransfers": [],
+      "budgetLimits": {},
+      "stockData": [],
+      "pharmacyData": []
     }
   },
   "users": {
@@ -82,9 +163,14 @@
       "email": "peter.w.badir@gmail.com",
       "passwordHash": "e5ebde08cf42fffc93da31f709ea5d72934b204bd388ae8487662b35025ae819e0493762a27b29dc4ba58d10e9c01f34cc9d0e1f472cb4348615297434a30c40",
       "salt": "f931a8924f18227d949cbb3eafa27e02",
-      "tier": "Pro Household",
+      "tier": "Master Admin Suite",
       "createdAt": "2026-10-18T17:03:16.856Z",
-      "lastLogin": "2026-10-18T17:03:19.482Z"
+      "lastLogin": "2026-10-20T12:36:53.051Z",
+      "role": "main_admin",
+      "isPrimary": true,
+      "vaultId": "shared-main-vault",
+      "isMainAdmin": true,
+      "status": "active"
     },
     "usr_1792343003698": {
       "id": "usr_1792343003698",
@@ -94,11 +180,273 @@
       "salt": "8fab7f0f688123e0b746bb7e36518221",
       "tier": "Free Tier",
       "createdAt": "2026-10-18T17:03:23.698Z",
-      "lastLogin": "2026-10-18T17:03:23.698Z"
+      "lastLogin": "2026-10-18T17:03:23.698Z",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1792343003698"
+    },
+    "usr_sub_1792349769922": {
+      "id": "usr_sub_1792349769922",
+      "name": "Sarah Connor",
+      "email": "sarah.manager@example.com",
+      "passwordHash": "a66f386549b8fd01865edf8ea311dde117a64be62c39a5cc1822242712cd69b662ffa4f9192794481b37d2d58e7468b53980ee087aa34aabaa2eaaef0709fb4e",
+      "salt": "7efe285630d7b70fe9ac3e433cedff8e",
+      "tier": "Pro Household",
+      "role": "manager",
+      "isPrimary": false,
+      "parentId": "usr_peter_badir",
+      "mustChangePassword": false,
+      "createdAt": "2026-10-18T18:56:09.922Z",
+      "lastLogin": "2026-10-19T11:41:11.689Z",
+      "vaultId": "shared-main-vault"
+    },
+    "usr_sub_1792349774634": {
+      "id": "usr_sub_1792349774634",
+      "name": "Alex Member",
+      "email": "alex.member@example.com",
+      "passwordHash": "cef29f69c3562b52b387dd28b27b1196fc7a1e5cb656bc5ded3dffe1193a5fa48f87b8d8fa8e2065dba0a8a715a926c41f0f65187ad031fdb7e5929150e1e842",
+      "salt": "de9e10c010dab6ac59f558c172ea11a3",
+      "tier": "Pro Household",
+      "role": "member",
+      "isPrimary": false,
+      "parentId": "usr_peter_badir",
+      "mustChangePassword": false,
+      "createdAt": "2026-10-18T18:56:14.634Z",
+      "lastLogin": "2026-10-19T11:41:30.485Z",
+      "vaultId": "shared-main-vault"
+    },
+    "usr_sub_1792349774693": {
+      "id": "usr_sub_1792349774693",
+      "name": "John Viewer",
+      "email": "john.viewer@example.com",
+      "passwordHash": "51796991e9a7fc66990b0ee0326071b78977f825b5a4e330a739b2e1e80bb866458c04863350988086c3adcac9f666b0358addfe4ff992a59f6ba19929ebf66a",
+      "salt": "9d0fa17f2387168d06ab4edc434865e5",
+      "tier": "Pro Household",
+      "role": "viewer",
+      "isPrimary": false,
+      "parentId": "usr_peter_badir",
+      "mustChangePassword": true,
+      "temporaryPassword": "Temp-NTQM498!",
+      "createdAt": "2026-10-18T18:56:14.693Z",
+      "lastLogin": "",
+      "vaultId": "shared-main-vault"
+    },
+    "usr_sub_1792497387355": {
+      "id": "usr_sub_1792497387355",
+      "name": "Jason Sub",
+      "email": "jason.subuser@example.com",
+      "passwordHash": "f5778083d9122ebdf2d3cc692f033531323b13d92e76254bc51ea55563ba378ea48f43cbf5311c72b9f6b936976c9fa049ab592f7646dd58331c7111d73f4039",
+      "salt": "0e31c97c230fef998ecbad5b67613de6",
+      "tier": "Pro Household",
+      "role": "member",
+      "isPrimary": false,
+      "parentId": "usr_peter_badir",
+      "vaultId": "shared-main-vault",
+      "mustChangePassword": false,
+      "createdAt": "2026-10-20T11:56:27.355Z",
+      "lastLogin": "2026-10-20T11:56:27.464Z"
+    },
+    "usr_1792497387408": {
+      "id": "usr_1792497387408",
+      "name": "David Independent",
+      "email": "david.independent@example.com",
+      "passwordHash": "ad7ac5cd7c1107bc4e79539a0f5e348bc9d7ea4124236e50802ee11a6c904e4d5079faa8ed1b407f3409975bdc016247ed4a60c7540aa85cd6c0e9ad7a9e3c28",
+      "salt": "bdeb86039082d1e9c64bee061dec63a5",
+      "tier": "Free Tier",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1792497387408",
+      "mustChangePassword": false,
+      "createdAt": "2026-10-20T11:56:27.409Z",
+      "lastLogin": "2026-10-20T11:56:27.409Z"
+    },
+    "usr_1792497420289": {
+      "id": "usr_1792497420289",
+      "name": "Emily Watson",
+      "email": "emily.test@example.com",
+      "passwordHash": "0911d76ebc2b2682e234612d8cd1d3556c0384a2c354899bd8bdce8ce1e59c073cc96c7cf6a3d1eb1674f50ccdd77ea67bf4a596d1851d0338d8d82e0397d24b",
+      "salt": "79d0d68602425c4890e3a996b540a087",
+      "tier": "Free Tier",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1792497420289",
+      "mustChangePassword": false,
+      "createdAt": "2026-10-20T11:57:00.289Z",
+      "lastLogin": "2026-10-20T11:57:00.289Z"
     }
   },
   "tokens": {
     "tok_a454ead800e8824f72858e988f3d4f9ac7fb6d1667bc15dc": "usr_peter_badir",
-    "tok_6595e63c396f52950e76854179be8a71b51f8aabd71a8a7f": "usr_1792343003698"
+    "tok_6595e63c396f52950e76854179be8a71b51f8aabd71a8a7f": "usr_1792343003698",
+    "tok_916b2b9549ce3c69043be0cd7b44e1246b8239e64870a3fa": "usr_peter_badir",
+    "tok_d093d07c06abea917370d6b2c46a84a550a3c8780b8baf72": "usr_peter_badir",
+    "tok_0cb1d627822f6ee367d34b7f5347f81620bb1483e04259b1": "usr_peter_badir",
+    "tok_bbec3ac1109dc325ee6ccca447f878a61ef59c499aa8f3ee": "usr_sub_1792349769922",
+    "tok_a95d9d55fb1b9ccc176a71cc09e4c0ed66505bb1cc759b55": "usr_sub_1792349769922",
+    "tok_8159663a56bf1106f2aed799f8cbdbfef9b0bbc4dc7ebbbb": "usr_sub_1792349774634",
+    "tok_1ef418cd1c42a9ec71c33e765f44ab01c4d79a62f4368334": "usr_sub_1792349774634",
+    "tok_b4b41afd5fa9ab7aefae0a4e4576aceb4fb24b65fd2bd3fa": "usr_peter_badir",
+    "tok_a76070ecaf474405cd992b05ff9a8881c5b1df1d67444ead": "usr_peter_badir",
+    "tok_a9aa5264d311c8d47270fa85e07e467c052cd37ac6ee19ab": "usr_1792497387408",
+    "tok_a57c0e195aa3b41c71ece26de1fbd9c7dc331bf9da0acef1": "usr_sub_1792497387355",
+    "tok_2724aa2ab1711dad12c8685fb8cc3da19861567e15722f3a": "usr_1792497420289",
+    "tok_1b84764f0f306066922586047a1fd412aa48ffd01273cff2": "usr_peter_badir"
+  },
+  "outbox": [
+    {
+      "id": "mail_1792497387356_5809ad",
+      "to": "jason.subuser@example.com",
+      "toName": "Jason Sub",
+      "subject": "Welcome to Forecaster Pro - Your MEMBER Account Credentials",
+      "body": "Hello Jason Sub,\n\nYou have been granted access as a MEMBER to the Forecaster Pro workspace by Peter W. Badir (peter.w.badir@gmail.com).\n\nAccount Credentials:\n• Login Email: jason.subuser@example.com\n• Temporary Password: Temp-HHBS269!\n• Assigned Role: MEMBER\n\nRole Privileges:\nOperational access to log daily expenses, income, transfers, inventory usage, and fleet records.\n\nSECURITY REQUIREMENT:\nThis temporary password was generated automatically. For your security, you are required to change your password immediately upon your first login. The system will automatically prompt you to create your new personal password upon sign-in.\n\nSign in to Forecaster Pro:\nhttps://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\n\nBest regards,\nForecaster Pro Team",
+      "htmlBody": "\n<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;\">\n  <div style=\"background: linear-gradient(135deg, #1d4ed8, #2563eb); padding: 24px; color: #ffffff;\">\n    <h1 style=\"margin: 0; font-size: 20px; font-weight: 800;\">Forecaster Pro</h1>\n    <p style=\"margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;\">Role-Based Workspace Invitation</p>\n  </div>\n  <div style=\"padding: 24px;\">\n    <h2 style=\"margin: 0 0 12px 0; font-size: 17px; color: #0f172a;\">Hello Jason Sub,</h2>\n    <p style=\"font-size: 13.5px; line-height: 1.5; color: #334155;\">\n      <strong>Peter W. Badir</strong> has created a sub-user account for you in the Forecaster Pro ledger with the role of \n      <span style=\"display: inline-block; padding: 2px 8px; background: #eff6ff; color: #1d4ed8; font-weight: bold; border-radius: 6px; font-size: 11px; text-transform: uppercase;\">member</span>.\n    </p>\n\n    <div style=\"background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;\">\n      <h3 style=\"margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;\">Your Account Credentials</h3>\n      <table style=\"width: 100%; font-size: 13px; border-collapse: collapse;\">\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b; width: 140px;\">Login Email:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a;\">jason.subuser@example.com</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Temporary Password:</td>\n          <td style=\"padding: 5px 0;\"><code style=\"background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;\">Temp-HHBS269!</code></td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Assigned Role:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a; text-transform: capitalize;\">member</td>\n        </tr>\n      </table>\n    </div>\n\n    <div style=\"background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px;\">\n      <p style=\"margin: 0; font-size: 12px; color: #92400e; font-weight: 600;\">\n        ⚠️ Required on First Login: This password is temporary. You will be prompted to create your own new permanent password as soon as you sign in.\n      </p>\n    </div>\n\n    <p style=\"font-size: 12.5px; color: #64748b; line-height: 1.5;\">\n      <strong>Role Privileges:</strong> Operational access to log daily expenses, income, transfers, inventory usage, and fleet records.\n    </p>\n\n    <div style=\"margin-top: 24px; text-align: center;\">\n      <a href=\"https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\" style=\"display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;\">Sign In to Your Account</a>\n    </div>\n  </div>\n  <div style=\"background: #f1f5f9; padding: 12px 24px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;\">\n    Forecaster Pro • Unified Financial &amp; Multi-Role Ledger\n  </div>\n</div>",
+      "sentAt": "2026-10-20T11:56:27.356Z",
+      "status": "delivered",
+      "metadata": {
+        "userId": "usr_sub_1792497387355",
+        "role": "member",
+        "temporaryPassword": "Temp-HHBS269!",
+        "senderId": "usr_peter_badir",
+        "senderEmail": "peter.w.badir@gmail.com"
+      }
+    },
+    {
+      "id": "mail_1792349774693_71eb62",
+      "to": "john.viewer@example.com",
+      "toName": "John Viewer",
+      "subject": "Welcome to Forecaster Pro - Your VIEWER Account Credentials",
+      "body": "Hello John Viewer,\n\nYou have been granted access as a VIEWER to the Forecaster Pro workspace by Peter W. Badir (peter.w.badir@gmail.com).\n\nAccount Credentials:\n• Login Email: john.viewer@example.com\n• Temporary Password: Temp-NTQM498!\n• Assigned Role: VIEWER\n\nRole Privileges:\nRead-only access to view charts, financial summaries, transaction logs, inventory, and vehicle reports.\n\nSECURITY REQUIREMENT:\nThis temporary password was generated automatically. For your security, you are required to change your password immediately upon your first login. The system will automatically prompt you to create your new personal password upon sign-in.\n\nSign in to Forecaster Pro:\nhttps://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\n\nBest regards,\nForecaster Pro Team",
+      "htmlBody": "\n<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;\">\n  <div style=\"background: linear-gradient(135deg, #1d4ed8, #2563eb); padding: 24px; color: #ffffff;\">\n    <h1 style=\"margin: 0; font-size: 20px; font-weight: 800;\">Forecaster Pro</h1>\n    <p style=\"margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;\">Role-Based Workspace Invitation</p>\n  </div>\n  <div style=\"padding: 24px;\">\n    <h2 style=\"margin: 0 0 12px 0; font-size: 17px; color: #0f172a;\">Hello John Viewer,</h2>\n    <p style=\"font-size: 13.5px; line-height: 1.5; color: #334155;\">\n      <strong>Peter W. Badir</strong> has created a sub-user account for you in the Forecaster Pro ledger with the role of \n      <span style=\"display: inline-block; padding: 2px 8px; background: #eff6ff; color: #1d4ed8; font-weight: bold; border-radius: 6px; font-size: 11px; text-transform: uppercase;\">viewer</span>.\n    </p>\n\n    <div style=\"background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;\">\n      <h3 style=\"margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;\">Your Account Credentials</h3>\n      <table style=\"width: 100%; font-size: 13px; border-collapse: collapse;\">\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b; width: 140px;\">Login Email:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a;\">john.viewer@example.com</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Temporary Password:</td>\n          <td style=\"padding: 5px 0;\"><code style=\"background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;\">Temp-NTQM498!</code></td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Assigned Role:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a; text-transform: capitalize;\">viewer</td>\n        </tr>\n      </table>\n    </div>\n\n    <div style=\"background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px;\">\n      <p style=\"margin: 0; font-size: 12px; color: #92400e; font-weight: 600;\">\n        ⚠️ Required on First Login: This password is temporary. You will be prompted to create your own new permanent password as soon as you sign in.\n      </p>\n    </div>\n\n    <p style=\"font-size: 12.5px; color: #64748b; line-height: 1.5;\">\n      <strong>Role Privileges:</strong> Read-only access to view charts, financial summaries, transaction logs, inventory, and vehicle reports.\n    </p>\n\n    <div style=\"margin-top: 24px; text-align: center;\">\n      <a href=\"https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\" style=\"display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;\">Sign In to Your Account</a>\n    </div>\n  </div>\n  <div style=\"background: #f1f5f9; padding: 12px 24px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;\">\n    Forecaster Pro • Unified Financial &amp; Multi-Role Ledger\n  </div>\n</div>",
+      "sentAt": "2026-10-18T18:56:14.693Z",
+      "status": "delivered",
+      "metadata": {
+        "userId": "usr_sub_1792349774693",
+        "role": "viewer",
+        "temporaryPassword": "Temp-NTQM498!",
+        "senderId": "usr_peter_badir",
+        "senderEmail": "peter.w.badir@gmail.com"
+      }
+    },
+    {
+      "id": "mail_1792349774634_1b0b17",
+      "to": "alex.member@example.com",
+      "toName": "Alex Member",
+      "subject": "Welcome to Forecaster Pro - Your MEMBER Account Credentials",
+      "body": "Hello Alex Member,\n\nYou have been granted access as a MEMBER to the Forecaster Pro workspace by Peter W. Badir (peter.w.badir@gmail.com).\n\nAccount Credentials:\n• Login Email: alex.member@example.com\n• Temporary Password: Temp-KGCW763!\n• Assigned Role: MEMBER\n\nRole Privileges:\nOperational access to log daily expenses, income, transfers, inventory usage, and fleet records.\n\nSECURITY REQUIREMENT:\nThis temporary password was generated automatically. For your security, you are required to change your password immediately upon your first login. The system will automatically prompt you to create your new personal password upon sign-in.\n\nSign in to Forecaster Pro:\nhttps://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\n\nBest regards,\nForecaster Pro Team",
+      "htmlBody": "\n<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;\">\n  <div style=\"background: linear-gradient(135deg, #1d4ed8, #2563eb); padding: 24px; color: #ffffff;\">\n    <h1 style=\"margin: 0; font-size: 20px; font-weight: 800;\">Forecaster Pro</h1>\n    <p style=\"margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;\">Role-Based Workspace Invitation</p>\n  </div>\n  <div style=\"padding: 24px;\">\n    <h2 style=\"margin: 0 0 12px 0; font-size: 17px; color: #0f172a;\">Hello Alex Member,</h2>\n    <p style=\"font-size: 13.5px; line-height: 1.5; color: #334155;\">\n      <strong>Peter W. Badir</strong> has created a sub-user account for you in the Forecaster Pro ledger with the role of \n      <span style=\"display: inline-block; padding: 2px 8px; background: #eff6ff; color: #1d4ed8; font-weight: bold; border-radius: 6px; font-size: 11px; text-transform: uppercase;\">member</span>.\n    </p>\n\n    <div style=\"background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;\">\n      <h3 style=\"margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;\">Your Account Credentials</h3>\n      <table style=\"width: 100%; font-size: 13px; border-collapse: collapse;\">\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b; width: 140px;\">Login Email:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a;\">alex.member@example.com</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Temporary Password:</td>\n          <td style=\"padding: 5px 0;\"><code style=\"background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;\">Temp-KGCW763!</code></td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Assigned Role:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a; text-transform: capitalize;\">member</td>\n        </tr>\n      </table>\n    </div>\n\n    <div style=\"background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px;\">\n      <p style=\"margin: 0; font-size: 12px; color: #92400e; font-weight: 600;\">\n        ⚠️ Required on First Login: This password is temporary. You will be prompted to create your own new permanent password as soon as you sign in.\n      </p>\n    </div>\n\n    <p style=\"font-size: 12.5px; color: #64748b; line-height: 1.5;\">\n      <strong>Role Privileges:</strong> Operational access to log daily expenses, income, transfers, inventory usage, and fleet records.\n    </p>\n\n    <div style=\"margin-top: 24px; text-align: center;\">\n      <a href=\"https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\" style=\"display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;\">Sign In to Your Account</a>\n    </div>\n  </div>\n  <div style=\"background: #f1f5f9; padding: 12px 24px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;\">\n    Forecaster Pro • Unified Financial &amp; Multi-Role Ledger\n  </div>\n</div>",
+      "sentAt": "2026-10-18T18:56:14.634Z",
+      "status": "delivered",
+      "metadata": {
+        "userId": "usr_sub_1792349774634",
+        "role": "member",
+        "temporaryPassword": "Temp-KGCW763!",
+        "senderId": "usr_peter_badir",
+        "senderEmail": "peter.w.badir@gmail.com"
+      }
+    },
+    {
+      "id": "mail_1792349769922_fb21b1",
+      "to": "sarah.manager@example.com",
+      "toName": "Sarah Connor",
+      "subject": "Welcome to Forecaster Pro - Your MANAGER Account Credentials",
+      "body": "Hello Sarah Connor,\n\nYou have been granted access as a MANAGER to the Forecaster Pro workspace by Peter W. Badir (peter.w.badir@gmail.com).\n\nAccount Credentials:\n• Login Email: sarah.manager@example.com\n• Temporary Password: Temp-BWGB839!\n• Assigned Role: MANAGER\n\nRole Privileges:\nFull operational and financial access to transactions, inventory, vehicles, rentals, and cloud sync.\n\nSECURITY REQUIREMENT:\nThis temporary password was generated automatically. For your security, you are required to change your password immediately upon your first login. The system will automatically prompt you to create your new personal password upon sign-in.\n\nSign in to Forecaster Pro:\nhttps://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\n\nBest regards,\nForecaster Pro Team",
+      "htmlBody": "\n<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;\">\n  <div style=\"background: linear-gradient(135deg, #1d4ed8, #2563eb); padding: 24px; color: #ffffff;\">\n    <h1 style=\"margin: 0; font-size: 20px; font-weight: 800;\">Forecaster Pro</h1>\n    <p style=\"margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;\">Role-Based Workspace Invitation</p>\n  </div>\n  <div style=\"padding: 24px;\">\n    <h2 style=\"margin: 0 0 12px 0; font-size: 17px; color: #0f172a;\">Hello Sarah Connor,</h2>\n    <p style=\"font-size: 13.5px; line-height: 1.5; color: #334155;\">\n      <strong>Peter W. Badir</strong> has created a sub-user account for you in the Forecaster Pro ledger with the role of \n      <span style=\"display: inline-block; padding: 2px 8px; background: #eff6ff; color: #1d4ed8; font-weight: bold; border-radius: 6px; font-size: 11px; text-transform: uppercase;\">manager</span>.\n    </p>\n\n    <div style=\"background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;\">\n      <h3 style=\"margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;\">Your Account Credentials</h3>\n      <table style=\"width: 100%; font-size: 13px; border-collapse: collapse;\">\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b; width: 140px;\">Login Email:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a;\">sarah.manager@example.com</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Temporary Password:</td>\n          <td style=\"padding: 5px 0;\"><code style=\"background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;\">Temp-BWGB839!</code></td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Assigned Role:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a; text-transform: capitalize;\">manager</td>\n        </tr>\n      </table>\n    </div>\n\n    <div style=\"background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px;\">\n      <p style=\"margin: 0; font-size: 12px; color: #92400e; font-weight: 600;\">\n        ⚠️ Required on First Login: This password is temporary. You will be prompted to create your own new permanent password as soon as you sign in.\n      </p>\n    </div>\n\n    <p style=\"font-size: 12.5px; color: #64748b; line-height: 1.5;\">\n      <strong>Role Privileges:</strong> Full operational and financial access to transactions, inventory, vehicles, rentals, and cloud sync.\n    </p>\n\n    <div style=\"margin-top: 24px; text-align: center;\">\n      <a href=\"https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\" style=\"display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;\">Sign In to Your Account</a>\n    </div>\n  </div>\n  <div style=\"background: #f1f5f9; padding: 12px 24px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;\">\n    Forecaster Pro • Unified Financial &amp; Multi-Role Ledger\n  </div>\n</div>",
+      "sentAt": "2026-10-18T18:56:09.922Z",
+      "status": "delivered",
+      "metadata": {
+        "userId": "usr_sub_1792349769922",
+        "role": "manager",
+        "temporaryPassword": "Temp-BWGB839!",
+        "senderId": "usr_peter_badir",
+        "senderEmail": "peter.w.badir@gmail.com"
+      }
+    }
+  ],
+  "auditLog": [
+    {
+      "id": "log_1792499813075_1tl4x",
+      "timestamp": "2026-10-20T12:36:53.075Z",
+      "adminEmail": "peter.w.badir@gmail.com",
+      "action": "PLATFORM_RELEASE_DEPLOYED",
+      "category": "platform_release",
+      "details": "Deployed release v2.5.1 to [web, desktop, mobile] on channel \"production\". Force Update: false"
+    }
+  ],
+  "systemConfig": {
+    "maintenanceMode": {
+      "enabled": false,
+      "allowAdminBypass": true,
+      "message": "Forecaster Pro is currently undergoing scheduled platform upgrades. We will be back online shortly.",
+      "scheduledUntil": "",
+      "affectedPlatforms": [
+        "web",
+        "desktop",
+        "mobile"
+      ]
+    },
+    "broadcastNotice": {
+      "enabled": true,
+      "type": "success",
+      "message": "🚀 Forecaster Pro v2.5.1 is now live across WEB & DESKTOP & MOBILE!",
+      "linkUrl": "",
+      "updatedAt": "2026-10-20T12:36:53.075Z"
+    },
+    "platforms": {
+      "web": {
+        "version": "2.5.1",
+        "minSupportedVersion": "2.0.0",
+        "channel": "production",
+        "lastReleasedAt": "2026-10-20T12:36:53.075Z",
+        "releaseNotes": [
+          "Master Admin Control Suite activated",
+          "Real-time Cross-Platform Update Dispatcher"
+        ],
+        "forceUpdateRequired": false,
+        "updateStatus": "current"
+      },
+      "desktop": {
+        "version": "2.5.1",
+        "minSupportedVersion": "2.0.0",
+        "channel": "production",
+        "lastReleasedAt": "2026-10-20T12:36:53.075Z",
+        "releaseNotes": [
+          "Master Admin Control Suite activated",
+          "Real-time Cross-Platform Update Dispatcher"
+        ],
+        "forceUpdateRequired": false,
+        "downloadUrl": "https://ais-pre-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app",
+        "updateStatus": "current"
+      },
+      "mobile": {
+        "version": "2.5.1",
+        "minSupportedVersion": "2.0.0",
+        "channel": "production",
+        "lastReleasedAt": "2026-10-20T12:36:53.075Z",
+        "releaseNotes": [
+          "Master Admin Control Suite activated",
+          "Real-time Cross-Platform Update Dispatcher"
+        ],
+        "forceUpdateRequired": false,
+        "downloadUrl": "https://ais-pre-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app",
+        "updateStatus": "current"
+      }
+    },
+    "featureFlags": {
+      "featureAiForecasting": true,
+      "featureStockMarket": true,
+      "featurePharmacyLedger": true,
+      "featureMultiCurrency": true,
+      "featureCloudSync": true,
+      "featureSubUsers": true,
+      "featureBiometricLock": true,
+      "featureExportReports": true,
+      "desktopOfflinePwaCache": true,
+      "mobileHapticFeedback": true,
+      "allowNewRegistrations": true
+    },
+    "telemetry": {
+      "serverStartedAt": "2026-10-20T12:36:39.995Z",
+      "totalApiRequests": 0
+    }
   }
 }

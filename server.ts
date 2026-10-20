@@ -18,6 +18,8 @@ if (!fs.existsSync(DATA_DIR)) {
 
 import crypto from 'crypto';
 
+export type UserRole = 'owner' | 'manager' | 'member' | 'viewer' | 'main_admin';
+
 interface UserRecord {
   id: string;
   name: string;
@@ -25,8 +27,34 @@ interface UserRecord {
   passwordHash: string;
   salt: string;
   tier: string;
+  role: UserRole;
+  isPrimary: boolean;
+  isMainAdmin?: boolean; // Master system administrator of the entire app ecosystem
+  status?: 'active' | 'suspended';
+  parentId?: string; // ID of the primary user who created this sub-user
+  vaultId?: string; // ID of the isolated vault/database
+  mustChangePassword?: boolean;
+  temporaryPassword?: string;
   createdAt: string;
   lastLogin: string;
+}
+
+interface OutboxEmail {
+  id: string;
+  to: string;
+  toName: string;
+  subject: string;
+  body: string;
+  htmlBody: string;
+  sentAt: string;
+  status: 'delivered';
+  metadata: {
+    userId: string;
+    role: string;
+    temporaryPassword?: string;
+    senderId: string;
+    senderEmail: string;
+  };
 }
 
 interface VaultData {
@@ -41,11 +69,74 @@ interface VaultData {
   profileUser?: any;
 }
 
+export interface PlatformUpdateConfig {
+  version: string;
+  minSupportedVersion: string;
+  channel: 'production' | 'staging' | 'canary';
+  lastReleasedAt: string;
+  releaseNotes: string[];
+  forceUpdateRequired: boolean;
+  downloadUrl?: string;
+  updateStatus: 'current' | 'update_available' | 'maintenance';
+}
+
+export interface SystemConfig {
+  maintenanceMode: {
+    enabled: boolean;
+    allowAdminBypass: boolean;
+    message: string;
+    scheduledUntil?: string;
+    affectedPlatforms: ('web' | 'desktop' | 'mobile')[];
+  };
+  broadcastNotice: {
+    enabled: boolean;
+    type: 'info' | 'warning' | 'success' | 'urgent';
+    message: string;
+    linkUrl?: string;
+    updatedAt: string;
+  };
+  platforms: {
+    web: PlatformUpdateConfig;
+    desktop: PlatformUpdateConfig;
+    mobile: PlatformUpdateConfig;
+  };
+  featureFlags: {
+    featureAiForecasting: boolean;
+    featureStockMarket: boolean;
+    featurePharmacyLedger: boolean;
+    featureMultiCurrency: boolean;
+    featureCloudSync: boolean;
+    featureSubUsers: boolean;
+    featureBiometricLock: boolean;
+    featureExportReports: boolean;
+    desktopOfflinePwaCache: boolean;
+    mobileHapticFeedback: boolean;
+    allowNewRegistrations: boolean;
+  };
+  telemetry: {
+    serverStartedAt: string;
+    totalApiRequests: number;
+  };
+}
+
+export interface AdminAuditLog {
+  id: string;
+  timestamp: string;
+  adminEmail: string;
+  action: string;
+  category: 'platform_release' | 'feature_flag' | 'maintenance' | 'user_management' | 'security';
+  details: string;
+  metadata?: any;
+}
+
 interface CloudDatabase {
   version: string;
   vaults: Record<string, VaultData>;
   users?: Record<string, UserRecord>;
   tokens?: Record<string, string>; // token -> userId
+  outbox?: OutboxEmail[];
+  systemConfig?: SystemConfig;
+  auditLog?: AdminAuditLog[];
 }
 
 // In-memory cache + persistent disk store
@@ -62,7 +153,8 @@ function loadDatabase(): CloudDatabase {
     version: '1.0.0',
     vaults: {},
     users: {},
-    tokens: {}
+    tokens: {},
+    outbox: []
   };
 }
 
@@ -89,9 +181,129 @@ function verifyPassword(password: string, salt: string, expectedHash: string): b
   }
 }
 
+function generateTemporaryPassword(): string {
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const digits = '23456789';
+  let randL = '';
+  for (let i = 0; i < 4; i++) {
+    randL += letters.charAt(Math.floor(Math.random() * letters.length));
+  }
+  let randD = '';
+  for (let i = 0; i < 3; i++) {
+    randD += digits.charAt(Math.floor(Math.random() * digits.length));
+  }
+  return `Temp-${randL}${randD}!`;
+}
+
+function sendSubUserWelcomeEmail(subUser: UserRecord, tempPass: string, owner: UserRecord): OutboxEmail {
+  const roleDescriptions: Record<UserRole, string> = {
+    main_admin: 'Master app owner with full centralized cross-platform control across Website, Desktop, and Mobile.',
+    owner: 'Full workspace administration and user management.',
+    manager: 'Full operational and financial access to transactions, inventory, vehicles, rentals, and cloud sync.',
+    member: 'Operational access to log daily expenses, income, transfers, inventory usage, and fleet records.',
+    viewer: 'Read-only access to view charts, financial summaries, transaction logs, inventory, and vehicle reports.'
+  };
+
+  const subject = `Welcome to Forecaster Pro - Your ${subUser.role.toUpperCase()} Account Credentials`;
+  
+  const textBody = `Hello ${subUser.name},
+
+You have been granted access as a ${subUser.role.toUpperCase()} to the Forecaster Pro workspace by ${owner.name} (${owner.email}).
+
+Account Credentials:
+• Login Email: ${subUser.email}
+• Temporary Password: ${tempPass}
+• Assigned Role: ${subUser.role.toUpperCase()}
+
+Role Privileges:
+${roleDescriptions[subUser.role] || ''}
+
+SECURITY REQUIREMENT:
+This temporary password was generated automatically. For your security, you are required to change your password immediately upon your first login. The system will automatically prompt you to create your new personal password upon sign-in.
+
+Sign in to Forecaster Pro:
+https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app
+
+Best regards,
+Forecaster Pro Team`;
+
+  const htmlBody = `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
+  <div style="background: linear-gradient(135deg, #1d4ed8, #2563eb); padding: 24px; color: #ffffff;">
+    <h1 style="margin: 0; font-size: 20px; font-weight: 800;">Forecaster Pro</h1>
+    <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;">Role-Based Workspace Invitation</p>
+  </div>
+  <div style="padding: 24px;">
+    <h2 style="margin: 0 0 12px 0; font-size: 17px; color: #0f172a;">Hello ${subUser.name},</h2>
+    <p style="font-size: 13.5px; line-height: 1.5; color: #334155;">
+      <strong>${owner.name}</strong> has created a sub-user account for you in the Forecaster Pro ledger with the role of 
+      <span style="display: inline-block; padding: 2px 8px; background: #eff6ff; color: #1d4ed8; font-weight: bold; border-radius: 6px; font-size: 11px; text-transform: uppercase;">${subUser.role}</span>.
+    </p>
+
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;">
+      <h3 style="margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Your Account Credentials</h3>
+      <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 5px 0; color: #64748b; width: 140px;">Login Email:</td>
+          <td style="padding: 5px 0; font-weight: 700; color: #0f172a;">${subUser.email}</td>
+        </tr>
+        <tr>
+          <td style="padding: 5px 0; color: #64748b;">Temporary Password:</td>
+          <td style="padding: 5px 0;"><code style="background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;">${tempPass}</code></td>
+        </tr>
+        <tr>
+          <td style="padding: 5px 0; color: #64748b;">Assigned Role:</td>
+          <td style="padding: 5px 0; font-weight: 700; color: #0f172a; text-transform: capitalize;">${subUser.role}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px;">
+      <p style="margin: 0; font-size: 12px; color: #92400e; font-weight: 600;">
+        ⚠️ Required on First Login: This password is temporary. You will be prompted to create your own new permanent password as soon as you sign in.
+      </p>
+    </div>
+
+    <p style="font-size: 12.5px; color: #64748b; line-height: 1.5;">
+      <strong>Role Privileges:</strong> ${roleDescriptions[subUser.role]}
+    </p>
+
+    <div style="margin-top: 24px; text-align: center;">
+      <a href="https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;">Sign In to Your Account</a>
+    </div>
+  </div>
+  <div style="background: #f1f5f9; padding: 12px 24px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;">
+    Forecaster Pro • Unified Financial &amp; Multi-Role Ledger
+  </div>
+</div>`;
+
+  const emailRecord: OutboxEmail = {
+    id: 'mail_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex'),
+    to: subUser.email,
+    toName: subUser.name,
+    subject,
+    body: textBody,
+    htmlBody,
+    sentAt: new Date().toISOString(),
+    status: 'delivered',
+    metadata: {
+      userId: subUser.id,
+      role: subUser.role,
+      temporaryPassword: tempPass,
+      senderId: owner.id,
+      senderEmail: owner.email
+    }
+  };
+
+  if (!db.outbox) db.outbox = [];
+  db.outbox.unshift(emailRecord);
+  return emailRecord;
+}
+
 let db = loadDatabase();
 if (!db.users) db.users = {};
 if (!db.tokens) db.tokens = {};
+if (!db.outbox) db.outbox = [];
 
 // Seed default demo user if not present
 const defaultEmail = 'peter.w.badir@gmail.com';
@@ -104,12 +316,160 @@ if (!defaultUser) {
     email: defaultEmail,
     passwordHash: hashPassword('Password123!', salt),
     salt,
-    tier: 'Pro Household',
+    tier: 'Master Admin Suite',
+    role: 'main_admin',
+    isPrimary: true,
+    isMainAdmin: true,
+    status: 'active',
+    vaultId: 'shared-main-vault',
+    mustChangePassword: false,
     createdAt: new Date().toISOString(),
     lastLogin: new Date().toISOString()
   };
   db.users[user.id] = user;
+} else {
+  defaultUser.name = 'Peter W. Badir';
+  defaultUser.role = 'main_admin';
+  defaultUser.isPrimary = true;
+  defaultUser.isMainAdmin = true;
+  defaultUser.status = 'active';
+  defaultUser.tier = 'Master Admin Suite';
+  defaultUser.vaultId = 'shared-main-vault';
 }
+
+if (!db.auditLog) db.auditLog = [];
+
+if (!db.systemConfig) {
+  db.systemConfig = {
+    maintenanceMode: {
+      enabled: false,
+      allowAdminBypass: true,
+      message: 'Forecaster Pro is currently undergoing scheduled platform upgrades. We will be back online shortly.',
+      scheduledUntil: '',
+      affectedPlatforms: ['web', 'desktop', 'mobile']
+    },
+    broadcastNotice: {
+      enabled: false,
+      type: 'info',
+      message: 'Welcome to Forecaster Pro Master Suite. Full cross-platform update controls enabled.',
+      linkUrl: '',
+      updatedAt: new Date().toISOString()
+    },
+    platforms: {
+      web: {
+        version: '2.5.0',
+        minSupportedVersion: '2.0.0',
+        channel: 'production',
+        lastReleasedAt: new Date().toISOString(),
+        releaseNotes: [
+          'Full Main Admin Control Suite activated for Peter W. Badir',
+          'Cross-Platform Version & Update Channel Management',
+          'Multi-Tenant Database Isolation & Sub-User Engine'
+        ],
+        forceUpdateRequired: false,
+        updateStatus: 'current'
+      },
+      desktop: {
+        version: '2.5.0',
+        minSupportedVersion: '2.0.0',
+        channel: 'production',
+        lastReleasedAt: new Date().toISOString(),
+        releaseNotes: [
+          'Desktop PWA Bridge & Native Window controls',
+          'Offline persistent SQLite/IndexedDB caching',
+          'Hardware-accelerated Financial Visualization Canvas'
+        ],
+        forceUpdateRequired: false,
+        downloadUrl: 'https://ais-pre-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app',
+        updateStatus: 'current'
+      },
+      mobile: {
+        version: '2.5.0',
+        minSupportedVersion: '2.0.0',
+        channel: 'production',
+        lastReleasedAt: new Date().toISOString(),
+        releaseNotes: [
+          'Mobile WebAPK & iOS Safari PWA Standalone optimizations',
+          'Fluid touch gestures & Mobile Pull-to-Refresh',
+          'Biometric Lock & Instant Background Cloud Sync'
+        ],
+        forceUpdateRequired: false,
+        downloadUrl: 'https://ais-pre-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app',
+        updateStatus: 'current'
+      }
+    },
+    featureFlags: {
+      featureAiForecasting: true,
+      featureStockMarket: true,
+      featurePharmacyLedger: true,
+      featureMultiCurrency: true,
+      featureCloudSync: true,
+      featureSubUsers: true,
+      featureBiometricLock: true,
+      featureExportReports: true,
+      desktopOfflinePwaCache: true,
+      mobileHapticFeedback: true,
+      allowNewRegistrations: true
+    },
+    telemetry: {
+      serverStartedAt: new Date().toISOString(),
+      totalApiRequests: 0
+    }
+  };
+}
+
+function logAdminAction(adminEmail: string, action: string, category: AdminAuditLog['category'], details: string, metadata?: any) {
+  if (!db.auditLog) db.auditLog = [];
+  const entry: AdminAuditLog = {
+    id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+    timestamp: new Date().toISOString(),
+    adminEmail,
+    action,
+    category,
+    details,
+    metadata
+  };
+  db.auditLog.unshift(entry);
+  if (db.auditLog.length > 250) {
+    db.auditLog = db.auditLog.slice(0, 250);
+  }
+  saveDatabase(db);
+  return entry;
+}
+
+// Migrate any existing users without role or vaultId
+Object.values(db.users).forEach(u => {
+  if (u.email.toLowerCase() === 'peter.w.badir@gmail.com') {
+    u.role = 'main_admin';
+    u.isMainAdmin = true;
+    u.tier = 'Master Admin Suite';
+  } else if (!u.role) {
+    u.role = u.isPrimary ? 'owner' : 'member';
+  }
+  if (!u.vaultId) {
+    if (u.parentId) {
+      const parent = (db.users || {})[u.parentId];
+      u.vaultId = parent?.vaultId || 'shared-main-vault';
+    } else if (u.id === 'usr_peter_badir') {
+      u.vaultId = 'shared-main-vault';
+    } else {
+      u.vaultId = 'vault_' + u.id;
+    }
+  }
+  // Ensure the vault exists in db.vaults
+  if (!db.vaults[u.vaultId]) {
+    db.vaults[u.vaultId] = {
+      vaultId: u.vaultId,
+      updatedAt: new Date().toISOString(),
+      transactions: [],
+      accounts: [
+        { id: 'acc_cash_' + u.id, type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
+        { id: 'acc_bank_' + u.id, type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
+      ],
+      accountTransfers: []
+    };
+  }
+});
 
 // Seed default vault if empty
 const DEFAULT_VAULT_ID = 'shared-main-vault';
@@ -175,12 +535,71 @@ async function startServer() {
       // Check if user already exists
       const existing = Object.values(db.users || {}).find(u => u.email.toLowerCase() === cleanEmail);
       if (existing) {
+        // Did a primary user already add this email as a sub-user?
+        // "unless if the primary user added this newly created primary as a sub user"
+        if (!existing.isPrimary && existing.parentId) {
+          const parent = (db.users || {})[existing.parentId];
+          const salt = crypto.randomBytes(16).toString('hex');
+          const passwordHash = hashPassword(password, salt);
+
+          existing.name = cleanName || existing.name;
+          existing.passwordHash = passwordHash;
+          existing.salt = salt;
+          existing.mustChangePassword = false;
+          existing.temporaryPassword = undefined;
+          existing.lastLogin = new Date().toISOString();
+          existing.vaultId = parent?.vaultId || 'shared-main-vault';
+
+          if (!db.tokens) db.tokens = {};
+          const token = 'tok_' + crypto.randomBytes(24).toString('hex');
+          db.tokens[token] = existing.id;
+
+          saveDatabase(db);
+
+          return res.status(200).json({
+            ok: true,
+            message: `Account activated! You are connected as a team ${existing.role.toUpperCase()} under ${parent?.name || 'Primary Admin'}'s workspace database.`,
+            token,
+            mustChangePassword: false,
+            user: {
+              id: existing.id,
+              name: existing.name,
+              email: existing.email,
+              tier: existing.tier,
+              role: existing.role,
+              isPrimary: false,
+              parentId: existing.parentId,
+              vaultId: existing.vaultId,
+              mustChangePassword: false,
+              createdAt: existing.createdAt
+            }
+          });
+        }
+
         return res.status(409).json({ ok: false, error: 'An account with this email address already exists. Please sign in.' });
       }
 
+      // Completely new primary user: create their own private, isolated database/vault!
+      // "Don't relate a new create account to the same historical database let him create his own"
       const salt = crypto.randomBytes(16).toString('hex');
       const passwordHash = hashPassword(password, salt);
       const userId = 'usr_' + Date.now();
+      const userVaultId = 'vault_' + userId;
+
+      // Initialize their own isolated, empty database with zero historical records!
+      db.vaults[userVaultId] = {
+        vaultId: userVaultId,
+        updatedAt: new Date().toISOString(),
+        transactions: [], // 100% clean slate: no Peter Badir salary, rent, or historical entries!
+        accounts: [
+          { id: 'acc_cash_' + userId, type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
+          { id: 'acc_bank_' + userId, type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
+        ],
+        accountTransfers: [],
+        budgetLimits: {},
+        stockData: [],
+        pharmacyData: []
+      };
 
       const user: UserRecord = {
         id: userId,
@@ -189,6 +608,10 @@ async function startServer() {
         passwordHash,
         salt,
         tier: 'Free Tier',
+        role: 'owner',
+        isPrimary: true,
+        vaultId: userVaultId,
+        mustChangePassword: false,
         createdAt: new Date().toISOString(),
         lastLogin: new Date().toISOString()
       };
@@ -206,13 +629,18 @@ async function startServer() {
 
       res.status(201).json({
         ok: true,
-        message: 'Account created successfully!',
+        message: 'Account created! Your own private, isolated workspace is ready.',
         token,
+        mustChangePassword: false,
         user: {
           id: user.id,
           name: user.name,
           email: user.email,
           tier: user.tier,
+          role: user.role,
+          isPrimary: user.isPrimary,
+          vaultId: user.vaultId,
+          mustChangePassword: false,
           createdAt: user.createdAt
         }
       });
@@ -242,6 +670,29 @@ async function startServer() {
         return res.status(401).json({ ok: false, error: 'Invalid email or password.' });
       }
 
+      // Ensure user has vaultId assigned
+      if (!user.vaultId) {
+        if (user.parentId) {
+          const parent = (db.users || {})[user.parentId];
+          user.vaultId = parent?.vaultId || 'shared-main-vault';
+        } else if (user.id === 'usr_peter_badir') {
+          user.vaultId = 'shared-main-vault';
+        } else {
+          user.vaultId = 'vault_' + user.id;
+        }
+      }
+
+      // Ensure that vault exists in db.vaults
+      if (!db.vaults[user.vaultId]) {
+        db.vaults[user.vaultId] = {
+          vaultId: user.vaultId,
+          updatedAt: new Date().toISOString(),
+          transactions: [],
+          accounts: [],
+          accountTransfers: []
+        };
+      }
+
       user.lastLogin = new Date().toISOString();
 
       if (!db.tokens) db.tokens = {};
@@ -254,11 +705,18 @@ async function startServer() {
         ok: true,
         message: 'Logged in successfully!',
         token,
+        mustChangePassword: !!user.mustChangePassword,
         user: {
           id: user.id,
           name: user.name,
           email: user.email,
           tier: user.tier,
+          role: (user.email.toLowerCase() === 'peter.w.badir@gmail.com') ? 'main_admin' : (user.role || (user.isPrimary ? 'owner' : 'member')),
+          isPrimary: !!user.isPrimary,
+          isMainAdmin: !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin',
+          parentId: user.parentId,
+          vaultId: user.vaultId,
+          mustChangePassword: !!user.mustChangePassword,
           createdAt: user.createdAt
         }
       });
@@ -285,6 +743,23 @@ async function startServer() {
         return res.status(401).json({ ok: false, error: 'User not found' });
       }
 
+      if (user.email.toLowerCase() === 'peter.w.badir@gmail.com') {
+        user.isMainAdmin = true;
+        user.role = 'main_admin';
+        user.tier = 'Master Admin Suite';
+      }
+
+      if (!user.vaultId) {
+        if (user.parentId) {
+          const parent = (db.users || {})[user.parentId];
+          user.vaultId = parent?.vaultId || 'shared-main-vault';
+        } else if (user.id === 'usr_peter_badir') {
+          user.vaultId = 'shared-main-vault';
+        } else {
+          user.vaultId = 'vault_' + user.id;
+        }
+      }
+
       res.json({
         ok: true,
         user: {
@@ -292,10 +767,322 @@ async function startServer() {
           name: user.name,
           email: user.email,
           tier: user.tier,
+          role: user.role || (user.isPrimary ? 'owner' : 'member'),
+          isPrimary: !!user.isPrimary,
+          isMainAdmin: !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin',
+          parentId: user.parentId,
+          vaultId: user.vaultId,
+          mustChangePassword: !!user.mustChangePassword,
           createdAt: user.createdAt,
           lastLogin: user.lastLogin
         }
       });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  /* -------------------------------------------------------------------------
+   * SUB-USERS & TEAM ROLES MANAGEMENT (Primary User Only)
+   * Roles: Manager, Member, Viewer with specific workspace privileges.
+   * Dispatches automatic email invitation with temporary password.
+   * ------------------------------------------------------------------------- */
+
+  // List all sub-users for the primary user
+  app.get('/api/auth/sub-users', (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+      if (!token || !db.tokens || !db.tokens[token]) {
+        return res.status(401).json({ ok: false, error: 'Not authenticated' });
+      }
+
+      const callerId = db.tokens[token];
+      const caller = (db.users || {})[callerId];
+      if (!caller) {
+        return res.status(401).json({ ok: false, error: 'User not found' });
+      }
+
+      if (!caller.isPrimary && caller.role !== 'owner') {
+        return res.status(403).json({ ok: false, error: 'Access denied: Only the primary account owner is authorized to manage sub-users.' });
+      }
+
+      const subUsers = Object.values(db.users || {})
+        .filter(u => u.parentId === caller.id || (!u.isPrimary && u.role !== 'owner'))
+        .map(u => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          isPrimary: false,
+          mustChangePassword: !!u.mustChangePassword,
+          temporaryPassword: caller.isPrimary ? u.temporaryPassword : undefined,
+          createdAt: u.createdAt,
+          lastLogin: u.lastLogin
+        }));
+
+      res.json({ ok: true, subUsers });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Create a new sub-user (Primary User only) with manager, member, or viewer role
+  app.post('/api/auth/sub-users', (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+      if (!token || !db.tokens || !db.tokens[token]) {
+        return res.status(401).json({ ok: false, error: 'Not authenticated' });
+      }
+
+      const callerId = db.tokens[token];
+      const caller = (db.users || {})[callerId];
+      if (!caller) {
+        return res.status(401).json({ ok: false, error: 'User not found' });
+      }
+
+      if (!caller.isPrimary && caller.role !== 'owner') {
+        return res.status(403).json({ ok: false, error: 'Access denied: Only the primary user is granted permission to create sub-users.' });
+      }
+
+      const { name, email, role } = req.body || {};
+      const cleanName = (name || '').trim();
+      const cleanEmail = (email || '').trim().toLowerCase();
+      const validRoles: UserRole[] = ['manager', 'member', 'viewer'];
+      const targetRole: UserRole = validRoles.includes(role) ? role : 'member';
+
+      if (!cleanName || !cleanEmail) {
+        return res.status(400).json({ ok: false, error: 'Full name and email address are required.' });
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanEmail)) {
+        return res.status(400).json({ ok: false, error: 'Please provide a valid email address.' });
+      }
+
+      const existing = Object.values(db.users || {}).find(u => u.email.toLowerCase() === cleanEmail);
+      if (existing) {
+        return res.status(409).json({ ok: false, error: 'An account with this email address already exists.' });
+      }
+
+      const tempPass = generateTemporaryPassword();
+      const salt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = hashPassword(tempPass, salt);
+      const subUserId = 'usr_sub_' + Date.now();
+
+      const subUser: UserRecord = {
+        id: subUserId,
+        name: cleanName,
+        email: cleanEmail,
+        passwordHash,
+        salt,
+        tier: caller.tier || 'Pro Household',
+        role: targetRole,
+        isPrimary: false,
+        parentId: caller.id,
+        vaultId: caller.vaultId || (caller.id === 'usr_peter_badir' ? 'shared-main-vault' : 'vault_' + caller.id),
+        mustChangePassword: true,
+        temporaryPassword: tempPass,
+        createdAt: new Date().toISOString(),
+        lastLogin: ''
+      };
+
+      if (!db.users) db.users = {};
+      db.users[subUserId] = subUser;
+
+      // Automatically dispatch email notification to the sub-user
+      const emailRecord = sendSubUserWelcomeEmail(subUser, tempPass, caller);
+
+      saveDatabase(db);
+
+      res.status(201).json({
+        ok: true,
+        message: `Sub-user created successfully! An automated invitation email with their temporary password was dispatched to ${cleanEmail}.`,
+        subUser: {
+          id: subUser.id,
+          name: subUser.name,
+          email: subUser.email,
+          role: subUser.role,
+          isPrimary: false,
+          parentId: subUser.parentId,
+          vaultId: subUser.vaultId,
+          mustChangePassword: true,
+          createdAt: subUser.createdAt
+        },
+        temporaryPassword: tempPass,
+        email: emailRecord
+      });
+    } catch (err: any) {
+      console.error('[Create Sub-User Error]', err);
+      res.status(500).json({ ok: false, error: 'Failed to create sub-user: ' + err.message });
+    }
+  });
+
+  // Delete / Revoke sub-user
+  app.delete('/api/auth/sub-users/:id', (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+      if (!token || !db.tokens || !db.tokens[token]) {
+        return res.status(401).json({ ok: false, error: 'Not authenticated' });
+      }
+
+      const callerId = db.tokens[token];
+      const caller = (db.users || {})[callerId];
+      if (!caller || (!caller.isPrimary && caller.role !== 'owner')) {
+        return res.status(403).json({ ok: false, error: 'Only the primary user can remove sub-users.' });
+      }
+
+      const subUserId = req.params.id;
+      const targetUser = (db.users || {})[subUserId];
+      if (!targetUser) {
+        return res.status(404).json({ ok: false, error: 'Sub-user not found' });
+      }
+
+      if (targetUser.isPrimary || targetUser.role === 'owner') {
+        return res.status(400).json({ ok: false, error: 'Cannot remove primary owner account.' });
+      }
+
+      if (db.users) {
+        delete db.users[subUserId];
+      }
+
+      // Invalidate active tokens for this sub-user
+      if (db.tokens) {
+        Object.keys(db.tokens).forEach(t => {
+          if (db.tokens![t] === subUserId) {
+            delete db.tokens![t];
+          }
+        });
+      }
+
+      saveDatabase(db);
+      res.json({ ok: true, message: `Sub-user ${targetUser.name} removed successfully.` });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Resend invitation email with new temporary password
+  app.post('/api/auth/sub-users/:id/resend-email', (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+      if (!token || !db.tokens || !db.tokens[token]) {
+        return res.status(401).json({ ok: false, error: 'Not authenticated' });
+      }
+
+      const callerId = db.tokens[token];
+      const caller = (db.users || {})[callerId];
+      if (!caller || (!caller.isPrimary && caller.role !== 'owner')) {
+        return res.status(403).json({ ok: false, error: 'Only the primary user can resend sub-user credentials.' });
+      }
+
+      const subUserId = req.params.id;
+      const targetUser = (db.users || {})[subUserId];
+      if (!targetUser) {
+        return res.status(404).json({ ok: false, error: 'Sub-user not found' });
+      }
+
+      const newTempPass = generateTemporaryPassword();
+      const salt = crypto.randomBytes(16).toString('hex');
+      targetUser.passwordHash = hashPassword(newTempPass, salt);
+      targetUser.salt = salt;
+      targetUser.mustChangePassword = true;
+      targetUser.temporaryPassword = newTempPass;
+
+      const emailRecord = sendSubUserWelcomeEmail(targetUser, newTempPass, caller);
+      saveDatabase(db);
+
+      res.json({
+        ok: true,
+        message: `Welcome email re-sent to ${targetUser.email} with new temporary password.`,
+        temporaryPassword: newTempPass,
+        email: emailRecord
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // First-Login / Mandatory Password Change endpoint
+  app.post('/api/auth/change-password', (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+      if (!token || !db.tokens || !db.tokens[token]) {
+        return res.status(401).json({ ok: false, error: 'Not authenticated' });
+      }
+
+      const userId = db.tokens[token];
+      const user = (db.users || {})[userId];
+      if (!user) {
+        return res.status(401).json({ ok: false, error: 'User not found' });
+      }
+
+      const { currentPassword, newPassword } = req.body || {};
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ ok: false, error: 'New password must be at least 6 characters long.' });
+      }
+
+      if (currentPassword) {
+        const isValid = verifyPassword(currentPassword, user.salt, user.passwordHash);
+        if (!isValid) {
+          return res.status(400).json({ ok: false, error: 'Current / temporary password does not match.' });
+        }
+      }
+
+      const newSalt = crypto.randomBytes(16).toString('hex');
+      user.passwordHash = hashPassword(newPassword, newSalt);
+      user.salt = newSalt;
+      user.mustChangePassword = false;
+      delete user.temporaryPassword;
+
+      saveDatabase(db);
+
+      res.json({
+        ok: true,
+        message: 'Password successfully changed! You now have permanent access.',
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          tier: user.tier,
+          role: user.role,
+          isPrimary: user.isPrimary,
+          mustChangePassword: false,
+          createdAt: user.createdAt
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // View Sent Emails Outbox
+  app.get('/api/emails/outbox', (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+      if (!token || !db.tokens || !db.tokens[token]) {
+        return res.status(401).json({ ok: false, error: 'Not authenticated' });
+      }
+
+      const userId = db.tokens[token];
+      const user = (db.users || {})[userId];
+      if (!user) {
+        return res.status(401).json({ ok: false, error: 'User not found' });
+      }
+
+      const outbox = db.outbox || [];
+      res.json({ ok: true, outbox });
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message });
     }
@@ -347,6 +1134,11 @@ async function startServer() {
           name: user.name,
           email: user.email,
           tier: user.tier,
+          role: user.role,
+          isPrimary: user.isPrimary,
+          parentId: user.parentId,
+          vaultId: user.vaultId,
+          mustChangePassword: !!user.mustChangePassword,
           createdAt: user.createdAt
         }
       });
@@ -481,6 +1273,320 @@ async function startServer() {
     saveDatabase(db);
 
     res.json({ ok: true, count: vault.transactions.length, transactions: vault.transactions });
+  });
+
+  /* -------------------------------------------------------------------------
+   * MAIN ADMIN CONTROL PANEL API (Exclusively for Master Admin Peter W. Badir)
+   * Full authority over Website, Desktop & Mobile deployments, live updates,
+   * feature flags, user management, telemetry, and audit logs.
+   * ------------------------------------------------------------------------- */
+  
+  function requireMainAdmin(req: express.Request, res: express.Response): UserRecord | null {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+    if (!token || !db.tokens || !db.tokens[token]) {
+      res.status(401).json({ ok: false, error: 'Authentication required. Please sign in as Main Admin.' });
+      return null;
+    }
+
+    const userId = db.tokens[token];
+    const user = (db.users || {})[userId];
+    if (!user) {
+      res.status(401).json({ ok: false, error: 'User session not found.' });
+      return null;
+    }
+
+    const isMaster = !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin';
+    if (!isMaster) {
+      res.status(403).json({ ok: false, error: 'Access forbidden: Full Main Administrator privileges required.' });
+      return null;
+    }
+
+    return user;
+  }
+
+  // 1. Get complete Admin Dashboard data
+  app.get('/api/admin/dashboard', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const usersList = Object.values(db.users || {}).map(u => {
+        const vault = u.vaultId ? db.vaults[u.vaultId] : null;
+        return {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          tier: u.tier,
+          isPrimary: !!u.isPrimary,
+          isMainAdmin: !!u.isMainAdmin || u.email.toLowerCase() === 'peter.w.badir@gmail.com',
+          status: u.status || 'active',
+          parentId: u.parentId,
+          vaultId: u.vaultId,
+          createdAt: u.createdAt,
+          lastLogin: u.lastLogin,
+          transactionCount: vault ? (vault.transactions?.length || 0) : 0,
+          accountCount: vault ? (vault.accounts?.length || 0) : 0
+        };
+      });
+
+      const totalVaults = Object.keys(db.vaults || {}).length;
+      const totalTxns = Object.values(db.vaults || {}).reduce((sum, v) => sum + (v.transactions?.length || 0), 0);
+      const totalAccs = Object.values(db.vaults || {}).reduce((sum, v) => sum + (v.accounts?.length || 0), 0);
+      let dbSizeBytes = 0;
+      try {
+        if (fs.existsSync(DB_FILE)) dbSizeBytes = fs.statSync(DB_FILE).size;
+      } catch (e) {}
+
+      res.json({
+        ok: true,
+        admin: {
+          name: admin.name,
+          email: admin.email,
+          role: admin.role,
+          tier: admin.tier,
+          isMainAdmin: true
+        },
+        systemConfig: db.systemConfig,
+        telemetry: {
+          uptimeSeconds: Math.floor(process.uptime()),
+          serverStartedAt: db.systemConfig?.telemetry?.serverStartedAt || new Date().toISOString(),
+          totalUsers: usersList.length,
+          totalVaults,
+          totalTransactions: totalTxns,
+          totalAccounts: totalAccs,
+          activeTokensCount: Object.keys(db.tokens || {}).length,
+          outboxCount: (db.outbox || []).length,
+          dbSizeBytes,
+          memoryRssMb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
+          nodeVersion: process.version,
+          platform: process.platform
+        },
+        users: usersList,
+        auditLogs: (db.auditLog || []).slice(0, 80),
+        outbox: (db.outbox || []).slice(0, 25)
+      });
+    } catch (err: any) {
+      console.error('[Admin Dashboard Error]', err);
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // 2. Update System Config (Maintenance, Broadcast, Feature Flags)
+  app.post('/api/admin/config', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const { maintenanceMode, broadcastNotice, featureFlags } = req.body || {};
+      if (!db.systemConfig) db.systemConfig = {} as any;
+
+      if (maintenanceMode) {
+        db.systemConfig!.maintenanceMode = {
+          ...db.systemConfig!.maintenanceMode,
+          ...maintenanceMode
+        };
+        logAdminAction(admin.email, 'MAINTENANCE_MODE_UPDATED', 'maintenance', 
+          `Maintenance mode set to ${maintenanceMode.enabled ? 'ACTIVE' : 'INACTIVE'}. Affected: ${(maintenanceMode.affectedPlatforms || []).join(', ')}`);
+      }
+
+      if (broadcastNotice) {
+        db.systemConfig!.broadcastNotice = {
+          ...db.systemConfig!.broadcastNotice,
+          ...broadcastNotice,
+          updatedAt: new Date().toISOString()
+        };
+        logAdminAction(admin.email, 'BROADCAST_NOTICE_UPDATED', 'platform_release',
+          `Broadcast banner ${broadcastNotice.enabled ? 'ENABLED' : 'DISABLED'}: "${broadcastNotice.message || ''}"`);
+      }
+
+      if (featureFlags) {
+        db.systemConfig!.featureFlags = {
+          ...db.systemConfig!.featureFlags,
+          ...featureFlags
+        };
+        logAdminAction(admin.email, 'FEATURE_FLAGS_UPDATED', 'feature_flag',
+          `System feature flags updated: ${Object.keys(featureFlags).join(', ')}`);
+      }
+
+      saveDatabase(db);
+      res.json({ ok: true, message: 'System configuration updated successfully.', systemConfig: db.systemConfig });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // 3. Push a New App Release / Update across Web, Desktop, Mobile
+  app.post('/api/admin/release', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const { targetPlatform, version, minSupportedVersion, channel, releaseNotes, forceUpdateRequired, downloadUrl, broadcastUpdate } = req.body || {};
+
+      if (!version || typeof version !== 'string') {
+        return res.status(400).json({ ok: false, error: 'Valid version string (e.g. 2.5.1) is required.' });
+      }
+
+      const cleanVersion = version.trim();
+      const platformsToUpdate: ('web' | 'desktop' | 'mobile')[] = 
+        targetPlatform === 'all' 
+          ? ['web', 'desktop', 'mobile'] 
+          : (['web', 'desktop', 'mobile'].includes(targetPlatform) ? [targetPlatform] : ['web']);
+
+      const notesList: string[] = Array.isArray(releaseNotes) 
+        ? releaseNotes 
+        : (typeof releaseNotes === 'string' ? releaseNotes.split('\n').map(s => s.trim()).filter(Boolean) : []);
+
+      platformsToUpdate.forEach(p => {
+        if (!db.systemConfig!.platforms) db.systemConfig!.platforms = {} as any;
+        const current = db.systemConfig!.platforms[p] || {
+          version: '2.5.0',
+          minSupportedVersion: '2.0.0',
+          channel: 'production',
+          lastReleasedAt: new Date().toISOString(),
+          releaseNotes: [],
+          forceUpdateRequired: false,
+          updateStatus: 'current'
+        };
+
+        db.systemConfig!.platforms[p] = {
+          ...current,
+          version: cleanVersion,
+          minSupportedVersion: minSupportedVersion ? String(minSupportedVersion).trim() : current.minSupportedVersion,
+          channel: channel || current.channel || 'production',
+          lastReleasedAt: new Date().toISOString(),
+          releaseNotes: notesList.length > 0 ? notesList : current.releaseNotes,
+          forceUpdateRequired: forceUpdateRequired !== undefined ? !!forceUpdateRequired : current.forceUpdateRequired,
+          downloadUrl: downloadUrl || current.downloadUrl,
+          updateStatus: 'current'
+        };
+      });
+
+      if (broadcastUpdate) {
+        db.systemConfig!.broadcastNotice = {
+          enabled: true,
+          type: 'success',
+          message: `🚀 Forecaster Pro v${cleanVersion} is now live across ${platformsToUpdate.map(p => p.toUpperCase()).join(' & ')}!`,
+          linkUrl: downloadUrl || '',
+          updatedAt: new Date().toISOString()
+        };
+      }
+
+      logAdminAction(admin.email, 'PLATFORM_RELEASE_DEPLOYED', 'platform_release',
+        `Deployed release v${cleanVersion} to [${platformsToUpdate.join(', ')}] on channel "${channel || 'production'}". Force Update: ${!!forceUpdateRequired}`);
+
+      saveDatabase(db);
+      res.json({
+        ok: true,
+        message: `Version v${cleanVersion} successfully deployed to ${platformsToUpdate.join(', ')}.`,
+        platforms: db.systemConfig!.platforms
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // 4. Update User Account (Role, Tier, Status, Password)
+  app.post('/api/admin/users/:userId/update', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const targetId = req.params.userId;
+      const targetUser = (db.users || {})[targetId];
+      if (!targetUser) {
+        return res.status(404).json({ ok: false, error: 'User not found.' });
+      }
+
+      const { role, tier, status, newPassword } = req.body || {};
+
+      // Protection for Master Admin Peter Badir
+      const isTargetMaster = targetUser.email.toLowerCase() === 'peter.w.badir@gmail.com';
+      if (isTargetMaster && (status === 'suspended' || (role && role !== 'main_admin'))) {
+        return res.status(403).json({ ok: false, error: 'The Master App Admin account cannot be suspended or demoted.' });
+      }
+
+      if (role) targetUser.role = role;
+      if (tier) targetUser.tier = tier;
+      if (status) targetUser.status = status;
+      if (newPassword && String(newPassword).length >= 6) {
+        const salt = crypto.randomBytes(16).toString('hex');
+        targetUser.passwordHash = hashPassword(String(newPassword), salt);
+        targetUser.salt = salt;
+        targetUser.mustChangePassword = false;
+        targetUser.temporaryPassword = undefined;
+      }
+
+      logAdminAction(admin.email, 'USER_ACCOUNT_MANAGED', 'user_management',
+        `Admin modified user ${targetUser.email} (Role: ${targetUser.role}, Tier: ${targetUser.tier}, Status: ${targetUser.status || 'active'})`);
+
+      saveDatabase(db);
+      res.json({
+        ok: true,
+        message: `User ${targetUser.name} updated successfully.`,
+        user: {
+          id: targetUser.id,
+          name: targetUser.name,
+          email: targetUser.email,
+          role: targetUser.role,
+          tier: targetUser.tier,
+          status: targetUser.status || 'active',
+          vaultId: targetUser.vaultId
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // 5. Reset User Vault Database
+  app.post('/api/admin/users/:userId/reset-vault', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const targetId = req.params.userId;
+      const targetUser = (db.users || {})[targetId];
+      if (!targetUser) {
+        return res.status(404).json({ ok: false, error: 'User not found.' });
+      }
+
+      if (!targetUser.vaultId) {
+        return res.status(400).json({ ok: false, error: 'User does not have an assigned vault database.' });
+      }
+
+      const vault = db.vaults[targetUser.vaultId];
+      if (vault) {
+        vault.transactions = [];
+        vault.accountTransfers = [];
+        vault.updatedAt = new Date().toISOString();
+      }
+
+      logAdminAction(admin.email, 'USER_VAULT_RESET', 'user_management',
+        `Admin cleared transaction records for user ${targetUser.email} (Vault: ${targetUser.vaultId})`);
+
+      saveDatabase(db);
+      res.json({ ok: true, message: `Vault ${targetUser.vaultId} for ${targetUser.name} has been reset.` });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // 6. Public System Status for all clients (Web, Desktop, Mobile)
+  app.get('/api/public/system-status', (req, res) => {
+    if (db.systemConfig?.telemetry) {
+      db.systemConfig.telemetry.totalApiRequests = (db.systemConfig.telemetry.totalApiRequests || 0) + 1;
+    }
+    res.json({
+      ok: true,
+      maintenance: db.systemConfig?.maintenanceMode || { enabled: false, message: '', affectedPlatforms: [] },
+      broadcast: db.systemConfig?.broadcastNotice || { enabled: false, message: '' },
+      platforms: db.systemConfig?.platforms || {},
+      featureFlags: db.systemConfig?.featureFlags || {}
+    });
   });
 
   /* -------------------------------------------------------------------------

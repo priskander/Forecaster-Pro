@@ -19,21 +19,44 @@
     } catch (e) {}
   };
 
+  window.syncThemeIcons = function() {
+    const isDark = document.documentElement.classList.contains('dark');
+    document.querySelectorAll('.moon-icon').forEach(function(el) {
+      el.classList.toggle('hidden', isDark);
+    });
+    document.querySelectorAll('.sun-icon').forEach(function(el) {
+      el.classList.toggle('hidden', !isDark);
+    });
+  };
+
   window.toggleDarkMode = function() {
     const isDark = document.documentElement.classList.toggle('dark');
     try { localStorage.setItem('pro_theme', isDark ? 'dark' : 'light'); } catch (err) {}
     
-    // Update theme toggle icon
-    const moonIcon = document.querySelector('#theme-toggle-btn .moon-icon');
-    const sunIcon = document.querySelector('#theme-toggle-btn .sun-icon');
-    if (moonIcon && sunIcon) {
-      moonIcon.classList.toggle('hidden', isDark);
-      sunIcon.classList.toggle('hidden', !isDark);
-    }
+    // Update theme toggle icons everywhere (header, dropdown, drawer)
+    window.syncThemeIcons();
 
     window.syncChartDefaultsToTheme();
     if (typeof window.renderAllViews === 'function') {
       window.renderAllViews();
+    }
+  };
+
+  // Mobile "More" Drawer Controller
+  window.toggleMobileDrawer = function(forceOpen) {
+    const drawer = document.getElementById('mobile-more-drawer');
+    if (!drawer) return;
+    const isCurrentlyOpen = !drawer.classList.contains('hidden');
+    const shouldOpen = (typeof forceOpen === 'boolean') ? forceOpen : !isCurrentlyOpen;
+    if (shouldOpen) {
+      drawer.classList.remove('hidden');
+      document.body.classList.add('overflow-hidden');
+      try {
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+      } catch (e) {}
+    } else {
+      drawer.classList.add('hidden');
+      document.body.classList.remove('overflow-hidden');
     }
   };
 
@@ -211,6 +234,11 @@
     const bell = document.getElementById('notification-bell-btn');
     if (!menu || !bell) return;
     const willOpen = menu.classList.contains('hidden');
+
+    if (willOpen && window.ForecasterAuth && typeof window.ForecasterAuth.closeProfileDropdown === 'function') {
+      window.ForecasterAuth.closeProfileDropdown();
+    }
+
     menu.classList.toggle('hidden', !willOpen);
     bell.setAttribute('aria-expanded', String(willOpen));
   };
