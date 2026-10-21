@@ -849,8 +849,81 @@
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
+  /* MONTHLY CATEGORY SCOPING HELPERS */
+  window.formatMonthLabel = function(ym) {
+    if (!ym || ym === 'all') return 'All Recorded Time';
+    if (ym === 'auto') return 'Active Month';
+    try {
+      const parts = ym.split('-');
+      if (parts.length < 2) return ym;
+      const date = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, 1);
+      return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    } catch(e) {
+      return ym;
+    }
+  };
+
+  window.getActiveAllocationsMonth = function() {
+    const selected = window.allocationsSelectedMonth || localStorage.getItem('pro_allocations_month') || 'auto';
+    if (selected !== 'auto') return selected;
+
+    const monthSet = new Set();
+    (window.transactions || []).forEach(t => {
+      if (t.date && t.date.length >= 7) monthSet.add(t.date.slice(0, 7));
+    });
+    const sorted = Array.from(monthSet).sort().reverse();
+    return sorted[0] || new Date().toISOString().slice(0, 7);
+  };
+
+  window.setAllocationsMonth = function(val) {
+    window.allocationsSelectedMonth = val;
+    localStorage.setItem('pro_allocations_month', val);
+    window.renderAllViews();
+  };
+
+  window.populateAllocationsMonthFilter = function() {
+    const select = document.getElementById('allocations-month-filter');
+    if (!select) return;
+
+    const monthSet = new Set();
+    (window.transactions || []).forEach(t => {
+      if (t.date && t.date.length >= 7) monthSet.add(t.date.slice(0, 7));
+    });
+    (window.accountTransfers || []).forEach(tr => {
+      if (tr.date && tr.date.length >= 7) monthSet.add(tr.date.slice(0, 7));
+    });
+
+    const sortedMonths = Array.from(monthSet).sort().reverse();
+    const currentSelected = window.allocationsSelectedMonth || localStorage.getItem('pro_allocations_month') || 'auto';
+    const activeMonth = window.getActiveAllocationsMonth();
+
+    let html = `<option value="auto"${currentSelected === 'auto' ? ' selected' : ''}>Active Month (${window.formatMonthLabel(activeMonth)})</option>`;
+    html += `<option value="all"${currentSelected === 'all' ? ' selected' : ''}>All Recorded Time</option>`;
+
+    sortedMonths.forEach(m => {
+      const selected = (currentSelected === m) ? ' selected' : '';
+      html += `<option value="${m}"${selected}>${window.formatMonthLabel(m)}</option>`;
+    });
+
+    select.innerHTML = html;
+  };
+
+  window.getAllocationsScopedData = function() {
+    const activeMonth = window.getActiveAllocationsMonth();
+    let scopedTxns = window.transactions || [];
+    let scopedTransfers = window.accountTransfers || [];
+
+    if (activeMonth !== 'all') {
+      scopedTxns = scopedTxns.filter(t => (t.date || '').startsWith(activeMonth));
+      scopedTransfers = scopedTransfers.filter(tr => (tr.date || '').startsWith(activeMonth));
+    }
+
+    return { activeMonth, scopedTxns, scopedTransfers };
+  };
+
   /* MAIN ORCHESTRATOR */
   window.renderAllViews = function() {
+    window.populateAllocationsMonthFilter();
     window.autoCalculateAllocations(false);
     window.calculateOverallDashboardAggregates();
     window.renderDashboardBlueprintItems();
@@ -867,10 +940,12 @@
   };
 
   window.autoCalculateAllocations = function(forceSync = false) {
+    const { activeMonth, scopedTxns, scopedTransfers } = window.getAllocationsScopedData();
+
     let registeredIncome = 0;
     let registeredExpenses = 0;
 
-    (window.transactions || []).forEach(t => {
+    scopedTxns.forEach(t => {
       const amt = parseFloat(t.amount) || 0;
       if (t.type === 'income') registeredIncome += amt;
       if (t.type === 'expense') registeredExpenses += amt;
@@ -878,19 +953,22 @@
 
     let totalTransfersAmount = 0;
     let totalTransferFees = 0;
-    (window.accountTransfers || []).forEach(tr => {
+    scopedTransfers.forEach(tr => {
       totalTransfersAmount += parseFloat(tr.amount) || 0;
       totalTransferFees += parseFloat(tr.fee) || 0;
     });
 
     // Update Live Ledger Tracking in Define Allocations card
+    const monthBadge = document.getElementById('alloc-active-month-badge');
+    if (monthBadge) monthBadge.innerText = window.formatMonthLabel(activeMonth);
+
     const regIncEl = document.getElementById('alloc-registered-income');
     const regExpEl = document.getElementById('alloc-registered-expenses');
     const regTrEl = document.getElementById('alloc-registered-transfers');
     if (regIncEl) regIncEl.innerText = `EGP ${registeredIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     if (regExpEl) regExpEl.innerText = `EGP ${registeredExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     if (regTrEl) {
-      const count = (window.accountTransfers || []).length;
+      const count = scopedTransfers.length;
       regTrEl.innerText = `${count} (EGP ${totalTransfersAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${totalTransferFees > 0 ? ` + EGP ${totalTransferFees.toFixed(2)} fee` : ''})`;
     }
 
@@ -903,7 +981,7 @@
     }
 
     if (!isManual || forceSync) {
-      // Auto-calculate budget limits based on registered income, expenses, and transfer fees
+      // Auto-calculate budget limits based on monthly registered income, expenses, and transfer fees
       const autoIncome = registeredIncome > 0 ? registeredIncome : (window.budgetLimits.income || 3500);
       const autoExpense = (registeredExpenses + totalTransferFees) > 0 ? (registeredExpenses + totalTransferFees) : (window.budgetLimits.expense || 2000);
 
@@ -926,7 +1004,7 @@
       }
 
       if (forceSync && typeof window.triggerToast === 'function') {
-        window.triggerToast(`Allocations auto-calculated: Income EGP ${autoIncome.toFixed(2)}, Expenses EGP ${autoExpense.toFixed(2)}`, 'success');
+        window.triggerToast(`Allocations auto-calculated for ${window.formatMonthLabel(activeMonth)}: Inflow EGP ${autoIncome.toFixed(2)}, Outflow EGP ${autoExpense.toFixed(2)}`, 'success');
       }
     } else {
       if (modeInc) {
@@ -998,18 +1076,19 @@
   window.renderDashboardBlueprintItems = function() {
     const incContainer = document.getElementById('blueprint-income-items');
     const expContainer = document.getElementById('blueprint-expense-items');
-    
     if (!incContainer || !expContainer) return;
 
     incContainer.innerHTML = '';
     expContainer.innerHTML = '';
+
+    const { scopedTxns } = window.getAllocationsScopedData();
 
     const incomeByCategory = {};
     const expenseByCategory = {};
     let totalRegisteredIncome = 0;
     let totalRegisteredExpense = 0;
 
-    (window.transactions || []).forEach(t => {
+    scopedTxns.forEach(t => {
       const amt = parseFloat(t.amount) || 0;
       if (t.type === 'income') {
         const cat = t.category || 'Others';
@@ -1025,7 +1104,7 @@
     let totalForecastedIncome = 0;
     let totalForecastedExpense = 0;
 
-    // Income Target Proportions (Amount Registered / Amount Forecasted)
+    // Monthly Income Target Proportions (Amount Registered / Amount Forecasted per Category)
     for (const [name, data] of Object.entries(window.incomeAllocationBlueprint)) {
       const forecasted = window.budgetLimits.income * (data.pct / 100);
       totalForecastedIncome += forecasted;
@@ -1058,7 +1137,7 @@
       `;
     }
 
-    // Expense Quotas Blueprint (Amount Registered / Amount Forecasted)
+    // Monthly Expense Quotas Blueprint (Amount Registered / Amount Forecasted per Category)
     for (const [name, data] of Object.entries(window.expenseAllocationBlueprint)) {
       const forecasted = window.budgetLimits.expense * (data.pct / 100);
       totalForecastedExpense += forecasted;
@@ -1107,6 +1186,12 @@
     const incContainer = document.getElementById('income-distribution-bars');
     if (!expContainer && !incContainer) return;
 
+    const { activeMonth, scopedTxns } = window.getAllocationsScopedData();
+
+    // Update Footprint Month Badge
+    const footprintBadge = document.getElementById('footprint-month-badge');
+    if (footprintBadge) footprintBadge.innerText = window.formatMonthLabel(activeMonth);
+
     let totalExpenses = 0;
     let totalIncome = 0;
     const expensesByCategory = {};
@@ -1117,7 +1202,7 @@
       '#06b6d4', '#6366f1', '#14b8a6', '#f97316', '#64748b'
     ];
 
-    (window.transactions || []).forEach(t => {
+    scopedTxns.forEach(t => {
       const amt = parseFloat(t.amount) || 0;
       if (t.type === 'expense') {
         totalExpenses += amt;
@@ -1135,13 +1220,13 @@
     if (totalExpEl) totalExpEl.innerText = `EGP ${totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     if (totalIncEl) totalIncEl.innerText = `EGP ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    // Render Expense Ratios by Category
+    // Render Expense Ratios by Category (Monthly)
     if (expContainer) {
       const expEntries = Object.entries(expensesByCategory).sort((a, b) => b[1] - a[1]);
       if (expEntries.length === 0 || totalExpenses === 0) {
         expContainer.innerHTML = `
           <div class="p-3 text-center text-xs text-slate-404 bg-slate-50 dark:bg-slate-900/40 rounded-xl">
-            No expense transactions recorded yet.
+            No expenses recorded for ${window.formatMonthLabel(activeMonth)}.
           </div>`;
       } else {
         let html = '';
@@ -1157,7 +1242,7 @@
                   <span>${category}</span>
                 </span>
                 <div class="flex items-center gap-2">
-                  <span class="text-slate-500 dark:text-slate-400 font-mono text-[11px] font-bold">${pct.toFixed(1)}%</span>
+                  <span class="text-slate-500 dark:text-slate-404 font-mono text-[11px] font-bold">${pct.toFixed(1)}%</span>
                   <span class="font-bold text-slate-900 dark:text-white">EGP ${amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
@@ -1170,13 +1255,13 @@
       }
     }
 
-    // Render Income Sources Breakdown
+    // Render Income Sources Breakdown (Monthly)
     if (incContainer) {
       const incEntries = Object.entries(incomeByCategory).sort((a, b) => b[1] - a[1]);
       if (incEntries.length === 0 || totalIncome === 0) {
         incContainer.innerHTML = `
           <div class="p-3 text-center text-xs text-slate-404 bg-slate-50 dark:bg-slate-900/40 rounded-xl">
-            No income transactions recorded yet.
+            No income recorded for ${window.formatMonthLabel(activeMonth)}.
           </div>`;
       } else {
         let html = '';
@@ -1192,7 +1277,7 @@
                   <span>${category}</span>
                 </span>
                 <div class="flex items-center gap-2">
-                  <span class="text-slate-500 dark:text-slate-400 font-mono text-[11px] font-bold">${pct.toFixed(1)}%</span>
+                  <span class="text-slate-500 dark:text-slate-404 font-mono text-[11px] font-bold">${pct.toFixed(1)}%</span>
                   <span class="font-bold text-slate-900 dark:text-white">EGP ${amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
