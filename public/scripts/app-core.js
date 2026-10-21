@@ -1356,17 +1356,13 @@
     if (totalDisplay) totalDisplay.innerText = `EGP ${cumulativeBudget.toFixed(2)}`;
   };
 
-  window.renderImmediateSystemAlerts = function() {
-    const container = document.getElementById('alerts-ledger-container');
-    const insightLowStock = document.getElementById('insight-low-stock');
-    if (!container) return;
-
-    container.innerHTML = '';
+  window.getImmediateReordersAndPredictiveAlerts = function() {
     let lowCount = 0;
+    const alerts = [];
 
     const groupedStock = {};
-    window.stockData.forEach(s => {
-      const key = s.name.trim();
+    (window.stockData || []).forEach(s => {
+      const key = (s.name || '').trim();
       if (!groupedStock[key]) {
         groupedStock[key] = { name: s.name, totalQty: 0, totalThreshold: 0, unit: s.unit, batches: [] };
       }
@@ -1376,8 +1372,8 @@
     });
 
     const groupedPharmacy = {};
-    window.pharmacyData.forEach(m => {
-      const key = m.name.trim();
+    (window.pharmacyData || []).forEach(m => {
+      const key = (m.name || '').trim();
       if (!groupedPharmacy[key]) {
         groupedPharmacy[key] = { name: m.name, totalQty: 0, totalThreshold: 0, unit: m.unit, batches: [] };
       }
@@ -1389,72 +1385,72 @@
     Object.values(groupedStock).forEach(group => {
       if (group.totalQty <= group.totalThreshold) {
         lowCount++;
-        const batchListHTML = group.batches.map(b => `
-          <div class="flash-red-batch text-[10px] font-bold mt-1 pl-4 flex items-center gap-1.5">
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-red-600"></span>
-            <span>Batch [ID: ${(b.id && String(b.id).includes('_')) ? String(b.id).split('_')[1] : (b.id || 'N/A')}]: ${Number(b.quantity ?? b.currentStock ?? 0).toFixed(1)} ${group.unit} (Exp: ${b.expDate || b.expiryDate || 'N/A'})</span>
-          </div>
-        `).join('');
-
-        container.innerHTML += `
-          <div class="flex flex-col gap-1 p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 text-rose-800 dark:text-rose-300 rounded-xl text-xs font-semibold">
-            <div class="flex items-start gap-3">
-              <span class="text-base">🚨</span>
-              <div class="w-full">
-                <span class="font-extrabold block">Stock Limit Triggered (Total reserves low): ${group.name}</span>
-                <span class="font-medium text-rose-700 dark:text-rose-400 block mt-0.5">
-                  Cumulative volume is ${group.totalQty.toFixed(1)} ${group.unit}. Minimum safety threshold is ${group.totalThreshold.toFixed(1)} ${group.unit}.
-                </span>
-                <div class="mt-2 border-t border-rose-200/55 dark:border-rose-800/55 pt-1.5">
-                  <span class="text-[9px] uppercase tracking-wider text-rose-500 font-extrabold block mb-1">Specific Batch Breakdown:</span>
-                  ${batchListHTML}
-                </div>
-              </div>
+        alerts.push(`
+          <div class="flex items-start gap-2.5 p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200/60 dark:border-rose-900/40 text-xs">
+            <span class="text-base shrink-0">🚨</span>
+            <div class="min-w-0">
+              <h5 class="font-extrabold text-xs text-rose-900 dark:text-rose-200">Reorder Alert: ${group.name}</h5>
+              <p class="text-[11px] text-rose-700 dark:text-rose-300 mt-0.5">Low inventory: ${group.totalQty.toFixed(1)} ${group.unit} remaining (Safety threshold: ${group.totalThreshold.toFixed(1)} ${group.unit}). Immediate replenishment advised.</p>
             </div>
           </div>
-        `;
+        `);
       }
     });
 
+    const today = new Date();
     Object.values(groupedPharmacy).forEach(group => {
       if (group.totalQty <= group.totalThreshold) {
         lowCount++;
-        const batchListHTML = group.batches.map(b => `
-          <div class="flash-red-batch text-[10px] font-bold mt-1 pl-4 flex items-center gap-1.5">
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-red-650 animate-pulse"></span>
-            <span>Batch [Code: ${(b.id && String(b.id).includes('_')) ? String(b.id).split('_')[1] : (b.id || 'N/A')}]: ${Number(b.quantity ?? b.currentStock ?? 0).toFixed(0)} ${group.unit} (Exp: ${b.expDate || b.expiryDate || 'N/A'})</span>
-          </div>
-        `).join('');
-
-        container.innerHTML += `
-          <div class="flex flex-col gap-1 p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 rounded-xl text-xs font-semibold">
-            <div class="flex items-start gap-3">
-              <span class="text-base">⚠️</span>
-              <div class="w-full">
-                <span class="font-extrabold block">Medication Low Stock (Total reserves low): ${group.name}</span>
-                <span class="font-medium text-amber-700 dark:text-amber-400 block mt-0.5">
-                  Cumulative inventory is ${group.totalQty.toFixed(0)} ${group.unit}. Minimum safety threshold is ${group.totalThreshold.toFixed(0)} ${group.unit}.
-                </span>
-                <div class="mt-2 border-t border-amber-200/55 dark:border-amber-800/55 pt-1.5">
-                  <span class="text-[9px] uppercase tracking-wider text-amber-600 font-extrabold block mb-1">Specific Batch Breakdown:</span>
-                  ${batchListHTML}
-                </div>
-              </div>
+        alerts.push(`
+          <div class="flex items-start gap-2.5 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/40 text-xs">
+            <span class="text-base shrink-0">⚠️</span>
+            <div class="min-w-0">
+              <h5 class="font-extrabold text-xs text-amber-900 dark:text-amber-200">Medication Reorder: ${group.name}</h5>
+              <p class="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">Low reserve: ${group.totalQty.toFixed(0)} ${group.unit} on hand (Threshold: ${group.totalThreshold.toFixed(0)} ${group.unit}).</p>
             </div>
           </div>
-        `;
+        `);
       }
+
+      // Check expiry predictions
+      group.batches.forEach(b => {
+        if (b.expDate) {
+          const exp = new Date(b.expDate);
+          const daysLeft = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+          if (daysLeft <= 0) {
+            alerts.push(`
+              <div class="flex items-start gap-2.5 p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200/60 dark:border-rose-900/40 text-xs">
+                <span class="text-base shrink-0">🛑</span>
+                <div class="min-w-0">
+                  <h5 class="font-extrabold text-xs text-rose-900 dark:text-rose-200">Expired Medication: ${group.name}</h5>
+                  <p class="text-[11px] text-rose-700 dark:text-rose-300 mt-0.5">Batch [${b.id || 'N/A'}] expired on ${b.expDate}. Safe disposal & replacement required.</p>
+                </div>
+              </div>
+            `);
+          } else if (daysLeft <= 30) {
+            alerts.push(`
+              <div class="flex items-start gap-2.5 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/40 text-xs">
+                <span class="text-base shrink-0">⏳</span>
+                <div class="min-w-0">
+                  <h5 class="font-extrabold text-xs text-amber-900 dark:text-amber-200">Predictive Expiry Warning: ${group.name}</h5>
+                  <p class="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">Expires in ${daysLeft} days (${b.expDate}). Plan consumption or refill.</p>
+                </div>
+              </div>
+            `);
+          }
+        }
+      });
     });
 
-    if (lowCount === 0) {
-      container.innerHTML = `
-        <div class="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-2">
-          <span>🛡️</span> All local safety parameters check out! Stock levels are healthy.
-        </div>
-      `;
-    }
-
+    const insightLowStock = document.getElementById('insight-low-stock');
     if (insightLowStock) insightLowStock.innerText = `${lowCount} Items`;
+
+    window.immediateReorderAlerts = alerts;
+    return alerts;
+  };
+
+  window.renderImmediateSystemAlerts = function() {
+    window.getImmediateReordersAndPredictiveAlerts();
   };
 
   window.renderMedicationSafetyDashboard = function() {

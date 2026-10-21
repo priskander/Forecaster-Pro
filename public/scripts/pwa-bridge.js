@@ -93,6 +93,16 @@
     if (modal) modal.classList.add('hidden');
   };
 
+  window.openAndroidAPKModal = function() {
+    const modal = document.getElementById('pwa-android-apk-modal');
+    if (modal) modal.classList.remove('hidden');
+  };
+
+  window.closeAndroidAPKModal = function() {
+    const modal = document.getElementById('pwa-android-apk-modal');
+    if (modal) modal.classList.add('hidden');
+  };
+
   // 4. Offline Connectivity Listener
   function updateOnlineStatus() {
     const banner = document.getElementById('pwa-offline-indicator');

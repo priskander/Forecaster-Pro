@@ -291,8 +291,8 @@
     list.innerHTML = alertHTML.map(html => {
       const temp = document.createElement('div');
       temp.innerHTML = html;
-      const title = temp.querySelector('h5')?.innerText?.trim() || '';
-      const desc = temp.querySelector('p')?.innerText?.trim() || '';
+      const title = temp.querySelector('h5')?.innerText?.trim() || temp.querySelector('.font-extrabold')?.innerText?.trim() || 'System Alert';
+      const desc = temp.querySelector('p')?.innerText?.trim() || temp.querySelector('.font-medium')?.innerText?.trim() || temp.innerText?.slice(0, 90) || '';
       const signature = `${title}::${desc}`;
       const isRead = notificationReadSignatures.has(signature);
       if (!isRead) unreadCount++;
@@ -906,15 +906,23 @@
       console.error('[Forecaster Modules] render error:', err);
     }
 
-    // Redirect alerts to notification center
+    // Merge financial alerts, immediate reorders & predictive alerts into notification center
     try {
+      let combinedAlerts = [];
       const alertsSource = document.getElementById('alerts-container');
       if (alertsSource && alertsSource.children) {
-        const alertHTML = Array.from(alertsSource.children)
+        const financialAlerts = Array.from(alertsSource.children)
           .filter(child => child && (child.querySelector('h5')?.innerText || '').trim() !== 'All calculations on track')
           .map(child => child.outerHTML);
-        renderNotificationCenter(alertHTML);
+        combinedAlerts = combinedAlerts.concat(financialAlerts);
       }
+
+      if (typeof window.getImmediateReordersAndPredictiveAlerts === 'function') {
+        const reorderAlerts = window.getImmediateReordersAndPredictiveAlerts();
+        combinedAlerts = combinedAlerts.concat(reorderAlerts);
+      }
+
+      renderNotificationCenter(combinedAlerts);
     } catch(err) {
       console.warn('[Forecaster Modules] alerts extraction error:', err);
     }

@@ -356,7 +356,7 @@
           <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-700">
             <div>
               <p class="text-sm font-extrabold text-slate-900 dark:text-white">Notification Center</p>
-              <p class="text-[10px] font-semibold text-slate-404">Active financial alerts</p>
+              <p class="text-[10px] font-semibold text-slate-404">Reorders, predictive warnings &amp; financial alerts</p>
             </div>
             <button class="text-[10px] font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400" onclick="markAllNotificationsRead(event)" type="button">Mark all read</button>
           </div>
@@ -464,6 +464,9 @@
             </button>
             <button type="button" id="header-pwa-install-btn" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/60 transition flex items-center gap-2.5 text-blue-600 dark:text-blue-400 font-bold cursor-pointer" onclick="window.triggerPWAInstall(); window.ForecasterAuth.closeProfileDropdown()">
               <i class="fa-solid fa-download"></i> Install Forecaster PWA
+            </button>
+            <button type="button" id="header-android-apk-btn" class="w-full text-left px-3 py-2 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition flex items-center gap-2.5 text-emerald-600 dark:text-emerald-400 font-bold cursor-pointer" onclick="window.openAndroidAPKModal(); window.ForecasterAuth.closeProfileDropdown()">
+              <i class="fa-brands fa-android text-emerald-500"></i> Download Android APK
             </button>
           </div>
 
@@ -706,26 +709,21 @@
         </div>
       </div>
 
-      <!-- Warnings & Financial Footprint -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-          <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>🚨</span> Immediate Reorders &amp; Predictive Alerts</h2>
-          <div class="space-y-3" id="alerts-ledger-container"></div>
-        </div>
-        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-          <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>📈</span> Household Financial Footprint</h2>
-          <div class="space-y-6">
-            <div>
-              <span class="text-xs font-bold text-slate-505 dark:text-slate-404 block mb-2 uppercase tracking-wider">Expense Ratios by Category</span>
-              <div class="space-y-2 text-xs" id="expense-distribution-bars"></div>
-            </div>
-            <div class="pt-4 border-t border-slate-100 dark:border-slate-700">
-              <span class="text-xs font-bold text-slate-505 dark:text-slate-404 block mb-2 uppercase tracking-wider">Income Sources Breakdown</span>
-              <div class="space-y-2 text-xs" id="income-distribution-bars"></div>
-            </div>
+      <!-- Household Financial Footprint -->
+      <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+        <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>📈</span> Household Financial Footprint</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <span class="text-xs font-bold text-slate-500 dark:text-slate-400 block mb-2 uppercase tracking-wider">Expense Ratios by Category</span>
+            <div class="space-y-2 text-xs" id="expense-distribution-bars"></div>
+          </div>
+          <div class="pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-700 md:pl-6">
+            <span class="text-xs font-bold text-slate-500 dark:text-slate-400 block mb-2 uppercase tracking-wider">Income Sources Breakdown</span>
+            <div class="space-y-2 text-xs" id="income-distribution-bars"></div>
           </div>
         </div>
       </div>
+      <div id="alerts-ledger-container" class="hidden"></div>
 
       <!-- Medication Safety & Expiry Dashboard -->
       <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
@@ -1730,6 +1728,9 @@
         <button type="button" id="drawer-pwa-install-btn" class="w-full p-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer" onclick="window.triggerPWAInstall(); window.toggleMobileDrawer(false)">
           <i class="fa-solid fa-download"></i> Install Forecaster Pro PWA
         </button>
+        <button type="button" id="drawer-android-apk-btn" class="w-full p-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-sm" onclick="window.openAndroidAPKModal(); window.toggleMobileDrawer(false)">
+          <i class="fa-brands fa-android text-base"></i> Download Android APK
+        </button>
         <button type="button" class="w-full p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer" onclick="window.ForecasterGitHubSync.openModal(); window.toggleMobileDrawer(false)">
           <i class="fa-brands fa-github"></i> GitHub Cloud Sync &amp; Backup
         </button>
@@ -1972,6 +1973,65 @@
         3. Launch Forecaster Pro from your home screen for full standalone app experience.
       </p>
       <button class="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold" onclick="window.closeIOSInstallGuide()">Close Guide</button>
+    </div>
+  </div>
+
+  <!-- =================== ANDROID APK & WEBAPK INSTALLATION MODAL =================== -->
+  <div class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" id="pwa-android-apk-modal" role="dialog" aria-modal="true" aria-labelledby="android-apk-modal-title">
+    <div class="w-full max-w-md rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-base font-bold shadow-xs">
+            🤖
+          </div>
+          <div>
+            <h3 id="android-apk-modal-title" class="text-base font-extrabold text-slate-900 dark:text-white">Android APK &amp; App Install</h3>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">Install Forecaster Pro on any Android device</p>
+          </div>
+        </div>
+        <button type="button" class="text-slate-400 hover:text-slate-600 text-xl leading-none cursor-pointer" onclick="window.closeAndroidAPKModal()">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+        <!-- Method 1: Direct WebAPK -->
+        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+              <span>⚡</span> 1. Direct Android WebAPK (Recommended)
+            </span>
+            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Native APK</span>
+          </div>
+          <p class="text-[11.5px] leading-relaxed">
+            Android automatically compiles a native signed <strong>WebAPK</strong> package. It installs directly into your Android app drawer with full offline database caching, Face/Fingerprint lock, and zero browser UI.
+          </p>
+          <button type="button" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs" onclick="window.closeAndroidAPKModal(); window.triggerPWAInstall();">
+            <span>📲</span> Install Android WebAPK Now
+          </button>
+        </div>
+
+        <!-- Method 2: Standalone APK Generator -->
+        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+              <span>📦</span> 2. Download Standalone .APK File
+            </span>
+            <span class="text-[10px] text-blue-600 dark:text-blue-400 font-bold">PWABuilder</span>
+          </div>
+          <p class="text-[11.5px] leading-relaxed">
+            To sideload an unsigned or signed <code class="font-mono text-blue-600 dark:text-blue-400">.apk</code> file or build a Google Play <code class="font-mono text-blue-600 dark:text-blue-400">.aab</code> package, package the manifest with official PWABuilder or Bubblewrap CLI:
+          </p>
+          <div class="flex gap-2">
+            <a href="https://www.pwabuilder.com/reportcard?site=https://ais-pre-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app" target="_blank" rel="noopener noreferrer" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold text-center transition flex items-center justify-center gap-1.5">
+              <span>📥</span> Package APK File
+            </a>
+            <button type="button" class="px-3 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition cursor-pointer" onclick="navigator.clipboard.writeText('https://ais-pre-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app/manifest.json'); if (typeof window.triggerToast === 'function') window.triggerToast('Manifest URL copied!', 'success');">
+              Copy URL
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold cursor-pointer" onclick="window.closeAndroidAPKModal()">Close</button>
     </div>
   </div>
 
