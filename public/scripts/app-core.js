@@ -851,8 +851,10 @@
 
   /* MAIN ORCHESTRATOR */
   window.renderAllViews = function() {
+    window.autoCalculateAllocations(false);
     window.calculateOverallDashboardAggregates();
     window.renderDashboardBlueprintItems();
+    window.renderHouseholdFinancialFootprint();
     window.renderConsolidatedTableRegistry();
     window.renderStockInventoryLedger();
     window.renderPharmacyLedger();
@@ -862,6 +864,80 @@
     window.renderChartsPerformanceTrend();
     window.renderInsightsTab();
     window.renderInteractiveReportsDashboard();
+  };
+
+  window.autoCalculateAllocations = function(forceSync = false) {
+    let registeredIncome = 0;
+    let registeredExpenses = 0;
+
+    (window.transactions || []).forEach(t => {
+      const amt = parseFloat(t.amount) || 0;
+      if (t.type === 'income') registeredIncome += amt;
+      if (t.type === 'expense') registeredExpenses += amt;
+    });
+
+    let totalTransfersAmount = 0;
+    let totalTransferFees = 0;
+    (window.accountTransfers || []).forEach(tr => {
+      totalTransfersAmount += parseFloat(tr.amount) || 0;
+      totalTransferFees += parseFloat(tr.fee) || 0;
+    });
+
+    // Update Live Ledger Tracking in Define Allocations card
+    const regIncEl = document.getElementById('alloc-registered-income');
+    const regExpEl = document.getElementById('alloc-registered-expenses');
+    const regTrEl = document.getElementById('alloc-registered-transfers');
+    if (regIncEl) regIncEl.innerText = `EGP ${registeredIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (regExpEl) regExpEl.innerText = `EGP ${registeredExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (regTrEl) {
+      const count = (window.accountTransfers || []).length;
+      regTrEl.innerText = `${count} (EGP ${totalTransfersAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${totalTransferFees > 0 ? ` + EGP ${totalTransferFees.toFixed(2)} fee` : ''})`;
+    }
+
+    const modeInc = document.getElementById('label-income-calc-mode');
+    const modeExp = document.getElementById('label-expense-calc-mode');
+    const isManual = localStorage.getItem('pro_allocations_mode') === 'manual';
+
+    if (forceSync) {
+      localStorage.removeItem('pro_allocations_mode');
+    }
+
+    if (!isManual || forceSync) {
+      // Auto-calculate budget limits based on registered income, expenses, and transfer fees
+      const autoIncome = registeredIncome > 0 ? registeredIncome : (window.budgetLimits.income || 3500);
+      const autoExpense = (registeredExpenses + totalTransferFees) > 0 ? (registeredExpenses + totalTransferFees) : (window.budgetLimits.expense || 2000);
+
+      window.budgetLimits.income = autoIncome;
+      window.budgetLimits.expense = autoExpense;
+      localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
+
+      const incInput = document.getElementById('budget-income-input');
+      const expInput = document.getElementById('budget-expense-input');
+      if (incInput && document.activeElement !== incInput) incInput.value = autoIncome.toFixed(2);
+      if (expInput && document.activeElement !== expInput) expInput.value = autoExpense.toFixed(2);
+
+      if (modeInc) {
+        modeInc.textContent = 'Auto-Linked';
+        modeInc.className = 'text-[10px] font-bold text-emerald-600 dark:text-emerald-400';
+      }
+      if (modeExp) {
+        modeExp.textContent = 'Auto-Linked';
+        modeExp.className = 'text-[10px] font-bold text-rose-600 dark:text-rose-400';
+      }
+
+      if (forceSync && typeof window.triggerToast === 'function') {
+        window.triggerToast(`Allocations auto-calculated: Income EGP ${autoIncome.toFixed(2)}, Expenses EGP ${autoExpense.toFixed(2)}`, 'success');
+      }
+    } else {
+      if (modeInc) {
+        modeInc.textContent = 'Manual';
+        modeInc.className = 'text-[10px] font-bold text-slate-400';
+      }
+      if (modeExp) {
+        modeExp.textContent = 'Manual';
+        modeExp.className = 'text-[10px] font-bold text-slate-400';
+      }
+    }
   };
 
   window.calculateOverallDashboardAggregates = function() {
@@ -911,8 +987,11 @@
     window.budgetLimits.income = incVal;
     window.budgetLimits.expense = expVal;
     localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
+    localStorage.setItem('pro_allocations_mode', 'manual');
     
-    window.triggerToast("Dynamic blueprint targets recomputed!", "success");
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast("Manual allocation limits set!", "success");
+    }
     window.renderAllViews();
   };
 
@@ -925,30 +1004,205 @@
     incContainer.innerHTML = '';
     expContainer.innerHTML = '';
 
+    const incomeByCategory = {};
+    const expenseByCategory = {};
+    let totalRegisteredIncome = 0;
+    let totalRegisteredExpense = 0;
+
+    (window.transactions || []).forEach(t => {
+      const amt = parseFloat(t.amount) || 0;
+      if (t.type === 'income') {
+        const cat = t.category || 'Others';
+        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + amt;
+        totalRegisteredIncome += amt;
+      } else if (t.type === 'expense') {
+        const cat = t.category || 'Others';
+        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + amt;
+        totalRegisteredExpense += amt;
+      }
+    });
+
+    let totalForecastedIncome = 0;
+    let totalForecastedExpense = 0;
+
+    // Income Target Proportions (Amount Registered / Amount Forecasted)
     for (const [name, data] of Object.entries(window.incomeAllocationBlueprint)) {
-      const targetValue = window.budgetLimits.income * (data.pct / 100);
+      const forecasted = window.budgetLimits.income * (data.pct / 100);
+      totalForecastedIncome += forecasted;
+      const registered = incomeByCategory[name] || 0;
+      const pct = forecasted > 0 ? (registered / forecasted * 100) : 0;
+
       incContainer.innerHTML += `
-        <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 flex items-center justify-between font-medium">
-          <div class="flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full" style="background-color: ${data.color}"></span>
-            <span class="text-xs text-slate-707 dark:text-slate-300">${name} (${data.pct}%)</span>
+        <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 space-y-1.5 transition">
+          <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${data.color}"></span>
+              <span class="font-semibold text-slate-800 dark:text-slate-200 truncate">${name}</span>
+              <span class="text-[10px] text-slate-400 shrink-0">(${data.pct}%)</span>
+            </div>
+            <div class="text-right font-mono text-xs shrink-0 ml-2">
+              <span class="font-bold text-emerald-600 dark:text-emerald-400">EGP ${registered.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span class="text-slate-400 font-normal"> / </span>
+              <span class="font-semibold text-slate-700 dark:text-slate-300">EGP ${forecasted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
           </div>
-          <span class="text-xs font-bold text-slate-900 dark:text-white">EGP ${targetValue.toFixed(2)}</span>
+          <div class="flex items-center gap-2">
+            <div class="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${data.color}"></div>
+            </div>
+            <span class="text-[10px] font-bold ${pct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'} font-mono shrink-0">
+              ${pct.toFixed(0)}%
+            </span>
+          </div>
         </div>
       `;
     }
 
+    // Expense Quotas Blueprint (Amount Registered / Amount Forecasted)
     for (const [name, data] of Object.entries(window.expenseAllocationBlueprint)) {
-      const targetValue = window.budgetLimits.expense * (data.pct / 100);
+      const forecasted = window.budgetLimits.expense * (data.pct / 100);
+      totalForecastedExpense += forecasted;
+      const registered = expenseByCategory[name] || 0;
+      const pct = forecasted > 0 ? (registered / forecasted * 100) : 0;
+      const isOver = registered > forecasted && forecasted > 0;
+
       expContainer.innerHTML += `
-        <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 flex items-center justify-between font-medium">
-          <div class="flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full" style="background-color: ${data.color}"></span>
-            <span class="text-xs text-slate-707 dark:text-slate-300">${name} (${data.pct}%)</span>
+        <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border ${isOver ? 'border-rose-300 dark:border-rose-800/80 bg-rose-50/20' : 'border-slate-100 dark:border-slate-700'} space-y-1.5 transition">
+          <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${data.color}"></span>
+              <span class="font-semibold text-slate-800 dark:text-slate-200 truncate">${name}</span>
+              <span class="text-[10px] text-slate-400 shrink-0">(${data.pct}%)</span>
+            </div>
+            <div class="text-right font-mono text-xs shrink-0 ml-2">
+              <span class="font-bold ${isOver ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}">EGP ${registered.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span class="text-slate-400 font-normal"> / </span>
+              <span class="font-semibold text-slate-700 dark:text-slate-300">EGP ${forecasted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
           </div>
-          <span class="text-xs font-bold text-slate-900 dark:text-white">EGP ${targetValue.toFixed(2)}</span>
+          <div class="flex items-center gap-2">
+            <div class="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${isOver ? '#f43f5e' : data.color}"></div>
+            </div>
+            <span class="text-[10px] font-bold ${isOver ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'} font-mono shrink-0">
+              ${pct.toFixed(0)}%
+            </span>
+          </div>
         </div>
       `;
+    }
+
+    const incTotalsEl = document.getElementById('blueprint-income-totals');
+    const expTotalsEl = document.getElementById('blueprint-expense-totals');
+    if (incTotalsEl) {
+      incTotalsEl.innerText = `EGP ${totalRegisteredIncome.toFixed(0)} / EGP ${totalForecastedIncome.toFixed(0)}`;
+    }
+    if (expTotalsEl) {
+      expTotalsEl.innerText = `EGP ${totalRegisteredExpense.toFixed(0)} / EGP ${totalForecastedExpense.toFixed(0)}`;
+    }
+  };
+
+  window.renderHouseholdFinancialFootprint = function() {
+    const expContainer = document.getElementById('expense-distribution-bars');
+    const incContainer = document.getElementById('income-distribution-bars');
+    if (!expContainer && !incContainer) return;
+
+    let totalExpenses = 0;
+    let totalIncome = 0;
+    const expensesByCategory = {};
+    const incomeByCategory = {};
+
+    const colorPalette = [
+      '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', 
+      '#06b6d4', '#6366f1', '#14b8a6', '#f97316', '#64748b'
+    ];
+
+    (window.transactions || []).forEach(t => {
+      const amt = parseFloat(t.amount) || 0;
+      if (t.type === 'expense') {
+        totalExpenses += amt;
+        const cat = t.category || 'General';
+        expensesByCategory[cat] = (expensesByCategory[cat] || 0) + amt;
+      } else if (t.type === 'income') {
+        totalIncome += amt;
+        const cat = t.category || 'General';
+        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + amt;
+      }
+    });
+
+    const totalExpEl = document.getElementById('footprint-total-expense');
+    const totalIncEl = document.getElementById('footprint-total-income');
+    if (totalExpEl) totalExpEl.innerText = `EGP ${totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (totalIncEl) totalIncEl.innerText = `EGP ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    // Render Expense Ratios by Category
+    if (expContainer) {
+      const expEntries = Object.entries(expensesByCategory).sort((a, b) => b[1] - a[1]);
+      if (expEntries.length === 0 || totalExpenses === 0) {
+        expContainer.innerHTML = `
+          <div class="p-3 text-center text-xs text-slate-404 bg-slate-50 dark:bg-slate-900/40 rounded-xl">
+            No expense transactions recorded yet.
+          </div>`;
+      } else {
+        let html = '';
+        expEntries.forEach(([category, amt], idx) => {
+          const blueprint = window.expenseAllocationBlueprint && window.expenseAllocationBlueprint[category];
+          const color = blueprint ? blueprint.color : colorPalette[idx % colorPalette.length];
+          const pct = totalExpenses > 0 ? (amt / totalExpenses) * 100 : 0;
+          html += `
+            <div class="space-y-1">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${color}"></span>
+                  <span>${category}</span>
+                </span>
+                <div class="flex items-center gap-2">
+                  <span class="text-slate-500 dark:text-slate-400 font-mono text-[11px] font-bold">${pct.toFixed(1)}%</span>
+                  <span class="font-bold text-slate-900 dark:text-white">EGP ${amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+              <div class="w-full h-2 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
+                <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(1)}%; background-color: ${color}"></div>
+              </div>
+            </div>`;
+        });
+        expContainer.innerHTML = html;
+      }
+    }
+
+    // Render Income Sources Breakdown
+    if (incContainer) {
+      const incEntries = Object.entries(incomeByCategory).sort((a, b) => b[1] - a[1]);
+      if (incEntries.length === 0 || totalIncome === 0) {
+        incContainer.innerHTML = `
+          <div class="p-3 text-center text-xs text-slate-404 bg-slate-50 dark:bg-slate-900/40 rounded-xl">
+            No income transactions recorded yet.
+          </div>`;
+      } else {
+        let html = '';
+        incEntries.forEach(([category, amt], idx) => {
+          const blueprint = window.incomeAllocationBlueprint && window.incomeAllocationBlueprint[category];
+          const color = blueprint ? blueprint.color : colorPalette[idx % colorPalette.length];
+          const pct = totalIncome > 0 ? (amt / totalIncome) * 100 : 0;
+          html += `
+            <div class="space-y-1">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${color}"></span>
+                  <span>${category}</span>
+                </span>
+                <div class="flex items-center gap-2">
+                  <span class="text-slate-500 dark:text-slate-400 font-mono text-[11px] font-bold">${pct.toFixed(1)}%</span>
+                  <span class="font-bold text-slate-900 dark:text-white">EGP ${amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+              <div class="w-full h-2 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
+                <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(1)}%; background-color: ${color}"></div>
+              </div>
+            </div>`;
+        });
+        incContainer.innerHTML = html;
+      }
     }
   };
 

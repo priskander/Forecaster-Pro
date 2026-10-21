@@ -711,7 +711,14 @@
 
       <!-- Household Financial Footprint -->
       <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-        <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>📈</span> Household Financial Footprint</h2>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 dark:border-slate-700/80 pb-3">
+          <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2"><span>📈</span> Household Financial Footprint</h2>
+          <div class="flex items-center gap-3 text-xs">
+            <span class="text-slate-500 dark:text-slate-400">Total Outflow: <strong class="text-rose-600 dark:text-rose-400 font-bold" id="footprint-total-expense">EGP 0.00</strong></span>
+            <span class="text-slate-300 dark:text-slate-700">|</span>
+            <span class="text-slate-500 dark:text-slate-400">Total Inflow: <strong class="text-emerald-600 dark:text-emerald-400 font-bold" id="footprint-total-income">EGP 0.00</strong></span>
+          </div>
+        </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <span class="text-xs font-bold text-slate-500 dark:text-slate-400 block mb-2 uppercase tracking-wider">Expense Ratios by Category</span>
@@ -736,46 +743,79 @@
 
       <!-- Allocator Blueprint Segment -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm lg:col-span-1 space-y-6">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm lg:col-span-1 space-y-5">
           <div>
-            <h4 class="text-base font-extrabold text-slate-900 dark:text-white">Define Allocations</h4>
-            <p class="text-xs text-slate-500 dark:text-slate-404">Control budget limits and benchmark goals dynamically</p>
+            <div class="flex items-center justify-between">
+              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">Define Allocations</h4>
+              <button type="button" id="btn-auto-calc-allocations" onclick="window.autoCalculateAllocations(true); window.renderAllViews();" class="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition cursor-pointer" title="Auto-calculate budget limits from registered transactions & transfers">
+                <span>⚡</span> Auto-Calculate
+              </button>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-404 mt-1">Calculated automatically based on registered income, expenses &amp; transfers</p>
           </div>
-          <div class="space-y-4">
+
+          <div class="space-y-3.5">
             <div>
-              <label class="block text-[11px] font-bold text-slate-505 dark:text-slate-404 uppercase tracking-wider mb-1.5">Projected Monthly Income (EGP)</label>
+              <div class="flex justify-between items-center mb-1">
+                <label class="block text-[11px] font-bold text-slate-505 dark:text-slate-404 uppercase tracking-wider">Projected Monthly Income (EGP)</label>
+                <span class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400" id="label-income-calc-mode">Auto-Linked</span>
+              </div>
               <input class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-1 focus:ring-blue-500 text-sm font-semibold text-slate-800 dark:text-white" id="budget-income-input" onchange="updateMainBudgets()" type="number" value="3500"/>
             </div>
             <div>
-              <label class="block text-[11px] font-bold text-slate-505 dark:text-slate-404 uppercase tracking-wider mb-1.5">Monthly Expense Budget Limit (EGP)</label>
+              <div class="flex justify-between items-center mb-1">
+                <label class="block text-[11px] font-bold text-slate-505 dark:text-slate-404 uppercase tracking-wider">Monthly Expense Budget Limit (EGP)</label>
+                <span class="text-[10px] font-bold text-rose-600 dark:text-rose-400" id="label-expense-calc-mode">Auto-Linked</span>
+              </div>
               <input class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-1 focus:ring-blue-500 text-sm font-semibold text-slate-800 dark:text-white" id="budget-expense-input" onchange="updateMainBudgets()" type="number" value="2000"/>
+            </div>
+          </div>
+
+          <!-- Live Ledger Tracking Pill -->
+          <div class="p-3 bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/80 rounded-xl space-y-1.5 text-xs">
+            <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
+              <span class="flex items-center gap-1"><span>📥</span> Registered Income:</span>
+              <span class="font-bold text-emerald-600 dark:text-emerald-400 font-mono" id="alloc-registered-income">EGP 0.00</span>
+            </div>
+            <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
+              <span class="flex items-center gap-1"><span>📤</span> Registered Expenses:</span>
+              <span class="font-bold text-rose-600 dark:text-rose-400 font-mono" id="alloc-registered-expenses">EGP 0.00</span>
+            </div>
+            <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
+              <span class="flex items-center gap-1"><span>🔄</span> Account Transfers:</span>
+              <span class="font-bold text-indigo-600 dark:text-indigo-400 font-mono" id="alloc-registered-transfers">0 (EGP 0.00)</span>
             </div>
           </div>
         </div>
 
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm lg:col-span-2 space-y-6">
-          <div>
-            <h4 class="text-base font-extrabold text-slate-900 dark:text-white">Computed Blueprint Allocations</h4>
-            <p class="text-xs text-slate-500 dark:text-slate-404">Benchmark target distributions calculated using your dynamic allocations</p>
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+            <div>
+              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">Computed Blueprint Allocations</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-404">Real-time benchmark tracking: Amount Registered / Amount Forecasted</p>
+            </div>
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Registered / Forecasted</span>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="space-y-4">
-              <div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-100 dark:border-emerald-800">
+              <div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-100 dark:border-emerald-800 flex items-center justify-between">
                 <h5 class="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
                   <i class="w-4 h-4 text-emerald-600 dark:text-emerald-400" data-lucide="trending-up"></i>
                   Income Target Proportions
                 </h5>
+                <span class="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 font-mono" id="blueprint-income-totals">EGP 0 / EGP 0</span>
               </div>
-              <div class="space-y-2 max-h-56 overflow-y-auto custom-scrollbar" id="blueprint-income-items"></div>
+              <div class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar" id="blueprint-income-items"></div>
             </div>
             <div class="space-y-4">
-              <div class="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-100 dark:border-rose-800">
+              <div class="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-100 dark:border-rose-800 flex items-center justify-between">
                 <h5 class="text-xs font-bold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
                   <i class="w-4 h-4 text-rose-600 dark:text-rose-400" data-lucide="trending-down"></i>
                   Expense Quotas Blueprint
                 </h5>
+                <span class="text-[11px] font-bold text-rose-700 dark:text-rose-300 font-mono" id="blueprint-expense-totals">EGP 0 / EGP 0</span>
               </div>
-              <div class="space-y-2 max-h-56 overflow-y-auto custom-scrollbar" id="blueprint-expense-items"></div>
+              <div class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar" id="blueprint-expense-items"></div>
             </div>
           </div>
         </div>
