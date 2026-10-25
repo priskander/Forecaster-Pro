@@ -208,25 +208,46 @@
   };
 
   /* -------------------------------------------------------------------------
-   * 4. NOTIFICATION CENTER SYSTEM
+   * 4. NOTIFICATION CENTER SYSTEM (7-Day Auto-Removal of Read Alerts)
    * ------------------------------------------------------------------------- */
-  const NOTIFICATION_READ_KEY = 'pro_notification_read_signatures';
-  let notificationReadSignatures = new Set();
+  const NOTIFICATION_READ_KEY = 'pro_notification_read_signatures_v2';
+  const LEGACY_READ_KEY = 'pro_notification_read_signatures';
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  let notificationReadMap = {}; // { [signature]: readTimestamp }
 
   function loadNotificationReadState() {
     try {
-      const stored = JSON.parse(localStorage.getItem(NOTIFICATION_READ_KEY) || '[]');
-      notificationReadSignatures = new Set(Array.isArray(stored) ? stored : []);
+      let stored = JSON.parse(localStorage.getItem(NOTIFICATION_READ_KEY) || 'null');
+      if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+        stored = {};
+        const legacy = JSON.parse(localStorage.getItem(LEGACY_READ_KEY) || '[]');
+        if (Array.isArray(legacy)) {
+          const now = Date.now();
+          legacy.forEach(sig => { stored[sig] = now; });
+        }
+      }
+      // Prune any read notifications older than 7 days from their read date
+      const now = Date.now();
+      const pruned = {};
+      for (const [sig, timestamp] of Object.entries(stored)) {
+        const readAt = Number(timestamp) || now;
+        if (now - readAt < SEVEN_DAYS_MS) {
+          pruned[sig] = readAt;
+        }
+      }
+      notificationReadMap = pruned;
+      saveNotificationReadState();
     } catch (err) {
-      notificationReadSignatures = new Set();
+      notificationReadMap = {};
     }
   }
 
   function saveNotificationReadState() {
     try {
-      localStorage.setItem(NOTIFICATION_READ_KEY, JSON.stringify(Array.from(notificationReadSignatures)));
+      localStorage.setItem(NOTIFICATION_READ_KEY, JSON.stringify(notificationReadMap));
     } catch (err) {}
   }
+  loadNotificationReadState();
 
   window.toggleNotificationCenter = function(event) {
     if (event) event.stopPropagation();
@@ -248,22 +269,36 @@
     if (!element) return;
     const signature = decodeURIComponent(element.dataset.signature || '');
     if (signature) {
-      notificationReadSignatures.add(signature);
+      notificationReadMap[signature] = Date.now();
       saveNotificationReadState();
     }
     element.classList.add('notification-read');
+    element.classList.add('opacity-60');
     window.syncNotificationUnreadBadge();
   };
 
   window.markAllNotificationsRead = function(event) {
     if (event) event.stopPropagation();
+    const now = Date.now();
     document.querySelectorAll('#notification-list .notification-item').forEach(element => {
       const signature = decodeURIComponent(element.dataset.signature || '');
-      if (signature) notificationReadSignatures.add(signature);
+      if (signature) notificationReadMap[signature] = now;
       element.classList.add('notification-read');
+      element.classList.add('opacity-60');
     });
     saveNotificationReadState();
     window.syncNotificationUnreadBadge();
+  };
+
+  window.clearAllReadNotifications = function(event) {
+    if (event) event.stopPropagation();
+    const now = Date.now();
+    for (const sig of Object.keys(notificationReadMap)) {
+      notificationReadMap[sig] = now - SEVEN_DAYS_MS - 1000;
+    }
+    saveNotificationReadState();
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+    if (typeof window.triggerToast === 'function') window.triggerToast('Read notifications cleared.', 'info');
   };
 
   window.syncNotificationUnreadBadge = function() {
@@ -273,6 +308,10 @@
     const unread = list.querySelectorAll('.notification-item:not(.notification-read)').length;
     badge.textContent = unread > 99 ? '99+' : String(unread);
     badge.classList.toggle('hidden', unread === 0);
+
+    document.querySelectorAll('.mobile-unread-notif-count').forEach(el => {
+      el.textContent = unread > 99 ? '99+' : String(unread);
+    });
   };
 
   function renderNotificationCenter(alertHTML) {
@@ -281,26 +320,81 @@
     if (!list || !badge) return;
 
     if (!alertHTML || !alertHTML.length) {
-      list.innerHTML = '<div class="text-center py-8 text-xs font-semibold text-slate-404">No active notifications.</div>';
+      list.innerHTML = '<div class="text-center py-8 text-xs font-semibold text-slate-400">No active notifications.</div>';
       badge.classList.add('hidden');
       badge.textContent = '0';
+      document.querySelectorAll('.mobile-unread-notif-count').forEach(el => el.textContent = '0');
       return;
     }
 
-    let unreadCount = 0;
-    list.innerHTML = alertHTML.map(html => {
+    const now = Date.now();
+
+    // 1. Remove notifications that were marked as read more than 7 days ago
+    const activeAlerts = alertHTML.filter(html => {
       const temp = document.createElement('div');
       temp.innerHTML = html;
       const title = temp.querySelector('h5')?.innerText?.trim() || temp.querySelector('.font-extrabold')?.innerText?.trim() || 'System Alert';
       const desc = temp.querySelector('p')?.innerText?.trim() || temp.querySelector('.font-medium')?.innerText?.trim() || temp.innerText?.slice(0, 90) || '';
       const signature = `${title}::${desc}`;
-      const isRead = notificationReadSignatures.has(signature);
+
+      const readAt = notificationReadMap[signature];
+      if (readAt) {
+        const elapsed = now - readAt;
+        if (elapsed >= SEVEN_DAYS_MS) {
+          // Remove notification after 7 days from read date
+          delete notificationReadMap[signature];
+          return false;
+        }
+      }
+      return true;
+    });
+
+    saveNotificationReadState();
+
+    if (!activeAlerts.length) {
+      list.innerHTML = '<div class="text-center py-8 text-xs font-semibold text-slate-400">All caught up! No active notifications.</div>';
+      badge.classList.add('hidden');
+      badge.textContent = '0';
+      document.querySelectorAll('.mobile-unread-notif-count').forEach(el => el.textContent = '0');
+      return;
+    }
+
+    let unreadCount = 0;
+    list.innerHTML = activeAlerts.map(html => {
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      const title = temp.querySelector('h5')?.innerText?.trim() || temp.querySelector('.font-extrabold')?.innerText?.trim() || 'System Alert';
+      const desc = temp.querySelector('p')?.innerText?.trim() || temp.querySelector('.font-medium')?.innerText?.trim() || temp.innerText?.slice(0, 90) || '';
+      const signature = `${title}::${desc}`;
+      const readAt = notificationReadMap[signature];
+      const isRead = !!readAt;
       if (!isRead) unreadCount++;
-      return `<div class="notification-item ${isRead ? 'notification-read opacity-60' : ''} p-2 rounded-xl bg-slate-50 dark:bg-slate-700/50 mb-1 cursor-pointer" data-signature="${encodeURIComponent(signature)}" onclick="reviewNotification(event, this)">${html}</div>`;
+
+      let readMeta = '';
+      if (isRead) {
+        const daysLeft = Math.max(1, Math.ceil((SEVEN_DAYS_MS - (now - readAt)) / (24 * 60 * 60 * 1000)));
+        readMeta = `<span class="text-[9px] text-slate-400 font-medium">✓ Read · auto-removes in ${daysLeft}d</span>`;
+      } else {
+        readMeta = `<span class="inline-flex items-center gap-1 text-[9px] text-blue-600 dark:text-blue-400 font-bold"><span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> New Alert</span>`;
+      }
+
+      return `
+        <div class="notification-item ${isRead ? 'notification-read opacity-65 bg-slate-50/80 dark:bg-slate-700/40' : 'bg-slate-50 dark:bg-slate-700/70 border-l-4 border-blue-500'} p-3 rounded-xl transition hover:shadow-sm cursor-pointer" data-signature="${encodeURIComponent(signature)}" onclick="reviewNotification(event, this)">
+          <div class="flex items-center justify-between pb-1 mb-1 border-b border-slate-200/50 dark:border-slate-600/50">
+            ${readMeta}
+            <span class="text-[9px] text-slate-400 font-semibold">${isRead ? 'Marked Read' : 'Tap to mark read'}</span>
+          </div>
+          ${html}
+        </div>
+      `;
     }).join('');
 
     badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
     badge.classList.toggle('hidden', unreadCount === 0);
+
+    document.querySelectorAll('.mobile-unread-notif-count').forEach(el => {
+      el.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+    });
   }
 
   document.addEventListener('click', function(event) {
