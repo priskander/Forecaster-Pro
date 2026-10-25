@@ -282,27 +282,37 @@
     }, 30);
   };
 
-  /* STOCK & PHARMACY SWITCHER */
+  /* STOCK, PHARMACY & SPARE PARTS SWITCHER */
   window.setStockPharmacyModule = function(module) {
+    module = module || 'inventory';
     const inventoryPanel = document.getElementById('stock-module-panel');
     const pharmacyPanel = document.getElementById('pharmacy-module-panel');
-    const inventoryBtn = document.getElementById('stock-module-btn');
-    const pharmacyBtn = document.getElementById('pharmacy-module-btn');
-    if (!inventoryPanel || !pharmacyPanel) return;
+    const sparepartsPanel = document.getElementById('spareparts-module-panel');
 
-    const showInventory = module !== 'pharmacy';
-    inventoryPanel.classList.toggle('hidden', !showInventory);
-    pharmacyPanel.classList.toggle('hidden', showInventory);
+    if (inventoryPanel) inventoryPanel.classList.toggle('hidden', module !== 'inventory');
+    if (pharmacyPanel) pharmacyPanel.classList.toggle('hidden', module !== 'pharmacy');
+    if (sparepartsPanel) sparepartsPanel.classList.toggle('hidden', module !== 'spareparts');
 
-    if (inventoryBtn) {
-      inventoryBtn.className = showInventory
-        ? 'py-2 px-4 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5'
-        : 'py-2 px-4 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5';
-    }
-    if (pharmacyBtn) {
-      pharmacyBtn.className = !showInventory
-        ? 'py-2 px-4 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5'
-        : 'py-2 px-4 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5';
+    const activeBtnClass = 'py-2 px-3 border-2 border-blue-600 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5';
+    const inactiveBtnClass = 'py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5';
+
+    document.querySelectorAll('.btn-switch-inventory').forEach(b => {
+      b.className = `btn-switch-inventory ${module === 'inventory' ? activeBtnClass : inactiveBtnClass}`;
+    });
+    document.querySelectorAll('.btn-switch-pharmacy').forEach(b => {
+      b.className = `btn-switch-pharmacy ${module === 'pharmacy' ? activeBtnClass : inactiveBtnClass}`;
+    });
+    document.querySelectorAll('.btn-switch-spareparts').forEach(b => {
+      b.className = `btn-switch-spareparts ${module === 'spareparts' ? activeBtnClass : inactiveBtnClass}`;
+    });
+
+    if (module === 'spareparts') {
+      if (typeof window.populateSparePartTargets === 'function') window.populateSparePartTargets();
+      if (typeof window.renderSparePartsLedger === 'function') window.renderSparePartsLedger();
+    } else if (module === 'pharmacy') {
+      if (typeof window.renderPharmacyLedger === 'function') window.renderPharmacyLedger();
+    } else {
+      if (typeof window.renderStockInventoryLedger === 'function') window.renderStockInventoryLedger();
     }
   };
 
@@ -673,6 +683,113 @@
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
+  /* SPARE PARTS MANAGEMENT IN STOCK MODULE */
+  window.toggleSparePartOrigin = function() {
+    const isNew = document.querySelector('input[name="sparepart-origin"]:checked')?.value === 'new';
+    const newLbl = document.getElementById('sparepart-origin-label-new');
+    const oldLbl = document.getElementById('sparepart-origin-label-old');
+    const disclaimer = document.getElementById('sparepart-origin-disclaimer');
+    const accWrap = document.getElementById('sparepart-account-wrapper');
+
+    if (newLbl) {
+      newLbl.className = isNew
+        ? 'cursor-pointer border-2 border-blue-600 bg-blue-50 text-blue-700 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs'
+        : 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+    }
+    if (oldLbl) {
+      oldLbl.className = !isNew
+        ? 'cursor-pointer border-2 border-blue-600 bg-blue-50 text-blue-700 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs'
+        : 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+    }
+    if (disclaimer) disclaimer.classList.toggle('hidden', isNew);
+    if (accWrap) accWrap.classList.toggle('hidden', !isNew);
+  };
+
+  window.populateSparePartTargets = function() {
+    const targetEl = document.getElementById('sparepart-target');
+    if (!targetEl) return;
+    const type = document.getElementById('sparepart-type')?.value || 'vehicle-spare-part';
+    
+    let options = '<option value="">General Stock / Any Compatible</option>';
+    if (type === 'vehicle-spare-part') {
+      const vehicles = Array.isArray(window.vehicles) ? window.vehicles : [];
+      vehicles.forEach(v => {
+        options += `<option value="Vehicle: ${v.make} ${v.model} (${v.plate})">🏎️ ${v.make} ${v.model} • ${v.plate}</option>`;
+      });
+    } else {
+      let properties = [];
+      try {
+        properties = JSON.parse(localStorage.getItem('pro_rental_properties_v1') || '[]');
+      } catch(e) {}
+      properties.forEach(p => {
+        options += `<option value="Property: ${p.propertyName || p.name} (${p.unitNumber || 'Unit'})">🏠 ${p.propertyName || p.name} - ${p.unitNumber || 'Unit'}</option>`;
+      });
+    }
+    targetEl.innerHTML = options;
+  };
+
+  window.handleSparePartRegister = function(e) {
+    e.preventDefault();
+    const name = document.getElementById('sparepart-name').value.trim();
+    const type = document.getElementById('sparepart-type').value;
+    const target = document.getElementById('sparepart-target')?.value || '';
+    const rawQty = parseFloat(document.getElementById('sparepart-quantity').value) || 0;
+    const unit = document.getElementById('sparepart-unit').value || 'pcs';
+    const rawPrice = parseFloat(document.getElementById('sparepart-price').value) || 0;
+    const threshold = parseFloat(document.getElementById('sparepart-threshold').value) || 1;
+    const sku = document.getElementById('sparepart-sku')?.value.trim() || '';
+    const expDate = document.getElementById('sparepart-exp-date')?.value || '';
+    const isNew = document.querySelector('input[name="sparepart-origin"]:checked')?.value === 'new';
+    const accountId = document.getElementById('sparepart-account')?.value;
+
+    if (!name || rawQty <= 0) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a valid part name and quantity.', 'error');
+      return;
+    }
+
+    const part = {
+      id: 'part_' + Date.now(),
+      name,
+      itemType: type, // 'vehicle-spare-part' or 'residential-spare-part'
+      category: 'Spare Parts',
+      targetVehicleOrUnit: target,
+      quantity: rawQty,
+      unit,
+      price: rawPrice,
+      threshold,
+      sku,
+      expDate,
+      prodDate: new Date().toISOString().split('T')[0],
+      buyStyle: 'single',
+      packSize: 1,
+      consumptionLogs: []
+    };
+
+    if (!Array.isArray(window.stockData)) window.stockData = [];
+    window.stockData.push(part);
+    localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+
+    if (isNew && rawPrice > 0) {
+      const expenseCat = type === 'vehicle-spare-part' ? 'Vehicle Maintenance' : 'Home Repairs & Maintenance';
+      const totalCost = rawQty * rawPrice;
+      window.logAutomaticExpense(`${name} (Spare Part)`, totalCost, expenseCat, accountId);
+    }
+
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast(`Spare part "${name}" logged successfully!`, 'success');
+    }
+
+    e.target.reset();
+    document.getElementById('sparepart-type').value = type;
+    window.toggleSparePartOrigin();
+    window.populateSparePartTargets();
+    if (typeof window.renderSparePartsLedger === 'function') window.renderSparePartsLedger();
+    if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
+    if (typeof window.ForecasterCloudSync !== 'undefined' && window.ForecasterCloudSync.queueSync) {
+      window.ForecasterCloudSync.queueSync();
+    }
+  };
+
   window.closeModal = function() {
     const modal = document.getElementById('custom-modal');
     if (modal) modal.classList.add('hidden');
@@ -916,6 +1033,7 @@
     window.renderConsolidatedTableRegistry();
     window.renderStockInventoryLedger();
     window.renderPharmacyLedger();
+    if (typeof window.renderSparePartsLedger === 'function') window.renderSparePartsLedger();
     window.renderShoppingPlannerDetails();
     window.renderImmediateSystemAlerts();
     window.renderMedicationSafetyDashboard();
@@ -1373,8 +1491,11 @@
     const searchVal = (document.getElementById('inventory-search')?.value || '').toLowerCase();
     container.innerHTML = '';
 
+    const isSparePart = s => s && (s.itemType === 'vehicle-spare-part' || s.itemType === 'residential-spare-part' || s.category === 'Spare Parts');
+    const generalStock = (Array.isArray(window.stockData) ? window.stockData : []).filter(s => s && !s.isHidden && !isSparePart(s));
+
     const grouped = {};
-    window.stockData.forEach(s => {
+    generalStock.forEach(s => {
       if (!grouped[s.name]) grouped[s.name] = [];
       grouped[s.name].push(s);
     });
@@ -1454,8 +1575,163 @@
       container.innerHTML += cardHTML;
     });
 
-    if (window.stockData.length === 0) {
-      container.innerHTML = `<div class="col-span-2 text-center py-12 text-slate-404 font-semibold bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">No assets currently logged. Use registration form.</div>`;
+    if (generalStock.length === 0) {
+      container.innerHTML = `<div class="col-span-2 text-center py-12 text-slate-404 font-semibold bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">No general assets currently logged. Use registration form.</div>`;
+    }
+  };
+
+  /* SPARE PARTS LEDGER & CONSUMPTION CONTROLLER */
+  window.sparePartsFilter = 'all';
+
+  window.filterSpareParts = function(type) {
+    window.sparePartsFilter = type;
+    const btns = {
+      all: document.getElementById('btn-sp-all'),
+      vehicle: document.getElementById('btn-sp-vehicle'),
+      residential: document.getElementById('btn-sp-residential')
+    };
+    Object.keys(btns).forEach(k => {
+      if (btns[k]) {
+        if (k === type) {
+          btns[k].className = 'px-2 py-0.5 rounded-lg text-[10px] font-bold bg-blue-600 text-white';
+        } else {
+          btns[k].className = 'px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
+        }
+      }
+    });
+    window.renderSparePartsLedger();
+  };
+
+  window.renderSparePartsLedger = function() {
+    const container = document.getElementById('spareparts-ledger-cards');
+    if (!container) return;
+
+    const searchVal = (document.getElementById('spareparts-search')?.value || '').toLowerCase();
+    container.innerHTML = '';
+
+    const allParts = (Array.isArray(window.stockData) ? window.stockData : [])
+      .filter(p => p && !p.isHidden && (p.itemType === 'vehicle-spare-part' || p.itemType === 'residential-spare-part' || p.category === 'Spare Parts'));
+
+    // Update KPIs
+    const totalCount = allParts.reduce((sum, p) => sum + (parseFloat(p.quantity) || 0), 0);
+    const totalVal = allParts.reduce((sum, p) => sum + ((parseFloat(p.quantity) || 0) * (parseFloat(p.price) || 0)), 0);
+    const lowCount = allParts.filter(p => (parseFloat(p.quantity) || 0) <= (parseFloat(p.threshold) || 1)).length;
+
+    const kpiCount = document.getElementById('spareparts-kpi-count');
+    const kpiVal = document.getElementById('spareparts-kpi-val');
+    const kpiLow = document.getElementById('spareparts-kpi-low');
+    if (kpiCount) kpiCount.textContent = `${allParts.length} parts (${totalCount.toFixed(1)} qty)`;
+    if (kpiVal) kpiVal.textContent = `EGP ${totalVal.toFixed(2)}`;
+    if (kpiLow) kpiLow.textContent = `${lowCount} item${lowCount === 1 ? '' : 's'}`;
+
+    const filter = window.sparePartsFilter || 'all';
+    const filtered = allParts.filter(p => {
+      if (filter === 'vehicle') return p.itemType === 'vehicle-spare-part';
+      if (filter === 'residential') return p.itemType === 'residential-spare-part';
+      return true;
+    }).filter(p => {
+      if (!searchVal) return true;
+      return (p.name || '').toLowerCase().includes(searchVal) ||
+             (p.sku || '').toLowerCase().includes(searchVal) ||
+             (p.targetVehicleOrUnit || '').toLowerCase().includes(searchVal);
+    });
+
+    if (filtered.length === 0) {
+      container.innerHTML = `<div class="col-span-2 text-center py-12 text-slate-404 font-semibold bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">No spare parts matching criteria. Use the form to log new parts.</div>`;
+      return;
+    }
+
+    filtered.forEach(p => {
+      const qty = parseFloat(p.quantity) || 0;
+      const th = parseFloat(p.threshold) || 1;
+      const isLow = qty <= th;
+      const badgeClass = isLow ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      const isVeh = p.itemType === 'vehicle-spare-part';
+      const typIcon = isVeh ? '🏎️' : '🏠';
+      const typLabel = isVeh ? 'Vehicle Fleet' : 'Property / Home';
+
+      const card = `
+        <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-4">
+          <div class="flex items-start justify-between font-medium">
+            <div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-sm">${typIcon}</span>
+                <h3 class="text-sm font-black text-slate-900 dark:text-white">${p.name}</h3>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 mt-1">
+                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${typLabel}</span>
+                ${p.sku ? `<span class="text-[9px] font-mono text-slate-400">SKU: ${p.sku}</span>` : ''}
+                ${p.targetVehicleOrUnit ? `<span class="text-[9px] text-blue-600 dark:text-blue-400 truncate max-w-[140px]">${p.targetVehicleOrUnit}</span>` : ''}
+              </div>
+            </div>
+            <span class="text-xs font-bold border px-3 py-1 rounded-full ${badgeClass}">
+              ${qty.toFixed(1)} ${p.unit || 'pcs'}
+            </span>
+          </div>
+
+          <div class="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl flex items-center justify-between text-xs font-medium">
+            <div>
+              <span class="text-[10px] text-slate-400 block uppercase font-bold">Unit Price</span>
+              <span class="font-extrabold text-slate-900 dark:text-slate-100">EGP ${Number(p.price || 0).toFixed(2)}</span>
+            </div>
+            <div class="text-center">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold">Total Value</span>
+              <span class="font-extrabold text-blue-600 dark:text-blue-400">EGP ${(qty * Number(p.price || 0)).toFixed(2)}</span>
+            </div>
+            <div class="text-right">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold">Reorder Alert</span>
+              <span class="font-extrabold text-amber-600">${th.toFixed(1)} ${p.unit || 'pcs'}</span>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input type="number" id="consume-sparepart-${p.id}" placeholder="Qty" class="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold" min="0.1" step="0.1" value="1">
+            <button onclick="window.executeSparePartConsumption('${p.id}')" class="flex-grow py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition">
+              Disburse / Use Part
+            </button>
+            <button onclick="window.deleteStockItem('${p.id}')" class="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg text-xs font-bold transition" title="Discard Part">
+              🗑️
+            </button>
+          </div>
+        </div>
+      `;
+      container.innerHTML += card;
+    });
+  };
+
+  window.executeSparePartConsumption = function(partId) {
+    const inputEl = document.getElementById(`consume-sparepart-${partId}`);
+    const consumeQty = parseFloat(inputEl?.value) || 1;
+    if (consumeQty <= 0) return;
+
+    const part = (Array.isArray(window.stockData) ? window.stockData : []).find(p => p.id === partId);
+    if (!part) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Part not found.', 'error');
+      return;
+    }
+
+    if (Number(part.quantity || 0) < consumeQty) {
+      if (typeof window.triggerToast === 'function') window.triggerToast(`Only ${part.quantity} ${part.unit || 'units'} available in stock!`, 'error');
+      return;
+    }
+
+    part.quantity = Number(part.quantity || 0) - consumeQty;
+    if (!Array.isArray(part.consumptionLogs)) part.consumptionLogs = [];
+    part.consumptionLogs.push({
+      date: new Date().toISOString().split('T')[0],
+      amount: consumeQty,
+      type: 'consumed_manual'
+    });
+
+    localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast(`Disbursed ${consumeQty} ${part.unit || 'pcs'} of ${part.name}. Remaining: ${part.quantity}`, 'success');
+    }
+
+    window.renderSparePartsLedger();
+    if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
+    if (typeof window.ForecasterCloudSync !== 'undefined' && window.ForecasterCloudSync.queueSync) {
+      window.ForecasterCloudSync.queueSync();
     }
   };
 

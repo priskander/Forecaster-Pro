@@ -1898,9 +1898,13 @@ ${mail.body}
         if (dropdownEmail) dropdownEmail.textContent = user.email || '';
         
         // Show role badge in dropdown
-        if (dropdownTier) {
-          dropdownTier.className = `inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold border ${roleCfg.badgeClass}`;
-          dropdownTier.textContent = `${roleCfg.icon} ${roleCfg.label}`;
+        const dropdownRole = document.getElementById('dropdown-user-role');
+        if (dropdownRole) {
+          dropdownRole.className = `inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold border ${roleCfg.badgeClass}`;
+          dropdownRole.textContent = `${roleCfg.icon} ${roleCfg.label}`;
+        }
+        if (typeof window.ForecasterSubscription !== 'undefined' && typeof window.ForecasterSubscription.updateBadge === 'function') {
+          window.ForecasterSubscription.updateBadge();
         }
 
         // Check for Main Admin status & show Header Admin Trigger Button

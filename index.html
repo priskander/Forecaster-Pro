@@ -330,9 +330,6 @@
       <div>
         <div class="flex items-center gap-2">
           <h1 class="text-base md:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">Forecaster Pro</h1>
-          <span class="saas-subscription-badge hidden sm:inline-flex px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 cursor-pointer" onclick="window.ForecasterSubscription.openModal()" title="View Subscription Tiers">
-            Free Tier
-          </span>
         </div>
         <p class="text-[10px] md:text-xs text-slate-500 dark:text-slate-404 font-medium hidden sm:block">Unified Financial Ledger, Intelligent Depletion &amp; Expiry Guard</p>
       </div>
@@ -401,13 +398,32 @@
                 <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Active Session"></span>
               </div>
               <p class="text-xs text-slate-500 dark:text-slate-404 truncate" id="dropdown-user-email">peter.w.badir@gmail.com</p>
-              <div class="mt-1 flex items-center gap-2">
-                <span class="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800" id="dropdown-user-tier">
-                  Pro Household
+              <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                <span class="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold border" id="dropdown-user-role">
+                  Admin
                 </span>
-                <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">✓ Secured</span>
+                <button type="button" class="saas-subscription-badge inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider border cursor-pointer hover:opacity-90 transition bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800" id="dropdown-user-tier" onclick="window.ForecasterSubscription.openModal(); window.ForecasterAuth.closeProfileDropdown()" title="Click to view subscription plan">
+                  Free Tier
+                </button>
+                <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Secured
+                </span>
               </div>
             </div>
+          </div>
+
+          <!-- Subscription Tier Bar (Merged under Profile Dropdown) -->
+          <div class="px-4 py-2.5 bg-gradient-to-r from-blue-50/80 via-indigo-50/60 to-purple-50/80 dark:from-blue-950/50 dark:via-indigo-950/40 dark:to-purple-950/50 flex items-center justify-between border-b border-slate-100 dark:border-slate-700/80">
+            <div class="flex items-center gap-2">
+              <span class="text-base">💎</span>
+              <div>
+                <p class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 leading-tight">Subscription Tier</p>
+                <span class="saas-subscription-badge text-xs font-black text-slate-900 dark:text-white cursor-pointer hover:underline" onclick="window.ForecasterSubscription.openModal(); window.ForecasterAuth.closeProfileDropdown()">Free Tier</span>
+              </div>
+            </div>
+            <button type="button" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold transition shadow-xs cursor-pointer flex items-center gap-1" onclick="window.ForecasterSubscription.openModal(); window.ForecasterAuth.closeProfileDropdown()">
+              <span>Upgrade / Manage</span> &rarr;
+            </button>
           </div>
 
           <!-- Cloud Sync Quick Bar -->
@@ -1023,9 +1039,9 @@
             <div>
               <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Stock Module</label>
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <button class="py-2 px-3 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="stock-module-btn" onclick="setStockPharmacyModule('inventory')" type="button">📦 Inventory</button>
-                <button class="py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="pharmacy-module-btn" onclick="setStockPharmacyModule('pharmacy')" type="button">💊 Pharmacy</button>
-                <button class="py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="spare-parts-module-btn" onclick="setStockPharmacyModule('spareparts')" type="button">🧰 Spare Parts</button>
+                <button class="btn-switch-inventory py-2 px-3 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="stock-module-btn" onclick="setStockPharmacyModule('inventory')" type="button">📦 Inventory</button>
+                <button class="btn-switch-pharmacy py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="pharmacy-module-btn" onclick="setStockPharmacyModule('pharmacy')" type="button">💊 Pharmacy</button>
+                <button class="btn-switch-spareparts py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" id="spare-parts-module-btn" onclick="setStockPharmacyModule('spareparts')" type="button">🧰 Spare Parts</button>
               </div>
             </div>
             <form class="space-y-4" id="stock-form" onsubmit="handleInventoryRegister(event)">
@@ -1127,7 +1143,6 @@
           </div>
         </div>
       </div>
-    </div>
 
     <!-- =================== PHARMACY MODULE =================== -->
     <div class="hidden" id="pharmacy-module-panel">
@@ -1137,9 +1152,9 @@
           <div>
             <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Stock Module</label>
             <div class="grid grid-cols-3 gap-2">
-              <button class="py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition" onclick="setStockPharmacyModule('inventory')" type="button">📦 Inventory</button>
-              <button class="py-2 px-3 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition" onclick="setStockPharmacyModule('pharmacy')" type="button">💊 Pharmacy</button>
-              <button class="py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition" onclick="setStockPharmacyModule('spareparts')" type="button">🧰 Spare Parts</button>
+              <button class="btn-switch-inventory py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" onclick="setStockPharmacyModule('inventory')" type="button">📦 Inventory</button>
+              <button class="btn-switch-pharmacy py-2 px-3 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" onclick="setStockPharmacyModule('pharmacy')" type="button">💊 Pharmacy</button>
+              <button class="btn-switch-spareparts py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" onclick="setStockPharmacyModule('spareparts')" type="button">🧰 Spare Parts</button>
             </div>
           </div>
           <form class="space-y-4" id="pharmacy-form" onsubmit="handlePharmacyRegister(event)">
@@ -1254,6 +1269,138 @@
         </div>
       </div>
     </div>
+
+    <!-- =================== SPARE PARTS MODULE =================== -->
+    <div class="hidden" id="spareparts-module-panel">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-fit space-y-4">
+          <h2 class="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><span>🧰</span> Log Spare Part</h2>
+          <div>
+            <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Stock Module</label>
+            <div class="grid grid-cols-3 gap-2">
+              <button class="btn-switch-inventory py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" onclick="setStockPharmacyModule('inventory')" type="button">📦 Inventory</button>
+              <button class="btn-switch-pharmacy py-2 px-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" onclick="setStockPharmacyModule('pharmacy')" type="button">💊 Pharmacy</button>
+              <button class="btn-switch-spareparts py-2 px-3 border-2 border-blue-600 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" onclick="setStockPharmacyModule('spareparts')" type="button">🧰 Spare Parts</button>
+            </div>
+          </div>
+          <form class="space-y-4" id="spareparts-form" onsubmit="handleSparePartRegister(event)">
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Spare Part Name</label>
+              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-name" placeholder="E.g., Brake Pads Front Ceramic" required="" type="text"/>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Domain Typology</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-type" onchange="window.populateSparePartTargets()">
+                  <option value="vehicle-spare-part">🏎️ Vehicle Fleet Part</option>
+                  <option value="residential-spare-part">🏠 Residential / Property Part</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Unit of Measure</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-unit">
+                  <option value="pcs">pcs</option>
+                  <option value="units">units</option>
+                  <option value="set">set</option>
+                  <option value="kit">kit</option>
+                  <option value="pair">pair</option>
+                  <option value="meters">meters</option>
+                  <option value="box">box</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Target Application / Asset</label>
+              <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-target">
+                <option value="">General Stock / Any Compatible</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Quantity Bought</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-quantity" min="0.1" placeholder="2" required="" step="0.1" type="number"/>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Price per Unit (EGP)</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-price" min="0" placeholder="450.00" required="" step="0.01" type="number"/>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Part / OEM SKU #</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-sku" placeholder="E.g., BOSCH-0986" type="text"/>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Min Buffer Alert</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-threshold" min="0" placeholder="1" required="" step="0.1" type="number" value="1"/>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Warranty / Expiry Date (Optional)</label>
+              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-medium" id="sparepart-exp-date" type="date"/>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Is this Old Stock or a New Purchase?</label>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="cursor-pointer border-2 border-blue-600 bg-blue-50 text-blue-700 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs" id="sparepart-origin-label-new">
+                  <input checked="" class="sr-only" name="sparepart-origin" onchange="toggleSparePartOrigin()" type="radio" value="new"/>
+                  <span>🆕 New Purchase</span>
+                </label>
+                <label class="cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs" id="sparepart-origin-label-old">
+                  <input class="sr-only" name="sparepart-origin" onchange="toggleSparePartOrigin()" type="radio" value="old"/>
+                  <span>📦 Old Stock</span>
+                </label>
+              </div>
+              <p class="hidden text-[10px] text-amber-700 dark:text-amber-400 font-semibold mt-1.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900 rounded-lg p-2" id="sparepart-origin-disclaimer">
+                ⚠️ Old spare parts are added to inventory and fleet reserves without logging an expense.
+              </p>
+            </div>
+            <div id="sparepart-account-wrapper">
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label>
+              <select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-account"></select>
+            </div>
+            <button class="w-full bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition" type="submit">Register Spare Part</button>
+          </form>
+        </div>
+
+        <div class="lg:col-span-2 space-y-4">
+          <!-- KPI Summary for Spare Parts -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Spare Parts</p>
+              <p class="text-xl font-black text-slate-900 dark:text-white mt-0.5" id="spareparts-kpi-count">0 items</p>
+            </div>
+            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Valuation</p>
+              <p class="text-xl font-black text-blue-600 dark:text-blue-400 mt-0.5" id="spareparts-kpi-val">EGP 0.00</p>
+            </div>
+            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Low Stock / Reorder</p>
+              <p class="text-xl font-black text-amber-500 mt-0.5" id="spareparts-kpi-low">0 parts</p>
+            </div>
+          </div>
+
+          <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+              <div class="flex items-center gap-2">
+                <h2 class="text-base font-bold text-slate-900 dark:text-white">Spare Parts Audit Register</h2>
+                <div class="flex items-center gap-1" id="spareparts-filter-buttons">
+                  <button type="button" onclick="window.filterSpareParts('all')" id="btn-sp-all" class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-blue-600 text-white">All</button>
+                  <button type="button" onclick="window.filterSpareParts('vehicle')" id="btn-sp-vehicle" class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">🏎️ Vehicle</button>
+                  <button type="button" onclick="window.filterSpareParts('residential')" id="btn-sp-residential" class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">🏠 Residential</button>
+                </div>
+              </div>
+              <div class="relative w-full md:w-64">
+                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-404">🔍</span>
+                <input class="w-full pl-9 pr-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none font-medium bg-transparent" id="spareparts-search" oninput="renderSparePartsLedger()" placeholder="Search spare parts..." type="text"/>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="spareparts-ledger-cards"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
     <!-- =================== RENTAL MANAGEMENT TAB =================== -->
     <div class="view-section hidden space-y-6" id="view-rentals" style="display: none;">

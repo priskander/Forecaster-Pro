@@ -190,7 +190,10 @@
 
       const headerBadges = document.querySelectorAll('.saas-subscription-badge');
       headerBadges.forEach(b => {
-        b.className = `saas-subscription-badge inline-flex items-center px-2.5 py-1 rounded-xl text-[11px] font-bold border cursor-pointer transition ${tier.badgeClass}`;
+        const isDropdownPill = b.id === 'dropdown-user-tier';
+        b.className = isDropdownPill
+          ? `saas-subscription-badge inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider border cursor-pointer hover:opacity-90 transition ${tier.badgeClass}`
+          : `saas-subscription-badge inline-flex items-center px-2.5 py-1 rounded-xl text-[11px] font-bold border cursor-pointer transition ${tier.badgeClass}`;
         b.textContent = tier.badge;
       });
 
