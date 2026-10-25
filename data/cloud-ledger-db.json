@@ -3,155 +3,53 @@
   "vaults": {
     "shared-main-vault": {
       "vaultId": "shared-main-vault",
-      "updatedAt": "2026-10-20T12:36:46.477Z",
-      "transactions": [
-        {
-          "id": "tx_init_1",
-          "date": "2026-07-01",
-          "description": "Direct Deposit Monthly Salary",
-          "category": "Salary",
-          "type": "income",
-          "amount": 3100
-        },
-        {
-          "id": "tx_init_2",
-          "date": "2026-07-02",
-          "description": "Apartment Premium Rental Rent",
-          "category": "Rent",
-          "type": "expense",
-          "amount": 800
-        },
-        {
-          "id": "tx_init_3",
-          "date": "2026-07-04",
-          "description": "UI/UX Freelance App Project",
-          "category": "Freelance",
-          "type": "income",
-          "amount": 400
-        },
-        {
-          "id": "tx_init_4",
-          "date": "2026-07-05",
-          "description": "Monthly Power Utility Bills",
-          "category": "Utilities",
-          "type": "expense",
-          "amount": 150
-        }
-      ],
-      "accounts": [
-        {
-          "id": "acc_cash_main",
-          "type": "cash",
-          "label": "💵 Cash Wallet",
-          "initialBalance": 1500,
-          "createdAt": "2026-07-01T00:00:00.000Z"
-        },
-        {
-          "id": "acc_bank_cib",
-          "type": "card",
-          "label": "💳 CIB Debit Card",
-          "network": "Visa",
-          "mode": "Debit",
-          "bank": "Commercial International Bank (CIB)",
-          "initialBalance": 12000,
-          "createdAt": "2026-07-01T00:00:00.000Z"
-        },
-        {
-          "id": "acc_wallet_vodafone",
-          "type": "wallet",
-          "label": "📱 Vodafone Cash",
-          "kind": "Telecom",
-          "provider": "Vodafone Cash",
-          "initialBalance": 2500,
-          "createdAt": "2026-07-01T00:00:00.000Z"
-        }
-      ],
+      "updatedAt": "2026-10-25T14:39:22.027Z",
+      "transactions": [],
+      "accounts": [],
       "accountTransfers": [],
       "budgetLimits": {
-        "income": 3500,
-        "expense": 2000
+        "income": 0,
+        "expense": 0
       },
       "stockData": [],
       "pharmacyData": []
     },
     "vault_usr_1792343003698": {
       "vaultId": "vault_usr_1792343003698",
-      "updatedAt": "2026-10-20T11:50:43.900Z",
+      "updatedAt": "2026-10-21T17:50:15.842Z",
       "transactions": [],
-      "accounts": [
-        {
-          "id": "acc_cash_usr_1792343003698",
-          "type": "cash",
-          "label": "💵 Cash Wallet",
-          "initialBalance": 0,
-          "createdAt": "2026-10-20T11:50:43.900Z"
-        },
-        {
-          "id": "acc_bank_usr_1792343003698",
-          "type": "card",
-          "label": "💳 Main Bank Account",
-          "network": "Visa",
-          "mode": "Debit",
-          "bank": "Primary Bank",
-          "initialBalance": 0,
-          "createdAt": "2026-10-20T11:50:43.900Z"
-        }
-      ],
-      "accountTransfers": []
+      "accounts": [],
+      "accountTransfers": [],
+      "stockData": [],
+      "pharmacyData": [],
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      }
     },
     "vault_usr_1792497387408": {
       "vaultId": "vault_usr_1792497387408",
-      "updatedAt": "2026-10-20T11:56:27.408Z",
+      "updatedAt": "2026-10-21T17:50:15.842Z",
       "transactions": [],
-      "accounts": [
-        {
-          "id": "acc_cash_usr_1792497387408",
-          "type": "cash",
-          "label": "💵 Cash Wallet",
-          "initialBalance": 0,
-          "createdAt": "2026-10-20T11:56:27.409Z"
-        },
-        {
-          "id": "acc_bank_usr_1792497387408",
-          "type": "card",
-          "label": "💳 Main Bank Account",
-          "network": "Visa",
-          "mode": "Debit",
-          "bank": "Primary Bank",
-          "initialBalance": 0,
-          "createdAt": "2026-10-20T11:56:27.409Z"
-        }
-      ],
+      "accounts": [],
       "accountTransfers": [],
-      "budgetLimits": {},
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      },
       "stockData": [],
       "pharmacyData": []
     },
     "vault_usr_1792497420289": {
       "vaultId": "vault_usr_1792497420289",
-      "updatedAt": "2026-10-20T11:57:00.289Z",
+      "updatedAt": "2026-10-21T17:50:15.842Z",
       "transactions": [],
-      "accounts": [
-        {
-          "id": "acc_cash_usr_1792497420289",
-          "type": "cash",
-          "label": "💵 Cash Wallet",
-          "initialBalance": 0,
-          "createdAt": "2026-10-20T11:57:00.289Z"
-        },
-        {
-          "id": "acc_bank_usr_1792497420289",
-          "type": "card",
-          "label": "💳 Main Bank Account",
-          "network": "Visa",
-          "mode": "Debit",
-          "bank": "Primary Bank",
-          "initialBalance": 0,
-          "createdAt": "2026-10-20T11:57:00.289Z"
-        }
-      ],
+      "accounts": [],
       "accountTransfers": [],
-      "budgetLimits": {},
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      },
       "stockData": [],
       "pharmacyData": []
     }
@@ -446,7 +344,7 @@
     },
     "telemetry": {
       "serverStartedAt": "2026-10-20T12:36:39.995Z",
-      "totalApiRequests": 0
+      "totalApiRequests": 3
     }
   }
 }

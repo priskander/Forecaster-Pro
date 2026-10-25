@@ -648,88 +648,21 @@
   };
 
   window.editAccount = function(id) {
-    const acc = (window.accounts || []).find(a => a.id === id);
-    if (!acc) return;
-
-    editingAccountId = id;
-    const typeSelect = document.getElementById('account-type');
-    if (typeSelect) {
-      typeSelect.value = acc.type;
-      window.toggleAccountTypeFields();
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast('Payment accounts are permanent and cannot be edited for financial audit integrity.', 'warning');
     }
-
-    if (acc.type === 'card') {
-      const netSelect = document.getElementById('account-card-network');
-      const modeSelect = document.getElementById('account-card-mode');
-      const bankSelect = document.getElementById('account-card-bank');
-      const bankOther = document.getElementById('account-card-bank-other');
-      if (netSelect && acc.network) netSelect.value = acc.network;
-      if (modeSelect && acc.mode) modeSelect.value = acc.mode;
-      if (bankSelect) {
-        if (EGYPT_BANKS.includes(acc.bank)) {
-          bankSelect.value = acc.bank;
-          if (bankOther) bankOther.classList.add('hidden');
-        } else {
-          bankSelect.value = 'Other';
-          if (bankOther) {
-            bankOther.classList.remove('hidden');
-            bankOther.value = acc.bank || '';
-          }
-        }
-      }
-    } else if (acc.type === 'wallet') {
-      const kindSelect = document.getElementById('account-wallet-kind');
-      const provSelect = document.getElementById('account-wallet-provider');
-      const provOther = document.getElementById('account-wallet-provider-other');
-      if (kindSelect && acc.kind) {
-        kindSelect.value = acc.kind;
-        window.toggleWalletProviderOptions();
-      }
-      if (provSelect) {
-        provSelect.value = acc.provider;
-        window.toggleWalletProviderOtherField();
-        if (provSelect.value === 'Other' && provOther) {
-          provOther.value = acc.provider || '';
-        }
-      }
-    }
-
-    const nickInput = document.getElementById('account-nickname');
-    if (nickInput) nickInput.value = acc.nickname || '';
-
-    const submitBtn = document.querySelector('#account-form button[type="submit"]');
-    if (submitBtn) submitBtn.textContent = 'Update Account';
-
-    const cancelBtn = document.getElementById('account-edit-cancel-btn');
-    if (cancelBtn) cancelBtn.classList.remove('hidden');
-
-    document.getElementById('view-accounts')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   window.cancelAccountEdit = function() {
     editingAccountId = null;
     document.getElementById('account-form')?.reset();
     window.toggleAccountTypeFields();
-    const submitBtn = document.querySelector('#account-form button[type="submit"]');
-    if (submitBtn) submitBtn.textContent = 'Add Account';
-    const cancelBtn = document.getElementById('account-edit-cancel-btn');
-    if (cancelBtn) cancelBtn.classList.add('hidden');
   };
 
   window.deleteAccount = function(id) {
-    const acc = (window.accounts || []).find(a => a.id === id);
-    if (!acc) return;
-
-    const sure = confirm(`Are you sure you want to delete payment account "${acc.label}"? Associated transaction records will remain in the audit ledger.`);
-    if (!sure) return;
-
-    window.accounts = (window.accounts || []).filter(a => a.id !== id);
-    window.saveAccountsDatabase();
-    if (typeof window.triggerToast === 'function') window.triggerToast(`Account "${acc.label}" removed.`, 'info');
-
-    window.renderAccountsView();
-    window.populateAccountSelects();
-    window.renderDashboardAccountsAnalysis();
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast('Payment accounts are permanent and cannot be deleted for financial audit integrity.', 'warning');
+    }
   };
 
   window.deleteAccountTransfer = function(id) {
@@ -785,12 +718,9 @@
                 </div>
               </div>
               <div class="flex items-center gap-1">
-                <button type="button" onclick="window.editAccount('${acc.id}')" class="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Edit Account">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                </button>
-                <button type="button" onclick="window.deleteAccount('${acc.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Delete Account">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                </button>
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-200/60 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md" title="Payment accounts are permanent and cannot be edited or deleted for audit integrity">
+                  🔒 Permanent
+                </span>
               </div>
             </div>
 

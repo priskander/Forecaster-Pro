@@ -1448,6 +1448,110 @@ ${mail.body}
       }
     },
 
+    assignDemoTrainingData: async function(targetVaultId = null) {
+      if (!this.isMainAdmin()) {
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Only the Main Admin can assign demo training & marketing data.', 'error');
+        }
+        return;
+      }
+
+      const sure = confirm('Assign demonstration dataset (training payment accounts, transactions, and depletion models) for training & marketing purposes?');
+      if (!sure) return;
+
+      try {
+        const token = this.getToken();
+        const res = await fetch('/api/admin/assign-demo-data', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': token ? `Bearer ${token}` : ''
+          },
+          body: JSON.stringify({ targetVaultId })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Failed to assign demo data.');
+
+        if (data.vault) {
+          window.transactions = data.vault.transactions || [];
+          window.accounts = data.vault.accounts || [];
+          window.stockData = data.vault.stockData || [];
+          window.pharmacyData = data.vault.pharmacyData || [];
+          if (data.vault.budgetLimits) window.budgetLimits = data.vault.budgetLimits;
+
+          localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+          localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+          localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+          localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+          localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
+        }
+
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Demo training & marketing data assigned successfully!', 'success');
+        }
+
+        if (typeof window.renderAllViews === 'function') window.renderAllViews();
+        if (typeof window.renderAccountsView === 'function') window.renderAccountsView();
+        if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+        this.loadAdminDashboard();
+      } catch (err) {
+        console.error('assignDemoTrainingData error:', err);
+        if (typeof window.triggerToast === 'function') window.triggerToast(err.message, 'error');
+      }
+    },
+
+    clearToCleanSlate: async function(targetVaultId = null) {
+      if (!this.isMainAdmin()) {
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Only the Main Admin can reset the account to a clean slate.', 'error');
+        }
+        return;
+      }
+
+      const sure = confirm('Remove all demo data and return account to a 100% clean and clear slate?');
+      if (!sure) return;
+
+      try {
+        const token = this.getToken();
+        const res = await fetch('/api/admin/clear-demo-data', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': token ? `Bearer ${token}` : ''
+          },
+          body: JSON.stringify({ targetVaultId })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Failed to clear data.');
+
+        window.transactions = [];
+        window.accounts = [];
+        window.accountTransfers = [];
+        window.stockData = [];
+        window.pharmacyData = [];
+        window.budgetLimits = { income: 0, expense: 0 };
+
+        localStorage.setItem('pro_transactions', JSON.stringify([]));
+        localStorage.setItem('pro_accounts', JSON.stringify([]));
+        localStorage.setItem('pro_account_transfers', JSON.stringify([]));
+        localStorage.setItem('pro_stock', JSON.stringify([]));
+        localStorage.setItem('pro_pharmacy', JSON.stringify([]));
+        localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
+
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Account reset to a 100% clear and clean slate.', 'info');
+        }
+
+        if (typeof window.renderAllViews === 'function') window.renderAllViews();
+        if (typeof window.renderAccountsView === 'function') window.renderAccountsView();
+        if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+        this.loadAdminDashboard();
+      } catch (err) {
+        console.error('clearToCleanSlate error:', err);
+        if (typeof window.triggerToast === 'function') window.triggerToast(err.message, 'error');
+      }
+    },
+
     renderAdminAuditLogs: function(logs) {
       const listEl = document.getElementById('admin-audit-logs-list');
       if (!listEl) return;

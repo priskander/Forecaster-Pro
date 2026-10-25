@@ -471,24 +471,18 @@ Object.values(db.users).forEach(u => {
   }
 });
 
-// Seed default vault if empty
+// Default vault initialization (100% clean and clear by default)
 const DEFAULT_VAULT_ID = 'shared-main-vault';
 if (!db.vaults[DEFAULT_VAULT_ID]) {
   db.vaults[DEFAULT_VAULT_ID] = {
     vaultId: DEFAULT_VAULT_ID,
     updatedAt: new Date().toISOString(),
-    transactions: [
-      { id: 'tx_init_1', date: '2026-07-01', description: 'Direct Deposit Monthly Salary', category: 'Salary', type: 'income', amount: 3100.00, accountId: 'acc_bank_cib' },
-      { id: 'tx_init_2', date: '2026-07-02', description: 'Apartment Premium Rental Rent', category: 'Rent', type: 'expense', amount: 800.00, accountId: 'acc_bank_cib' },
-      { id: 'tx_init_3', date: '2026-07-04', description: 'UI/UX Freelance App Project', category: 'Freelance', type: 'income', amount: 400.00, accountId: 'acc_wallet_vodafone' },
-      { id: 'tx_init_4', date: '2026-07-05', description: 'Monthly Power Utility Bills', category: 'Utilities', type: 'expense', amount: 150.00, accountId: 'acc_cash_main' }
-    ],
-    accounts: [
-      { id: 'acc_cash_main', type: 'cash', label: '💵 Cash Wallet', initialBalance: 1500, createdAt: '2026-07-01T00:00:00.000Z' },
-      { id: 'acc_bank_cib', type: 'card', label: '💳 CIB Debit Card', network: 'Visa', mode: 'Debit', bank: 'Commercial International Bank (CIB)', initialBalance: 12000, createdAt: '2026-07-01T00:00:00.000Z' },
-      { id: 'acc_wallet_vodafone', type: 'wallet', label: '📱 Vodafone Cash', kind: 'Telecom', provider: 'Vodafone Cash', initialBalance: 2500, createdAt: '2026-07-01T00:00:00.000Z' }
-    ],
-    accountTransfers: []
+    transactions: [],
+    accounts: [],
+    accountTransfers: [],
+    stockData: [],
+    pharmacyData: [],
+    budgetLimits: { income: 0, expense: 0 }
   };
 }
 saveDatabase(db);
@@ -590,13 +584,10 @@ async function startServer() {
       db.vaults[userVaultId] = {
         vaultId: userVaultId,
         updatedAt: new Date().toISOString(),
-        transactions: [], // 100% clean slate: no Peter Badir salary, rent, or historical entries!
-        accounts: [
-          { id: 'acc_cash_' + userId, type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
-          { id: 'acc_bank_' + userId, type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
-        ],
+        transactions: [], // 100% clean slate: no demo transactions
+        accounts: [], // Clean slate: no demo accounts
         accountTransfers: [],
-        budgetLimits: {},
+        budgetLimits: { income: 0, expense: 0 },
         stockData: [],
         pharmacyData: []
       };
@@ -1575,7 +1566,94 @@ async function startServer() {
     }
   });
 
-  // 6. Public System Status for all clients (Web, Desktop, Mobile)
+  // 6. Assign Demo Data & Payment Accounts (Exclusively for Main Admin training & marketing)
+  app.post('/api/admin/assign-demo-data', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const targetVaultId = req.body?.targetVaultId || admin.vaultId || DEFAULT_VAULT_ID;
+      if (!db.vaults[targetVaultId]) {
+        db.vaults[targetVaultId] = {
+          vaultId: targetVaultId,
+          updatedAt: new Date().toISOString(),
+          transactions: [],
+          accounts: [],
+          accountTransfers: [],
+          stockData: [],
+          pharmacyData: [],
+          budgetLimits: { income: 0, expense: 0 }
+        };
+      }
+
+      const vault = db.vaults[targetVaultId];
+      vault.transactions = [
+        { id: 'tx_demo_1', date: '2026-07-01', description: 'Direct Deposit Monthly Salary (Demo)', category: 'Salary', type: 'income', amount: 3100.00, accountId: 'acc_demo_cib' },
+        { id: 'tx_demo_2', date: '2026-07-02', description: 'Apartment Premium Rental Rent (Demo)', category: 'Rent', type: 'expense', amount: 800.00, accountId: 'acc_demo_cib' },
+        { id: 'tx_demo_3', date: '2026-07-04', description: 'UI/UX Freelance App Project (Demo)', category: 'Freelance', type: 'income', amount: 400.00, accountId: 'acc_demo_wallet' },
+        { id: 'tx_demo_4', date: '2026-07-05', description: 'Monthly Power Utility Bills (Demo)', category: 'Utilities', type: 'expense', amount: 150.00, accountId: 'acc_demo_cash' }
+      ];
+      vault.accounts = [
+        { id: 'acc_demo_cash', type: 'cash', label: '💵 Cash Wallet (Demo)', initialBalance: 1500, createdAt: new Date().toISOString() },
+        { id: 'acc_demo_cib', type: 'card', label: '💳 CIB Debit Card (Demo)', network: 'Visa', mode: 'Debit', bank: 'Commercial International Bank (CIB)', initialBalance: 12000, createdAt: new Date().toISOString() },
+        { id: 'acc_demo_wallet', type: 'wallet', label: '📱 Vodafone Cash (Demo)', kind: 'Telecom', provider: 'Vodafone Cash', initialBalance: 2500, createdAt: new Date().toISOString() }
+      ];
+      vault.accountTransfers = [];
+      vault.stockData = [
+        { id: 'stk_demo_1', name: 'Olive Oil Extra Virgin', category: 'Groceries', currentStock: 2, minStock: 3, unit: 'Bottle', unitPrice: 180, dailyDepletion: 0.1, expiryDate: '2027-01-01' }
+      ];
+      vault.pharmacyData = [
+        { id: 'phm_demo_1', name: 'Panadol Extra 500mg', category: 'Analgesics', currentStock: 5, minStock: 10, unit: 'Strip', unitPrice: 45, dailyDepletion: 0.2, expiryDate: '2027-06-30' }
+      ];
+      vault.budgetLimits = { income: 3500, expense: 2000 };
+      vault.updatedAt = new Date().toISOString();
+
+      logAdminAction(admin.email, 'DEMO_DATA_ASSIGNED', 'user_management',
+        `Main Admin assigned demonstration training & marketing dataset to vault ${targetVaultId}`);
+
+      saveDatabase(db);
+      res.json({
+        ok: true,
+        message: 'Demo training & marketing data assigned successfully by Main Admin.',
+        vault
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // 7. Clear Demo Data to Clean Slate (Exclusively for Main Admin)
+  app.post('/api/admin/clear-demo-data', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const targetVaultId = req.body?.targetVaultId || admin.vaultId || DEFAULT_VAULT_ID;
+      if (db.vaults[targetVaultId]) {
+        const vault = db.vaults[targetVaultId];
+        vault.transactions = [];
+        vault.accounts = [];
+        vault.accountTransfers = [];
+        vault.stockData = [];
+        vault.pharmacyData = [];
+        vault.budgetLimits = { income: 0, expense: 0 };
+        vault.updatedAt = new Date().toISOString();
+      }
+
+      logAdminAction(admin.email, 'DEMO_DATA_CLEARED', 'user_management',
+        `Main Admin cleared demonstration data to a clean slate in vault ${targetVaultId}`);
+
+      saveDatabase(db);
+      res.json({
+        ok: true,
+        message: 'Account reset to a 100% clean and clear slate.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // 8. Public System Status for all clients (Web, Desktop, Mobile)
   app.get('/api/public/system-status', (req, res) => {
     if (db.systemConfig?.telemetry) {
       db.systemConfig.telemetry.totalApiRequests = (db.systemConfig.telemetry.totalApiRequests || 0) + 1;

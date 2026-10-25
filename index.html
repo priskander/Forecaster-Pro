@@ -2499,6 +2499,28 @@
             </div>
           </div>
 
+          <!-- Demonstration & Training Data Controls (Admin Authority Only) -->
+          <div class="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40 border border-purple-200 dark:border-purple-800/70 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>🎓</span> Training &amp; Marketing Demo Data Engine
+                </h4>
+                <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                  Standard accounts start 100% clean with zero data. Only the Main Admin can assign demo training datasets or demo payment accounts for marketing demonstrations.
+                </p>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <button type="button" class="px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-1.5 cursor-pointer" onclick="window.ForecasterAuth.assignDemoTrainingData()">
+                  <span>🚀</span> Assign Demo Data
+                </button>
+                <button type="button" class="px-3 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer" onclick="window.ForecasterAuth.clearToCleanSlate()">
+                  <span>🧹</span> Clear All Data
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- Platform Deployment Live Status Cards -->
           <div>
             <div class="flex items-center justify-between mb-2.5">
