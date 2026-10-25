@@ -1668,6 +1668,16 @@ async function startServer() {
   });
 
   /* -------------------------------------------------------------------------
+   * LANDING PAGE ROUTE
+   * ------------------------------------------------------------------------- */
+  app.get(['/landing', '/landing.html'], (req, res) => {
+    const candidateDist = path.resolve(__dirname, 'dist', 'landing.html');
+    const candidateRoot = path.resolve(__dirname, 'landing.html');
+    const file = fs.existsSync(candidateDist) ? candidateDist : candidateRoot;
+    res.sendFile(file);
+  });
+
+  /* -------------------------------------------------------------------------
    * VITE MIDDLEWARE / STATIC ASSETS
    * ------------------------------------------------------------------------- */
   if (process.env.NODE_ENV === 'production' && fs.existsSync(path.resolve(__dirname, 'dist'))) {

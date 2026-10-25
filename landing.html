@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Forecaster Pro — Unified Household Ledger & Asset Operating System</title>
+  <meta name="description" content="The complete operating system for household wealth, intelligent supply chains, clinical medication vaults, rental contracts, and commercial vehicle fleet management." />
+  <meta property="og:title" content="Forecaster Pro — Unified Household Ledger & Asset Operating System" />
+  <meta property="og:description" content="Unified financial ledger, automated budget allocations, intelligent depletion curves, and vehicle fleet management PWA." />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#2563eb" />
+
+  <!-- Icons & Fonts -->
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              200: '#bfdbfe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      --color-brand: #2563eb;
+    }
+    html {
+      scroll-behavior: smooth;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    .custom-gradient-mesh {
+      background-image: radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.08) 0px, transparent 50%),
+                        radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.08) 0px, transparent 50%);
+    }
+    .dark .custom-gradient-mesh {
+      background-image: radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.15) 0px, transparent 50%),
+                        radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.12) 0px, transparent 50%);
+    }
+  </style>
+
+  <script>
+    (function() {
+      try {
+        const saved = localStorage.getItem('pro_theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (saved ? saved === 'dark' : prefersDark) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    })();
+
+    function toggleLandingTheme() {
+      const isDark = document.documentElement.classList.toggle('dark');
+      try { localStorage.setItem('pro_theme', isDark ? 'dark' : 'light'); } catch(e) {}
+      syncThemeIcons();
+    }
+
+    function syncThemeIcons() {
+      const isDark = document.documentElement.classList.contains('dark');
+      document.querySelectorAll('.theme-icon-moon').forEach(el => el.classList.toggle('hidden', isDark));
+      document.querySelectorAll('.theme-icon-sun').forEach(el => el.classList.toggle('hidden', !isDark));
+    }
+
+    document.addEventListener('DOMContentLoaded', syncThemeIcons);
+  </script>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-blue-600 selection:text-white min-h-screen flex flex-col">
+
+  <!-- ======================== TOP NAVIGATION ======================== -->
+  <header class="sticky top-0 z-50 backdrop-blur-md bg-white/90 dark:bg-slate-900/90 border-b border-slate-200/80 dark:border-slate-800 transition-colors">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <a href="/" class="flex items-center gap-3 group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-xl">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-700 to-blue-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+          </svg>
+        </div>
+        <div>
+          <span class="text-lg font-black tracking-tight text-slate-900 dark:text-white">Forecaster<span class="text-blue-600 dark:text-blue-400">Pro</span></span>
+          <span class="hidden sm:inline-block text-[11px] font-semibold text-slate-400 ml-2">Enterprise Operating System</span>
+        </div>
+      </a>
+
+      <!-- Navigation Links (Desktop) -->
+      <nav class="hidden md:flex items-center gap-7 text-sm font-semibold text-slate-600 dark:text-slate-300">
+        <a href="#features" class="hover:text-blue-600 dark:hover:text-blue-400 transition">Features</a>
+        <a href="#modules" class="hover:text-blue-600 dark:hover:text-blue-400 transition">Modules</a>
+        <a href="#calculator" class="hover:text-blue-600 dark:hover:text-blue-400 transition">ROI Calculator</a>
+        <a href="#security" class="hover:text-blue-600 dark:hover:text-blue-400 transition">Security</a>
+        <a href="#pricing" class="hover:text-blue-600 dark:hover:text-blue-400 transition">Pricing</a>
+      </nav>
+
+      <!-- Actions -->
+      <div class="flex items-center gap-2.5 sm:gap-3">
+        <button type="button" onclick="toggleLandingTheme()" class="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer" title="Toggle Theme" aria-label="Toggle theme">
+          <span class="theme-icon-moon text-sm">🌙</span>
+          <span class="theme-icon-sun text-sm hidden">☀️</span>
+        </button>
+
+        <a href="/" class="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 hover:text-blue-600 px-3 py-2 rounded-xl transition">
+          Sign In
+        </a>
+
+        <a href="/" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition cursor-pointer">
+          <span>Launch App</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+        </a>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ======================== HERO SECTION ======================== -->
+  <section class="relative pt-12 pb-20 md:pt-20 md:pb-32 overflow-hidden custom-gradient-mesh border-b border-slate-200/60 dark:border-slate-800/60">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <!-- Headline & Introduction -->
+      <div class="text-center max-w-3xl mx-auto space-y-5">
+        
+        <div class="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          <span>Production-Grade Ledger</span>
+          <span aria-hidden="true">·</span>
+          <span>Depletion Expiry Guard</span>
+          <span aria-hidden="true">·</span>
+          <span>Zero Telemetry</span>
+        </div>
+
+        <h1 class="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-slate-900 dark:text-white leading-[1.12]">
+          The Complete Operating System for Household Wealth &amp; Asset Fleets
+        </h1>
+
+        <p class="text-base sm:text-lg text-slate-600 dark:text-slate-300 font-normal leading-relaxed">
+          Unify double-entry financial ledgers, automated category allocations, intelligent pantry &amp; clinical depletion curves, property rental leases, and commercial vehicle maintenance—under private cryptographic vaults.
+        </p>
+
+        <!-- CTAs -->
+        <div class="pt-3 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
+          <a href="/" class="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm shadow-lg shadow-blue-500/30 transition flex items-center justify-center gap-2 cursor-pointer">
+            <span>Launch Forecaster Pro</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+          </a>
+          <a href="#calculator" class="w-full sm:w-auto px-6 py-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-sm shadow-sm transition flex items-center justify-center gap-2">
+            <span>Calculate Savings &amp; Waste Prevention</span>
+          </a>
+        </div>
+
+        <!-- Trust Features Bar -->
+        <div class="pt-6 flex flex-wrap items-center justify-center gap-y-2 gap-x-6 text-xs text-slate-500 dark:text-slate-400 font-medium">
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500">✓</span> No cloud marketing tracking
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500">✓</span> Local-first Progressive Web App
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500">✓</span> Multi-currency ledger &amp; fee tracking
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500">✓</span> PBKDF2 vault encryption
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Live Interactive Interface Mockup -->
+      <div class="mt-14 max-w-5xl mx-auto rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
+        
+        <!-- Browser Frame Top Bar -->
+        <div class="px-5 py-3.5 bg-slate-100 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-rose-400"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-400"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+            <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400 ml-2">app.forecasterpro.internal / dashboard</span>
+          </div>
+          <div class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-404 font-semibold">
+            <span class="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Cloud Synced</span>
+            <span>·</span>
+            <span class="text-slate-700 dark:text-slate-300">Master Vault #1</span>
+          </div>
+        </div>
+
+        <!-- Inner Mockup Dashboard -->
+        <div class="p-6 md:p-8 space-y-6 bg-slate-50/50 dark:bg-slate-950/30">
+          
+          <!-- Mock KPI Triad -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Registered Income</span>
+              <div class="text-2xl font-black text-emerald-600 mt-1">EGP 38,500.00</div>
+              <span class="text-[11px] text-slate-400 mt-0.5 block">100% of forecasted target</span>
+            </div>
+            <div class="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Registered Expenses</span>
+              <div class="text-2xl font-black text-rose-600 mt-1">EGP 21,430.00</div>
+              <span class="text-[11px] text-slate-400 mt-0.5 block">55.6% of income utilized</span>
+            </div>
+            <div class="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Net Cash Reserve</span>
+              <div class="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">+EGP 17,070.00</div>
+              <span class="text-[11px] text-emerald-600 font-bold mt-0.5 block">Surplus added to savings buffer</span>
+            </div>
+          </div>
+
+          <!-- Mock Allocations & Depletion Split -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            
+            <div class="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
+              <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+                <span class="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase">Live Category Allocations</span>
+                <span class="text-[11px] text-slate-400">Current Scope</span>
+              </div>
+              <div class="space-y-3 pt-1">
+                <div>
+                  <div class="flex justify-between text-xs font-bold mb-1">
+                    <span>Groceries &amp; Provisions</span>
+                    <span class="text-slate-500">EGP 5,200 / 6,000 (86%)</span>
+                  </div>
+                  <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                    <div class="h-full bg-emerald-500 rounded-full" style="width: 86%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs font-bold mb-1">
+                    <span>Vehicle Fuel &amp; Maintenance</span>
+                    <span class="text-slate-500">EGP 3,450 / 4,000 (86%)</span>
+                  </div>
+                  <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                    <div class="h-full bg-blue-600 rounded-full" style="width: 86%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs font-bold mb-1">
+                    <span>Clinical &amp; Pharmacy Care</span>
+                    <span class="text-slate-500">EGP 1,120 / 2,500 (45%)</span>
+                  </div>
+                  <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                    <div class="h-full bg-purple-500 rounded-full" style="width: 45%;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
+              <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+                <span class="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase">Depletion &amp; Expiry Monitor</span>
+                <span class="text-[11px] font-bold text-emerald-600">3 Active Warnings</span>
+              </div>
+              <div class="space-y-2 pt-1 text-xs">
+                <div class="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span>💊</span>
+                    <div>
+                      <div class="font-bold text-amber-900 dark:text-amber-200">Panadol Extra 500mg</div>
+                      <div class="text-[10px] text-amber-700 dark:text-amber-400">Remaining: 4 strips · Buffer: 5 strips</div>
+                    </div>
+                  </div>
+                  <span class="font-bold text-[10px] text-amber-800 dark:text-amber-300">Reorder Alert</span>
+                </div>
+                <div class="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span>🧰</span>
+                    <div>
+                      <div class="font-bold text-blue-900 dark:text-blue-200">Brake Pads Ceramic (Toyota Corolla)</div>
+                      <div class="text-[10px] text-blue-700 dark:text-blue-400">Stock: 2 sets @ EGP 850.00</div>
+                    </div>
+                  </div>
+                  <span class="font-bold text-[10px] text-blue-800 dark:text-blue-300">Fleet Ready</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ======================== CORE PILLARS / MODULES ======================== -->
+  <section id="modules" class="py-20 md:py-28 border-b border-slate-200/80 dark:border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="max-w-2xl mx-auto text-center space-y-3 mb-16">
+        <h2 class="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+          One Engine. Five Integrated Operating Modules.
+        </h2>
+        <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400">
+          Eliminate fragmented spreadsheets and disconnects between purchasing, pantry storage, fleet upkeep, and rental yield.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        
+        <!-- Module 1 -->
+        <div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-400 transition shadow-sm space-y-3">
+          <div class="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-lg">
+            📊
+          </div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Unified Financial Ledger</h3>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            Double-entry transactions with automated category allocation formulas. Tracks registered vs forecasted cash flows, multi-account fee transfers, and real-time net worth footprints.
+          </p>
+          <div class="pt-2 text-xs font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+            <span>Formula-backed budget guards</span> &rarr;
+          </div>
+        </div>
+
+        <!-- Module 2 -->
+        <div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-400 transition shadow-sm space-y-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-lg">
+            📦
+          </div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Depletion &amp; Expiry Guard</h3>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            Calculates daily depletion curves for loose and bulk goods. Prevents spoiled household provisions with automatic expiry warnings and smart consolidation math.
+          </p>
+          <div class="pt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+            <span>Automated spoilage prevention</span> &rarr;
+          </div>
+        </div>
+
+        <!-- Module 3 -->
+        <div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-400 transition shadow-sm space-y-3">
+          <div class="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-lg">
+            💊
+          </div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Clinical Pharmacy Vault</h3>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            Medication adherence registry tracking dosages, clinical purposes, OTC vs Rx categorization, production/expiry dates, and low-strip reorder thresholds.
+          </p>
+          <div class="pt-2 text-xs font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1">
+            <span>Patient safety &amp; dosage guard</span> &rarr;
+          </div>
+        </div>
+
+        <!-- Module 4 -->
+        <div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-400 transition shadow-sm space-y-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-lg">
+            🚗
+          </div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Vehicle Fleet &amp; Spare Parts</h3>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            Fleet odometer auditing, fuel economy metrics, routine service records, and a dedicated spare parts warehouse with OEM SKU tracking and inventory valuation.
+          </p>
+          <div class="pt-2 text-xs font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+            <span>Depreciation &amp; upkeep audit</span> &rarr;
+          </div>
+        </div>
+
+        <!-- Module 5 -->
+        <div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-400 transition shadow-sm space-y-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-lg">
+            🏠
+          </div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Property Rentals &amp; Leases</h3>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            Contract life cycles, tenant profiles, security deposits, automated lease escalation terms, payment status tracking, and webhook notification dispatches.
+          </p>
+          <div class="pt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+            <span>Portfolio yields &amp; tenant portal</span> &rarr;
+          </div>
+        </div>
+
+        <!-- Module 6 -->
+        <div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-400 transition shadow-sm space-y-3">
+          <div class="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold text-lg">
+            🔔
+          </div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">7-Day Intelligent Notification Center</h3>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            Consolidated predictive notifications with responsive phone and tablet drawers. Read notifications automatically purge after 7 days to eliminate ledger clutter.
+          </p>
+          <div class="pt-2 text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+            <span>Zero notification fatigue</span> &rarr;
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ======================== INTERACTIVE SAVINGS CALCULATOR ======================== -->
+  <section id="calculator" class="py-20 md:py-28 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="max-w-3xl mx-auto text-center space-y-3 mb-14">
+        <h2 class="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+          Calculate Your Annual Financial &amp; Waste Savings
+        </h2>
+        <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400">
+          The average household loses between 12% and 22% of pantry items and medications to undetected expiration. Adjust the parameters to project your net gain with Forecaster Pro.
+        </p>
+      </div>
+
+      <div class="max-w-4xl mx-auto bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-10 shadow-xl grid grid-cols-1 md:grid-cols-2 gap-8">
+        
+        <!-- Controls -->
+        <div class="space-y-6">
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <label class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Monthly Living Expenses</label>
+              <span class="text-sm font-black text-blue-600 dark:text-blue-400" id="calc-exp-val">EGP 25,000</span>
+            </div>
+            <input type="range" id="calc-exp" min="5000" max="100000" step="1000" value="25000" oninput="updateCalculator()" class="w-full accent-blue-600 cursor-pointer" />
+            <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+              <span>EGP 5k</span>
+              <span>EGP 50k</span>
+              <span>EGP 100k</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <label class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Household Members</label>
+              <span class="text-sm font-black text-blue-600 dark:text-blue-400" id="calc-members-val">4 Persons</span>
+            </div>
+            <input type="range" id="calc-members" min="1" max="12" step="1" value="4" oninput="updateCalculator()" class="w-full accent-blue-600 cursor-pointer" />
+            <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+              <span>1</span>
+              <span>6</span>
+              <span>12+</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <label class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Vehicles &amp; Properties Managed</label>
+              <span class="text-sm font-black text-blue-600 dark:text-blue-400" id="calc-assets-val">2 Assets</span>
+            </div>
+            <input type="range" id="calc-assets" min="0" max="8" step="1" value="2" oninput="updateCalculator()" class="w-full accent-blue-600 cursor-pointer" />
+            <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+              <span>None</span>
+              <span>4</span>
+              <span>8+ Assets</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Calculated Results Card -->
+        <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 flex flex-col justify-between space-y-6">
+          <div class="space-y-4">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider block">Estimated Annual Savings</span>
+            
+            <div>
+              <div class="text-3xl sm:text-4xl font-black text-emerald-600 dark:text-emerald-400" id="calc-total-saved">
+                EGP 34,200 / yr
+              </div>
+              <p class="text-xs text-slate-500 mt-1">Direct recovery through waste elimination &amp; overspend guards.</p>
+            </div>
+
+            <div class="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+              <div class="flex justify-between">
+                <span class="text-slate-500">Pantry &amp; Meds Spoilage Prevented:</span>
+                <span class="font-bold text-slate-900 dark:text-white" id="calc-food-saved">EGP 18,000</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Overspending &amp; Allocation Buffer:</span>
+                <span class="font-bold text-slate-900 dark:text-white" id="calc-budget-saved">EGP 11,200</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Fleet &amp; Maintenance Prevention:</span>
+                <span class="font-bold text-slate-900 dark:text-white" id="calc-fleet-saved">EGP 5,000</span>
+              </div>
+            </div>
+          </div>
+
+          <a href="/" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold text-center shadow-md shadow-blue-500/20 transition cursor-pointer">
+            Start Saving Today &rarr;
+          </a>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ======================== SECURITY & ARCHITECTURE ======================== -->
+  <section id="security" class="py-20 md:py-28 border-b border-slate-200/80 dark:border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="max-w-3xl mx-auto text-center space-y-3 mb-16">
+        <h2 class="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+          Architected for Sovereign Privacy &amp; Offline Continuity
+        </h2>
+        <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400">
+          Your household financial data is personal. Forecaster Pro runs local-first with zero tracking pixels, ad networks, or data brokers.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+          <div class="text-2xl">🔐</div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">PBKDF2 Cryptographic Salting</h3>
+          <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            All user credentials are protected via 100,000 iterations of PBKDF2 with unique cryptographic salts, ensuring zero plaintext exposure across network nodes.
+          </p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+          <div class="text-2xl">⚡</div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Offline Progressive Web App</h3>
+          <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            Service worker caching guarantees 100% full functionality even during network outages. Local mutations queue automatically and reconcile once reconnected.
+          </p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+          <div class="text-2xl">🏛️</div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Isolated Vault Architecture</h3>
+          <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            Each household operates within its own isolated storage vault partition, preventing cross-tenant leakage and enabling portable JSON database backups anytime.
+          </p>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ======================== TRANSPARENT PRICING ======================== -->
+  <section id="pricing" class="py-20 md:py-28 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="max-w-2xl mx-auto text-center space-y-4 mb-14">
+        <h2 class="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+          Simple, Predictable Subscription Plans
+        </h2>
+        <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400">
+          No hidden fees or per-transaction tolls. Upgrade or downgrade directly within your secure profile menu anytime.
+        </p>
+
+        <!-- Billing Toggle -->
+        <div class="pt-2 flex items-center justify-center gap-3 text-xs font-bold">
+          <span id="label-monthly" class="text-slate-900 dark:text-white">Monthly Billing</span>
+          <button type="button" onclick="toggleBillingPeriod()" class="w-12 h-6 rounded-full bg-blue-600 p-1 flex items-center transition cursor-pointer" id="pricing-toggle-btn">
+            <span class="w-4 h-4 rounded-full bg-white transition-transform" id="pricing-toggle-knob"></span>
+          </button>
+          <span id="label-annual" class="text-slate-400 flex items-center gap-1.5">
+            <span>Annual Billing</span>
+            <span class="text-[10px] text-emerald-600 font-extrabold bg-emerald-50 dark:bg-emerald-950 px-1.5 py-0.5 rounded">Save 20%</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Pricing Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
+        
+        <!-- Free Tier -->
+        <div class="p-6 rounded-3xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-6">
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white">Free Household</h3>
+              <p class="text-xs text-slate-500 mt-1">Essential double-entry ledger for individuals.</p>
+            </div>
+            <div class="text-3xl font-black text-slate-900 dark:text-white">
+              $0 <span class="text-xs text-slate-400 font-normal">/ forever</span>
+            </div>
+            <ul class="space-y-2 text-xs text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <li>✓ Single User Account</li>
+              <li>✓ Basic Financial Ledger</li>
+              <li>✓ Up to 100 Transactions</li>
+              <li>✓ Offline Local Storage PWA</li>
+            </ul>
+          </div>
+          <a href="/" class="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-center hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            Start Free
+          </a>
+        </div>
+
+        <!-- Household Starter -->
+        <div class="p-6 rounded-3xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-6">
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white">Starter Household</h3>
+              <p class="text-xs text-slate-500 mt-1">Ideal for young couples and busy families.</p>
+            </div>
+            <div class="text-3xl font-black text-slate-900 dark:text-white pricing-plan-starter">
+              $9 <span class="text-xs text-slate-400 font-normal">/ month</span>
+            </div>
+            <ul class="space-y-2 text-xs text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <li>✓ Unlimited Financial Ledger</li>
+              <li>✓ Smart Stock &amp; Pharmacy Vault</li>
+              <li>✓ Expiry &amp; Depletion Alerts</li>
+              <li>✓ Up to 3 Vehicles Tracked</li>
+            </ul>
+          </div>
+          <a href="/" class="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-center hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            Choose Starter
+          </a>
+        </div>
+
+        <!-- Pro Household (Featured) -->
+        <div class="p-6 rounded-3xl bg-white dark:bg-slate-900 border-2 border-blue-600 shadow-xl relative flex flex-col justify-between space-y-6">
+          <div class="absolute -top-3 right-6 px-3 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider">
+            Most Popular
+          </div>
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white">Pro Household</h3>
+              <p class="text-xs text-slate-500 mt-1">Multi-asset families, landlords &amp; vehicle owners.</p>
+            </div>
+            <div class="text-3xl font-black text-blue-600 dark:text-blue-400 pricing-plan-pro">
+              $19 <span class="text-xs text-slate-400 font-normal">/ month</span>
+            </div>
+            <ul class="space-y-2 text-xs text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <li>✓ Everything in Starter</li>
+              <li>✓ Multi-Property Rental Leases</li>
+              <li>✓ Spare Parts &amp; Fleet Upkeep</li>
+              <li>✓ Cloud Sync &amp; Multi-Device Access</li>
+              <li>✓ Up to 5 Team / Sub-Users</li>
+            </ul>
+          </div>
+          <a href="/" class="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold text-center shadow-md shadow-blue-500/25 transition">
+            Get Pro Access
+          </a>
+        </div>
+
+        <!-- Enterprise Vault -->
+        <div class="p-6 rounded-3xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-6">
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white">Enterprise Vault</h3>
+              <p class="text-xs text-slate-500 mt-1">Commercial operators &amp; high-volume fleets.</p>
+            </div>
+            <div class="text-3xl font-black text-slate-900 dark:text-white pricing-plan-enterprise">
+              $49 <span class="text-xs text-slate-400 font-normal">/ month</span>
+            </div>
+            <ul class="space-y-2 text-xs text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <li>✓ Unlimited Isolated Vaults</li>
+              <li>✓ Unlimited Sub-Users &amp; Roles</li>
+              <li>✓ Real-Time Webhook Automations</li>
+              <li>✓ Priority Security &amp; Custom Export</li>
+            </ul>
+          </div>
+          <a href="/" class="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-center hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            Contact Sales
+          </a>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ======================== FREQUENTLY ASKED QUESTIONS ======================== -->
+  <section class="py-20 md:py-28 border-b border-slate-200/80 dark:border-slate-800">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="text-center space-y-3 mb-14">
+        <h2 class="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+          Frequently Asked Questions
+        </h2>
+        <p class="text-sm text-slate-500">Answers to the most common questions about Forecaster Pro.</p>
+      </div>
+
+      <div class="space-y-4">
+        
+        <details class="group p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 open:shadow-sm transition">
+          <summary class="font-bold text-sm text-slate-900 dark:text-white cursor-pointer flex items-center justify-between">
+            <span>Can I use Forecaster Pro without an active internet connection?</span>
+            <span class="text-slate-400 group-open:rotate-180 transition-transform">&darr;</span>
+          </summary>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-3 leading-relaxed">
+            Yes! Forecaster Pro is built as an offline-first Progressive Web App. All transactions, grocery disbursements, medical logs, and fleet entries are committed to local persistent storage immediately and synchronize with the encrypted cloud ledger once your device reconnects.
+          </p>
+        </details>
+
+        <details class="group p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 open:shadow-sm transition">
+          <summary class="font-bold text-sm text-slate-900 dark:text-white cursor-pointer flex items-center justify-between">
+            <span>How does the intelligent stock depletion calculation work?</span>
+            <span class="text-slate-400 group-open:rotate-180 transition-transform">&darr;</span>
+          </summary>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-3 leading-relaxed">
+            Forecaster Pro monitors item purchase dates, registered package volumes, and average consumption intervals. The system dynamically flags items when cumulative days remaining fall below your chosen threshold (e.g. &lt;7 days) or when base pill count triggers a low-stock alert.
+          </p>
+        </details>
+
+        <details class="group p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 open:shadow-sm transition">
+          <summary class="font-bold text-sm text-slate-900 dark:text-white cursor-pointer flex items-center justify-between">
+            <span>Can payment accounts be edited or deleted once created?</span>
+            <span class="text-slate-400 group-open:rotate-180 transition-transform">&darr;</span>
+          </summary>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-3 leading-relaxed">
+            In compliance with strict financial ledger audit standards, payment accounts are locked permanently once established to protect historic transfer and reconciliation integrity.
+          </p>
+        </details>
+
+        <details class="group p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 open:shadow-sm transition">
+          <summary class="font-bold text-sm text-slate-900 dark:text-white cursor-pointer flex items-center justify-between">
+            <span>How do sub-users and roles work?</span>
+            <span class="text-slate-400 group-open:rotate-180 transition-transform">&darr;</span>
+          </summary>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-3 leading-relaxed">
+            Primary users can provision team or family members with dedicated roles (Manager, Member, Viewer). Each sub-user receives isolated credentials with mandatory initial password reset, and access can be revoked by the Primary user anytime.
+          </p>
+        </details>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ======================== FOOTER ======================== -->
+  <footer class="py-12 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 text-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
+      
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-xs">
+          FP
+        </div>
+        <span class="font-bold text-slate-900 dark:text-white">Forecaster Pro Enterprise</span>
+        <span>·</span>
+        <span>Version 01.06.12</span>
+      </div>
+
+      <div class="flex items-center gap-6 font-medium">
+        <a href="/" class="hover:text-blue-600 transition">Application</a>
+        <a href="#features" class="hover:text-blue-600 transition">Features</a>
+        <a href="#calculator" class="hover:text-blue-600 transition">ROI Calculator</a>
+        <a href="#pricing" class="hover:text-blue-600 transition">Pricing</a>
+      </div>
+
+      <div>
+        &copy; 2026 Forecaster Pro. All rights reserved. Zero telemetry.
+      </div>
+
+    </div>
+  </footer>
+
+  <!-- ======================== CALCULATOR LOGIC SCRIPT ======================== -->
+  <script>
+    let isAnnualBilling = false;
+
+    function updateCalculator() {
+      const exp = parseFloat(document.getElementById('calc-exp').value) || 25000;
+      const members = parseInt(document.getElementById('calc-members').value) || 4;
+      const assets = parseInt(document.getElementById('calc-assets').value) || 2;
+
+      document.getElementById('calc-exp-val').textContent = `EGP ${exp.toLocaleString()}`;
+      document.getElementById('calc-members-val').textContent = `${members} Person${members === 1 ? '' : 's'}`;
+      document.getElementById('calc-assets-val').textContent = `${assets} Asset${assets === 1 ? '' : 's'}`;
+
+      // Spoilage calculation: ~6% of monthly expenses recovered
+      const foodSaved = Math.round(exp * 0.06 * 12);
+      // Budget overspend buffers: ~3.7% recovered
+      const budgetSaved = Math.round(exp * 0.037 * 12);
+      // Fleet & asset maintenance savings: ~EGP 2,500/year per asset
+      const fleetSaved = assets * 2500;
+
+      const totalSaved = foodSaved + budgetSaved + fleetSaved;
+
+      document.getElementById('calc-total-saved').textContent = `EGP ${totalSaved.toLocaleString()} / yr`;
+      document.getElementById('calc-food-saved').textContent = `EGP ${foodSaved.toLocaleString()}`;
+      document.getElementById('calc-budget-saved').textContent = `EGP ${budgetSaved.toLocaleString()}`;
+      document.getElementById('calc-fleet-saved').textContent = `EGP ${fleetSaved.toLocaleString()}`;
+    }
+
+    function toggleBillingPeriod() {
+      isAnnualBilling = !isAnnualBilling;
+      const knob = document.getElementById('pricing-toggle-knob');
+      const labelMo = document.getElementById('label-monthly');
+      const labelAn = document.getElementById('label-annual');
+
+      if (isAnnualBilling) {
+        knob.style.transform = 'translateX(24px)';
+        labelMo.className = 'text-slate-400';
+        labelAn.className = 'text-slate-900 dark:text-white flex items-center gap-1.5';
+        document.querySelector('.pricing-plan-starter').innerHTML = '$7 <span class="text-xs text-slate-400 font-normal">/ mo billed annually</span>';
+        document.querySelector('.pricing-plan-pro').innerHTML = '$15 <span class="text-xs text-slate-400 font-normal">/ mo billed annually</span>';
+        document.querySelector('.pricing-plan-enterprise').innerHTML = '$39 <span class="text-xs text-slate-400 font-normal">/ mo billed annually</span>';
+      } else {
+        knob.style.transform = 'translateX(0px)';
+        labelMo.className = 'text-slate-900 dark:text-white';
+        labelAn.className = 'text-slate-400 flex items-center gap-1.5';
+        document.querySelector('.pricing-plan-starter').innerHTML = '$9 <span class="text-xs text-slate-400 font-normal">/ month</span>';
+        document.querySelector('.pricing-plan-pro').innerHTML = '$19 <span class="text-xs text-slate-400 font-normal">/ month</span>';
+        document.querySelector('.pricing-plan-enterprise').innerHTML = '$49 <span class="text-xs text-slate-400 font-normal">/ month</span>';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', updateCalculator);
+  </script>
+
+</body>
+</html>
