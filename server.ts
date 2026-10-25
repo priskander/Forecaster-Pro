@@ -1190,28 +1190,17 @@ async function startServer() {
       db.vaults[vaultId] = current;
     }
 
-    // Smart merge transactions (deduplicate by id, keep latest or merge)
+    // Authoritative sync from active client state so deletions persist
     if (Array.isArray(incoming.transactions)) {
-      const txnMap = new Map();
-      (current.transactions || []).forEach(t => { if (t && t.id) txnMap.set(t.id, t); });
-      incoming.transactions.forEach((t: any) => { if (t && t.id) txnMap.set(t.id, t); });
-      current.transactions = Array.from(txnMap.values());
+      current.transactions = incoming.transactions;
     }
 
-    // Smart merge accounts (deduplicate by id)
     if (Array.isArray(incoming.accounts)) {
-      const accMap = new Map();
-      (current.accounts || []).forEach(a => { if (a && a.id) accMap.set(a.id, a); });
-      incoming.accounts.forEach((a: any) => { if (a && a.id) accMap.set(a.id, a); });
-      current.accounts = Array.from(accMap.values());
+      current.accounts = incoming.accounts;
     }
 
-    // Smart merge transfers (deduplicate by id)
     if (Array.isArray(incoming.accountTransfers)) {
-      const trMap = new Map();
-      (current.accountTransfers || []).forEach(tr => { if (tr && tr.id) trMap.set(tr.id, tr); });
-      incoming.accountTransfers.forEach((tr: any) => { if (tr && tr.id) trMap.set(tr.id, tr); });
-      current.accountTransfers = Array.from(trMap.values());
+      current.accountTransfers = incoming.accountTransfers;
     }
 
     if (incoming.budgetLimits) current.budgetLimits = incoming.budgetLimits;
@@ -1231,6 +1220,19 @@ async function startServer() {
       transferCount: current.accountTransfers.length,
       vault: current
     });
+  });
+
+  // Dedicated endpoint to immediately delete a transaction from cloud vault
+  app.delete('/api/cloud-sync/transactions/:id', (req, res) => {
+    const id = req.params.id;
+    const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+    const vault = db.vaults[vaultId];
+    if (vault && Array.isArray(vault.transactions)) {
+      vault.transactions = vault.transactions.filter((t: any) => t.id !== id);
+      vault.updatedAt = new Date().toISOString();
+      saveDatabase(db);
+    }
+    res.json({ ok: true, id, message: 'Transaction removed safely from cloud database.' });
   });
 
   // Dedicated endpoints for transaction history cross-device

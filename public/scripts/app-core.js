@@ -886,9 +886,26 @@
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
-  window.deleteTransaction = function(id) {
-    window.transactions = window.transactions.filter(t => t.id !== id);
+  window.deleteTransaction = function(id, evt) {
+    if (evt) {
+      if (typeof evt.preventDefault === 'function') evt.preventDefault();
+      if (typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    } else if (typeof window !== 'undefined' && window.event) {
+      if (typeof window.event.preventDefault === 'function') window.event.preventDefault();
+      if (typeof window.event.stopPropagation === 'function') window.event.stopPropagation();
+    }
+
+    window.transactions = (window.transactions || []).filter(t => t.id !== id);
     window.saveTransactionsDatabase();
+
+    const vaultId = (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.getVaultId === 'function')
+      ? window.ForecasterCloudSync.getVaultId()
+      : 'shared-main-vault';
+
+    fetch(`/api/cloud-sync/transactions/${encodeURIComponent(id)}?vaultId=${encodeURIComponent(vaultId)}`, {
+      method: 'DELETE'
+    }).catch(() => {});
+
     window.triggerToast("Transaction deleted safely.", "info");
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
@@ -937,16 +954,30 @@
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
-  window.deleteStockItem = function(id) {
-    window.stockData = window.stockData.filter(s => s.id !== id);
+  window.deleteStockItem = function(id, evt) {
+    if (evt) {
+      if (typeof evt.preventDefault === 'function') evt.preventDefault();
+      if (typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    }
+    window.stockData = (window.stockData || []).filter(s => s.id !== id);
     localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
     window.triggerToast("Asset registry removed.", "info");
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
-  window.deletePharmacyItem = function(id) {
-    window.pharmacyData = window.pharmacyData.filter(m => m.id !== id);
+  window.deletePharmacyItem = function(id, evt) {
+    if (evt) {
+      if (typeof evt.preventDefault === 'function') evt.preventDefault();
+      if (typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    }
+    window.pharmacyData = (window.pharmacyData || []).filter(m => m.id !== id);
     localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
     window.triggerToast("Medication database record discarded.", "info");
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
@@ -1438,8 +1469,8 @@
             EGP ${r.amount.toFixed(2)}
           </td>
           <td class="py-3 px-2 text-center whitespace-nowrap space-x-1.5">
-            <button onclick="editTransaction('${r.id}')" class="p-1 hover:text-blue-600 transition" title="Modify Record">✏️</button>
-            <button onclick="deleteTransaction('${r.id}')" class="p-1 hover:text-rose-600 transition" title="Delete Record">🗑️</button>
+            <button type="button" onclick="editTransaction('${r.id}', event)" class="p-1 hover:text-blue-600 transition" title="Modify Record">✏️</button>
+            <button type="button" onclick="deleteTransaction('${r.id}', event)" class="p-1 hover:text-rose-600 transition" title="Delete Record">🗑️</button>
           </td>
         </tr>
       `;
@@ -1561,9 +1592,9 @@
                 <span>Cost: EGP ${(b.price * (b.packSize || 1)).toFixed(2)}</span>
               </div>
               <div class="flex justify-end gap-1.5 pt-1.5">
-                <button onclick="editStockItem('${b.id}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit Batch</button>
+                <button type="button" onclick="editStockItem('${b.id}', event)" class="text-[10px] text-blue-600 font-bold hover:underline">Edit Batch</button>
                 <span class="text-slate-300">|</span>
-                <button onclick="deleteStockItem('${b.id}')" class="text-[10px] text-rose-600 font-bold hover:underline">Discard</button>
+                <button type="button" onclick="deleteStockItem('${b.id}', event)" class="text-[10px] text-rose-600 font-bold hover:underline">Discard</button>
               </div>
             </div>
           `;
@@ -1686,10 +1717,10 @@
 
           <div class="flex items-center gap-2">
             <input type="number" id="consume-sparepart-${p.id}" placeholder="Qty" class="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold" min="0.1" step="0.1" value="1">
-            <button onclick="window.executeSparePartConsumption('${p.id}')" class="flex-grow py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition">
+            <button type="button" onclick="window.executeSparePartConsumption('${p.id}', event)" class="flex-grow py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition">
               Disburse / Use Part
             </button>
-            <button onclick="window.deleteStockItem('${p.id}')" class="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg text-xs font-bold transition" title="Discard Part">
+            <button type="button" onclick="window.deleteStockItem('${p.id}', event)" class="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg text-xs font-bold transition" title="Discard Part">
               🗑️
             </button>
           </div>
@@ -1840,9 +1871,9 @@
                 <span>Price per unit: EGP ${(b.price).toFixed(2)}</span>
               </div>
               <div class="flex justify-end gap-1.5 pt-1.5">
-                <button onclick="editPharmacyItem('${b.id}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit Batch</button>
+                <button type="button" onclick="editPharmacyItem('${b.id}', event)" class="text-[10px] text-blue-600 font-bold hover:underline">Edit Batch</button>
                 <span class="text-slate-300">|</span>
-                <button onclick="deletePharmacyItem('${b.id}')" class="text-[10px] text-rose-600 font-bold hover:underline">Discard</button>
+                <button type="button" onclick="deletePharmacyItem('${b.id}', event)" class="text-[10px] text-rose-600 font-bold hover:underline">Discard</button>
               </div>
             </div>
           `;

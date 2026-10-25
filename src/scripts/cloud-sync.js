@@ -143,8 +143,8 @@
       const O = (k) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return (v && typeof v === 'object') ? v : null; } catch (e) { return null; } };
 
       return {
-        transactions: Array.isArray(window.transactions) && window.transactions.length > 0 ? window.transactions : A('pro_transactions'),
-        accounts: Array.isArray(window.accounts) && window.accounts.length > 0 ? window.accounts : A('pro_accounts'),
+        transactions: Array.isArray(window.transactions) ? window.transactions : A('pro_transactions'),
+        accounts: Array.isArray(window.accounts) ? window.accounts : A('pro_accounts'),
         accountTransfers: Array.isArray(window.accountTransfers) ? window.accountTransfers : A('pro_account_transfers'),
         budgetLimits: (window.budgetLimits && typeof window.budgetLimits === 'object') ? window.budgetLimits : O('pro_budget_limits'),
         stockData: Array.isArray(window.stockData) ? window.stockData : A('pro_stock'),
@@ -157,67 +157,25 @@
 
       let changed = false;
 
-      // 1. Transactions - Deduplicate and Merge
+      // 1. Transactions - Authoritative sync preserves deletions
       if (Array.isArray(remoteVault.transactions)) {
-        const currentTxns = Array.isArray(window.transactions) ? window.transactions : [];
-        const txnMap = new Map();
-        currentTxns.forEach(t => { if (t && t.id) txnMap.set(t.id, t); });
-        
-        let newTxnCount = 0;
-        remoteVault.transactions.forEach(t => {
-          if (t && t.id && !txnMap.has(t.id)) {
-            newTxnCount++;
-          }
-          if (t && t.id) txnMap.set(t.id, t);
-        });
-
-        if (newTxnCount > 0 || currentTxns.length !== txnMap.size) {
-          window.transactions = Array.from(txnMap.values());
-          localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
-          changed = true;
-        }
+        window.transactions = remoteVault.transactions;
+        localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+        changed = true;
       }
 
-      // 2. Payment Accounts - Deduplicate and Merge
+      // 2. Payment Accounts
       if (Array.isArray(remoteVault.accounts)) {
-        const currentAccs = Array.isArray(window.accounts) ? window.accounts : [];
-        const accMap = new Map();
-        currentAccs.forEach(a => { if (a && a.id) accMap.set(a.id, a); });
-
-        let newAccCount = 0;
-        remoteVault.accounts.forEach(a => {
-          if (a && a.id && !accMap.has(a.id)) {
-            newAccCount++;
-          }
-          if (a && a.id) accMap.set(a.id, a);
-        });
-
-        if (newAccCount > 0 || currentAccs.length !== accMap.size) {
-          window.accounts = Array.from(accMap.values());
-          localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
-          changed = true;
-        }
+        window.accounts = remoteVault.accounts;
+        localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+        changed = true;
       }
 
-      // 3. Account Transfers - Deduplicate and Merge
+      // 3. Account Transfers
       if (Array.isArray(remoteVault.accountTransfers)) {
-        const currentTransfers = Array.isArray(window.accountTransfers) ? window.accountTransfers : [];
-        const trMap = new Map();
-        currentTransfers.forEach(tr => { if (tr && tr.id) trMap.set(tr.id, tr); });
-
-        let newTrCount = 0;
-        remoteVault.accountTransfers.forEach(tr => {
-          if (tr && tr.id && !trMap.has(tr.id)) {
-            newTrCount++;
-          }
-          if (tr && tr.id) trMap.set(tr.id, tr);
-        });
-
-        if (newTrCount > 0 || currentTransfers.length !== trMap.size) {
-          window.accountTransfers = Array.from(trMap.values());
-          localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers));
-          changed = true;
-        }
+        window.accountTransfers = remoteVault.accountTransfers;
+        localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers));
+        changed = true;
       }
 
       if (changed) {

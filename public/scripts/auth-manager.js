@@ -1538,6 +1538,10 @@ ${mail.body}
         localStorage.setItem('pro_pharmacy', JSON.stringify([]));
         localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
 
+        if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+          window.ForecasterCloudSync.notifyDataChanged();
+        }
+
         if (typeof window.triggerToast === 'function') {
           window.triggerToast('Account reset to a 100% clear and clean slate.', 'info');
         }
