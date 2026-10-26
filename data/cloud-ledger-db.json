@@ -3,13 +3,73 @@
   "vaults": {
     "shared-main-vault": {
       "vaultId": "shared-main-vault",
-      "updatedAt": "2026-10-25T14:39:22.027Z",
-      "transactions": [],
-      "accounts": [],
+      "updatedAt": "2026-10-26T10:08:38.788Z",
+      "transactions": [
+        {
+          "id": "tx_init_1",
+          "date": "2026-07-01",
+          "description": "Direct Deposit Monthly Salary",
+          "category": "Salary",
+          "type": "income",
+          "amount": 3100
+        },
+        {
+          "id": "tx_init_2",
+          "date": "2026-07-02",
+          "description": "Apartment Premium Rental Rent",
+          "category": "Rent",
+          "type": "expense",
+          "amount": 800
+        },
+        {
+          "id": "tx_init_3",
+          "date": "2026-07-04",
+          "description": "UI/UX Freelance App Project",
+          "category": "Freelance",
+          "type": "income",
+          "amount": 400
+        },
+        {
+          "id": "tx_init_4",
+          "date": "2026-07-05",
+          "description": "Monthly Power Utility Bills",
+          "category": "Utilities",
+          "type": "expense",
+          "amount": 150
+        }
+      ],
+      "accounts": [
+        {
+          "id": "acc_cash_main",
+          "type": "cash",
+          "label": "💵 Cash Wallet",
+          "initialBalance": 1500,
+          "createdAt": "2026-07-01T00:00:00.000Z"
+        },
+        {
+          "id": "acc_bank_cib",
+          "type": "card",
+          "label": "💳 CIB Debit Card",
+          "network": "Visa",
+          "mode": "Debit",
+          "bank": "Commercial International Bank (CIB)",
+          "initialBalance": 12000,
+          "createdAt": "2026-07-01T00:00:00.000Z"
+        },
+        {
+          "id": "acc_wallet_vodafone",
+          "type": "wallet",
+          "label": "📱 Vodafone Cash",
+          "kind": "Telecom",
+          "provider": "Vodafone Cash",
+          "initialBalance": 2500,
+          "createdAt": "2026-07-01T00:00:00.000Z"
+        }
+      ],
       "accountTransfers": [],
       "budgetLimits": {
-        "income": 0,
-        "expense": 0
+        "income": 3500,
+        "expense": 950
       },
       "stockData": [],
       "pharmacyData": []
@@ -59,16 +119,17 @@
       "id": "usr_peter_badir",
       "name": "Peter W. Badir",
       "email": "peter.w.badir@gmail.com",
-      "passwordHash": "e5ebde08cf42fffc93da31f709ea5d72934b204bd388ae8487662b35025ae819e0493762a27b29dc4ba58d10e9c01f34cc9d0e1f472cb4348615297434a30c40",
-      "salt": "f931a8924f18227d949cbb3eafa27e02",
+      "passwordHash": "bd775051e31868636a207dc85e40ed5cb145ab458db52e599ff19014c9ce27f3dd135eda91c5e2513abbe2c8c2fe8654e0ca6d2650faef790a4351e32c491be8",
+      "salt": "151371569743b87e33cf24c9c4e6e6d0",
       "tier": "Master Admin Suite",
       "createdAt": "2026-10-18T17:03:16.856Z",
-      "lastLogin": "2026-10-20T12:36:53.051Z",
+      "lastLogin": "2026-10-26T10:08:51.675Z",
       "role": "main_admin",
       "isPrimary": true,
       "vaultId": "shared-main-vault",
       "isMainAdmin": true,
-      "status": "active"
+      "status": "active",
+      "mustChangePassword": false
     },
     "usr_1792343003698": {
       "id": "usr_1792343003698",
@@ -188,9 +249,42 @@
     "tok_a9aa5264d311c8d47270fa85e07e467c052cd37ac6ee19ab": "usr_1792497387408",
     "tok_a57c0e195aa3b41c71ece26de1fbd9c7dc331bf9da0acef1": "usr_sub_1792497387355",
     "tok_2724aa2ab1711dad12c8685fb8cc3da19861567e15722f3a": "usr_1792497420289",
-    "tok_1b84764f0f306066922586047a1fd412aa48ffd01273cff2": "usr_peter_badir"
+    "tok_1b84764f0f306066922586047a1fd412aa48ffd01273cff2": "usr_peter_badir",
+    "tok_a283f18d2369d96c6b9d7214110eee8fe5fbd6a2e7813663": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1793614115706
+    },
+    "tok_10bced201d3a88fe8be051d3e940a33c372a5a4d7a16146c": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1793614123885
+    },
+    "tok_92769c150d3e37bc9f2b5d1159c1d5d66b3606b96784308c": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1793614127327
+    },
+    "tok_1ad8930aa3df48da06987ed4bbe75fc171ff9f8967f0e998": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1793614131675
+    }
   },
   "outbox": [
+    {
+      "id": "mail_reset_1793009319452_fb92bf",
+      "to": "peter.w.badir@gmail.com",
+      "toName": "Peter W. Badir",
+      "subject": "Forecaster Pro - Password Reset Access Code",
+      "body": "Hello Peter W. Badir,\n\nA password reset was requested for your account (peter.w.badir@gmail.com).\n\nYour Temporary Access Password is:\nTemp-EJAC366!\n\nPlease sign in with this temporary password. You will be prompted to set your new permanent password immediately upon login.\n\nBest regards,\nForecaster Pro Security Team",
+      "htmlBody": "\n<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;\">\n  <div style=\"background: linear-gradient(135deg, #1e3a8a, #2563eb); padding: 24px; color: #ffffff;\">\n    <h1 style=\"margin: 0; font-size: 20px; font-weight: 800;\">Forecaster Pro Security</h1>\n    <p style=\"margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;\">Password Recovery &amp; Access Key</p>\n  </div>\n  <div style=\"padding: 24px;\">\n    <h2 style=\"margin: 0 0 12px 0; font-size: 17px; color: #0f172a;\">Hello Peter W. Badir,</h2>\n    <p style=\"font-size: 13.5px; line-height: 1.5; color: #334155;\">\n      A password reset was requested for your Forecaster Pro account.\n    </p>\n    <div style=\"background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;\">\n      <h3 style=\"margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase;\">Your Temporary Access Password</h3>\n      <code style=\"background: #e0f2fe; color: #0284c7; padding: 6px 12px; border-radius: 8px; font-weight: bold; font-family: monospace; font-size: 16px; border: 1px solid #bae6fd; display: inline-block;\">Temp-EJAC366!</code>\n    </div>\n    <p style=\"font-size: 12px; color: #64748b;\">\n      Use this temporary password to log in. You will be prompted to set your own new permanent password right away.\n    </p>\n  </div>\n</div>",
+      "sentAt": "2026-10-26T10:08:39.453Z",
+      "status": "delivered",
+      "metadata": {
+        "userId": "usr_peter_badir",
+        "role": "main_admin",
+        "temporaryPassword": "Temp-EJAC366!",
+        "senderId": "system_security",
+        "senderEmail": "security@forecasterpro.local"
+      }
+    },
     {
       "id": "mail_1792497387356_5809ad",
       "to": "jason.subuser@example.com",
@@ -261,6 +355,22 @@
     }
   ],
   "auditLog": [
+    {
+      "id": "log_1793009327327_uya1v",
+      "timestamp": "2026-10-26T10:08:47.327Z",
+      "adminEmail": "peter.w.badir@gmail.com",
+      "action": "PASSWORD_RESET_COMPLETED",
+      "category": "security",
+      "details": "Password successfully reset and permanent session established for peter.w.badir@gmail.com"
+    },
+    {
+      "id": "log_1793009319453_so3wf",
+      "timestamp": "2026-10-26T10:08:39.453Z",
+      "adminEmail": "peter.w.badir@gmail.com",
+      "action": "PASSWORD_RESET_REQUESTED",
+      "category": "security",
+      "details": "Temporary access code generated for peter.w.badir@gmail.com"
+    },
     {
       "id": "log_1792499813075_1tl4x",
       "timestamp": "2026-10-20T12:36:53.075Z",
@@ -344,7 +454,7 @@
     },
     "telemetry": {
       "serverStartedAt": "2026-10-20T12:36:39.995Z",
-      "totalApiRequests": 3
+      "totalApiRequests": 13
     }
   }
 }

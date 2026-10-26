@@ -197,8 +197,10 @@
     toggleAuthTab: function(tab) {
       const loginTabBtn = document.getElementById('auth-tab-login');
       const registerTabBtn = document.getElementById('auth-tab-register');
+      const forgotTabBtn = document.getElementById('auth-tab-forgot');
       const loginForm = document.getElementById('auth-form-login');
       const registerForm = document.getElementById('auth-form-register');
+      const forgotForm = document.getElementById('auth-form-forgot');
       const titleEl = document.getElementById('auth-modal-title');
       const subtitleEl = document.getElementById('auth-modal-subtitle');
 
@@ -210,18 +212,87 @@
       if (tab === 'register') {
         if (loginTabBtn) loginTabBtn.className = inactiveTabStyle;
         if (registerTabBtn) registerTabBtn.className = activeTabStyle;
+        if (forgotTabBtn) forgotTabBtn.className = inactiveTabStyle;
         if (loginForm) loginForm.classList.add('hidden');
         if (registerForm) registerForm.classList.remove('hidden');
+        if (forgotForm) forgotForm.classList.add('hidden');
         if (titleEl) titleEl.textContent = 'Create Primary Account';
         if (subtitleEl) subtitleEl.textContent = 'Set up your primary ledger workspace and invite sub-users';
+      } else if (tab === 'forgot') {
+        if (loginTabBtn) loginTabBtn.className = inactiveTabStyle;
+        if (registerTabBtn) registerTabBtn.className = inactiveTabStyle;
+        if (forgotTabBtn) forgotTabBtn.className = activeTabStyle;
+        if (loginForm) loginForm.classList.add('hidden');
+        if (registerForm) registerForm.classList.add('hidden');
+        if (forgotForm) forgotForm.classList.remove('hidden');
+        if (titleEl) titleEl.textContent = 'Reset Password & Account Access';
+        if (subtitleEl) subtitleEl.textContent = 'Generate an instant temporary access code to recover your account';
+        const forgotEmail = document.getElementById('forgot-email');
+        const loginEmail = document.getElementById('login-email');
+        if (forgotEmail && loginEmail && loginEmail.value) {
+          forgotEmail.value = loginEmail.value;
+        } else if (forgotEmail && !forgotEmail.value) {
+          forgotEmail.value = 'peter.w.badir@gmail.com';
+        }
       } else {
         if (loginTabBtn) loginTabBtn.className = activeTabStyle;
         if (registerTabBtn) registerTabBtn.className = inactiveTabStyle;
+        if (forgotTabBtn) forgotTabBtn.className = inactiveTabStyle;
         if (loginForm) loginForm.classList.remove('hidden');
         if (registerForm) registerForm.classList.add('hidden');
+        if (forgotForm) forgotForm.classList.add('hidden');
         if (titleEl) titleEl.textContent = 'Sign in to Forecaster Pro';
         if (subtitleEl) subtitleEl.textContent = 'Access your persistent financial workspace from any device';
       }
+    },
+
+    requestPasswordReset: async function(email) {
+      try {
+        this.clearAuthErrors();
+        const cleanEmail = (email || '').trim().toLowerCase();
+        if (!cleanEmail) {
+          throw new Error('Please enter your registered account email.');
+        }
+
+        const res = await fetch('/api/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || 'Password reset request failed.');
+        }
+
+        this._lastTempPass = data.temporaryPassword;
+        this._lastResetEmail = data.email;
+
+        const card = document.getElementById('forgot-result-card');
+        const display = document.getElementById('forgot-temp-pass-display');
+        if (display) display.textContent = data.temporaryPassword;
+        if (card) card.classList.remove('hidden');
+
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Temporary password generated! Click Auto-Fill to sign in.', 'success');
+        }
+      } catch (err) {
+        this.showAuthError(err.message);
+      }
+    },
+
+    autoFillAndLoginWithTemp: function() {
+      const email = this._lastResetEmail || document.getElementById('forgot-email')?.value || 'peter.w.badir@gmail.com';
+      const tempPass = this._lastTempPass || document.getElementById('forgot-temp-pass-display')?.textContent || '';
+      if (!tempPass) return;
+
+      this.toggleAuthTab('login');
+      const emailInput = document.getElementById('login-email');
+      const passInput = document.getElementById('login-password');
+      if (emailInput) emailInput.value = email;
+      if (passInput) passInput.value = tempPass;
+
+      this.login(email, tempPass);
     },
 
     togglePasswordVisibility: function(inputId, btnEl) {
@@ -2195,6 +2266,12 @@ ${mail.body}
     const password = document.getElementById('register-password')?.value;
     const confirmPass = document.getElementById('register-confirm-password')?.value;
     window.ForecasterAuth.register(name, email, password, confirmPass);
+  };
+
+  window.handleAuthForgotSubmit = function(e) {
+    e.preventDefault();
+    const email = document.getElementById('forgot-email')?.value;
+    window.ForecasterAuth.requestPasswordReset(email);
   };
 
   window.addEventListener('DOMContentLoaded', () => {
