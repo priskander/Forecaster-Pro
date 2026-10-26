@@ -322,7 +322,7 @@ if (!defaultUser) {
     isMainAdmin: true,
     status: 'active',
     vaultId: 'shared-main-vault',
-    mustChangePassword: false,
+    mustChangePassword: true,
     createdAt: new Date().toISOString(),
     lastLogin: new Date().toISOString()
   };
@@ -335,6 +335,9 @@ if (!defaultUser) {
   defaultUser.status = 'active';
   defaultUser.tier = 'Master Admin Suite';
   defaultUser.vaultId = 'shared-main-vault';
+  if (verifyPassword('Password123!', defaultUser.salt, defaultUser.passwordHash)) {
+    defaultUser.mustChangePassword = true;
+  }
 }
 
 if (!db.auditLog) db.auditLog = [];
@@ -487,6 +490,92 @@ if (!db.vaults[DEFAULT_VAULT_ID]) {
 }
 saveDatabase(db);
 
+// Rate Limiting Storage & Middleware
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+function createRateLimiter(windowMs: number, maxRequests: number, message: string) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const key = `${req.path}:${ip}`;
+
+    let record = rateLimitMap.get(key);
+    if (!record || now > record.resetAt) {
+      record = { count: 1, resetAt: now + windowMs };
+      rateLimitMap.set(key, record);
+      return next();
+    }
+
+    record.count++;
+    if (record.count > maxRequests) {
+      const retryAfter = Math.ceil((record.resetAt - now) / 1000);
+      res.setHeader('Retry-After', retryAfter);
+      return res.status(429).json({ ok: false, error: message || 'Too many attempts. Please try again shortly.' });
+    }
+
+    next();
+  };
+}
+
+const loginLimiter = createRateLimiter(60 * 1000, 10, 'Too many login attempts. Please wait 1 minute before trying again.');
+const registerLimiter = createRateLimiter(60 * 1000, 5, 'Too many registration attempts. Please wait 1 minute before trying again.');
+
+const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 Days Session Expiration
+
+function resolveTokenUser(token: string): UserRecord | null {
+  if (!token || !db.tokens || !db.tokens[token]) return null;
+  const tokenEntry: any = db.tokens[token];
+  let userId = '';
+
+  if (typeof tokenEntry === 'string') {
+    userId = tokenEntry;
+  } else if (typeof tokenEntry === 'object' && tokenEntry.userId) {
+    if (tokenEntry.expiresAt && Date.now() > tokenEntry.expiresAt) {
+      delete db.tokens[token];
+      saveDatabase(db);
+      return null;
+    }
+    userId = tokenEntry.userId;
+  }
+
+  const user = (db.users || {})[userId];
+  if (!user || user.status === 'suspended') return null;
+  return user;
+}
+
+function getAuthenticatedUser(req: express.Request, res: express.Response): UserRecord | null {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+  if (!token) {
+    res.status(401).json({ ok: false, error: 'Authentication required. Missing Bearer token.' });
+    return null;
+  }
+
+  const user = resolveTokenUser(token);
+  if (!user) {
+    res.status(401).json({ ok: false, error: 'Session expired or invalid. Please sign in again.' });
+    return null;
+  }
+
+  return user;
+}
+
+function requireVaultAccess(req: express.Request, res: express.Response, targetVaultId: string): UserRecord | null {
+  const user = getAuthenticatedUser(req, res);
+  if (!user) return null;
+
+  const cleanTarget = (targetVaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+  const userVault = (user.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+
+  const isMaster = !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin';
+  if (!isMaster && userVault !== cleanTarget) {
+    res.status(403).json({ ok: false, error: 'Access forbidden: You do not have permission to access this data vault.' });
+    return null;
+  }
+
+  return user;
+}
+
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '25mb' }));
@@ -507,7 +596,7 @@ async function startServer() {
    * ------------------------------------------------------------------------- */
 
   // Sign Up / Register
-  app.post('/api/auth/register', (req, res) => {
+  app.post('/api/auth/register', registerLimiter, (req, res) => {
     try {
       const { name, email, password } = req.body || {};
       const cleanEmail = (email || '').trim().toLowerCase();
@@ -641,8 +730,8 @@ async function startServer() {
     }
   });
 
-  // Login
-  app.post('/api/auth/login', (req, res) => {
+  // Login (Protected with Rate Limiter & Expiring Tokens)
+  app.post('/api/auth/login', loginLimiter, (req, res) => {
     try {
       const { email, password } = req.body || {};
       const cleanEmail = (email || '').trim().toLowerCase();
@@ -688,7 +777,10 @@ async function startServer() {
 
       if (!db.tokens) db.tokens = {};
       const token = 'tok_' + crypto.randomBytes(24).toString('hex');
-      db.tokens[token] = user.id;
+      db.tokens[token] = {
+        userId: user.id,
+        expiresAt: Date.now() + TOKEN_TTL_MS
+      } as any;
 
       saveDatabase(db);
 
@@ -1160,9 +1252,12 @@ async function startServer() {
     });
   });
 
-  // Pull vault data
+  // Pull vault data (Protected with authentication and tenant vault isolation)
   app.get('/api/cloud-sync/vault/:vaultId', (req, res) => {
     const vaultId = (req.params.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+    const user = requireVaultAccess(req, res, vaultId);
+    if (!user) return;
+
     const vault = db.vaults[vaultId] || {
       vaultId,
       updatedAt: new Date().toISOString(),
@@ -1173,9 +1268,12 @@ async function startServer() {
     res.json({ ok: true, vault });
   });
 
-  // Push / Merge vault data
+  // Push / Merge vault data (Protected with authentication and tenant vault isolation)
   app.post('/api/cloud-sync/vault/:vaultId', (req, res) => {
     const vaultId = (req.params.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+    const user = requireVaultAccess(req, res, vaultId);
+    if (!user) return;
+
     const incoming = req.body || {};
 
     let current = db.vaults[vaultId];
@@ -1222,10 +1320,13 @@ async function startServer() {
     });
   });
 
-  // Dedicated endpoint to immediately delete a transaction from cloud vault
+  // Dedicated endpoint to immediately delete a transaction from cloud vault (Protected)
   app.delete('/api/cloud-sync/transactions/:id', (req, res) => {
     const id = req.params.id;
     const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+    const user = requireVaultAccess(req, res, vaultId);
+    if (!user) return;
+
     const vault = db.vaults[vaultId];
     if (vault && Array.isArray(vault.transactions)) {
       vault.transactions = vault.transactions.filter((t: any) => t.id !== id);
@@ -1235,15 +1336,37 @@ async function startServer() {
     res.json({ ok: true, id, message: 'Transaction removed safely from cloud database.' });
   });
 
-  // Dedicated endpoints for transaction history cross-device
+  // Dedicated endpoint to immediately delete a payment account from cloud vault (Protected)
+  app.delete('/api/cloud-sync/accounts/:id', (req, res) => {
+    const id = req.params.id;
+    const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+    const user = requireVaultAccess(req, res, vaultId);
+    if (!user) return;
+
+    const vault = db.vaults[vaultId];
+    if (vault && Array.isArray(vault.accounts)) {
+      vault.accounts = vault.accounts.filter((a: any) => a.id !== id);
+      vault.updatedAt = new Date().toISOString();
+      saveDatabase(db);
+    }
+    res.json({ ok: true, id, message: 'Payment account removed safely from cloud database.' });
+  });
+
+  // Dedicated endpoints for transaction history cross-device (Protected)
   app.get('/api/cloud-sync/transactions', (req, res) => {
     const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+    const user = requireVaultAccess(req, res, vaultId);
+    if (!user) return;
+
     const vault = db.vaults[vaultId] || { transactions: [] };
     res.json({ ok: true, vaultId, transactions: vault.transactions || [] });
   });
 
   app.post('/api/cloud-sync/transactions', (req, res) => {
     const vaultId = String(req.query.vaultId || req.body.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+    const user = requireVaultAccess(req, res, vaultId);
+    if (!user) return;
+
     const newTxns = Array.isArray(req.body.transactions) ? req.body.transactions : (req.body.transaction ? [req.body.transaction] : []);
 
     let vault = db.vaults[vaultId];
@@ -1278,15 +1401,14 @@ async function startServer() {
     const authHeader = req.headers.authorization || '';
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-    if (!token || !db.tokens || !db.tokens[token]) {
+    if (!token) {
       res.status(401).json({ ok: false, error: 'Authentication required. Please sign in as Main Admin.' });
       return null;
     }
 
-    const userId = db.tokens[token];
-    const user = (db.users || {})[userId];
+    const user = resolveTokenUser(token);
     if (!user) {
-      res.status(401).json({ ok: false, error: 'User session not found.' });
+      res.status(401).json({ ok: false, error: 'User session not found or expired.' });
       return null;
     }
 

@@ -902,12 +902,30 @@
       ? window.ForecasterCloudSync.getVaultId()
       : 'shared-main-vault';
 
+    const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
+      ? window.ForecasterAuth.getToken()
+      : (localStorage.getItem('forecaster_auth_token') || '');
+
     fetch(`/api/cloud-sync/transactions/${encodeURIComponent(id)}?vaultId=${encodeURIComponent(vaultId)}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : ''
+      }
     }).catch(() => {});
 
     window.triggerToast("Transaction deleted safely.", "info");
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
+  };
+
+  window.escapeHtml = function(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   };
 
   window.toggleMedGroupCollapse = function(name) {
@@ -1462,9 +1480,9 @@
             </span>
           </td>
           <td class="py-3 px-2 whitespace-nowrap">
-            <span class="font-bold text-slate-707 dark:text-slate-200">${r.category}</span>
+            <span class="font-bold text-slate-707 dark:text-slate-200">${window.escapeHtml(r.category)}</span>
           </td>
-          <td class="py-3 px-2 text-slate-900 dark:text-slate-100">${r.description}</td>
+          <td class="py-3 px-2 text-slate-900 dark:text-slate-100">${window.escapeHtml(r.description)}</td>
           <td class="py-3 px-2 text-right font-black ${r.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}">
             EGP ${r.amount.toFixed(2)}
           </td>

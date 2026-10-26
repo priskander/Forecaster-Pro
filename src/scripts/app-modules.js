@@ -741,9 +741,85 @@
     window.renderDashboardAccountsAnalysis();
   };
 
-  window.editAccount = function(id) {
+  window.editAccount = function(id, evt) {
+    if (evt) {
+      if (typeof evt.preventDefault === 'function') evt.preventDefault();
+      if (typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    } else if (typeof window !== 'undefined' && window.event) {
+      if (typeof window.event.preventDefault === 'function') window.event.preventDefault();
+      if (typeof window.event.stopPropagation === 'function') window.event.stopPropagation();
+    }
+
+    const acc = (window.accounts || []).find(a => a.id === id);
+    if (!acc) return;
+
+    editingAccountId = id;
+
+    // Populate form fields
+    const typeSelect = document.getElementById('account-type');
+    if (typeSelect) {
+      typeSelect.value = acc.type || 'cash';
+      window.toggleAccountTypeFields();
+    }
+
+    if (acc.type === 'card') {
+      const net = document.getElementById('account-card-network');
+      if (net && acc.network) net.value = acc.network;
+
+      const mode = document.getElementById('account-card-mode');
+      if (mode && acc.mode) mode.value = acc.mode;
+
+      const bank = document.getElementById('account-card-bank');
+      const bankOther = document.getElementById('account-card-bank-other');
+      if (bank && acc.bank) {
+        const optionExists = Array.from(bank.options).some(o => o.value === acc.bank);
+        if (optionExists) {
+          bank.value = acc.bank;
+          if (bankOther) bankOther.classList.add('hidden');
+        } else {
+          bank.value = 'Other';
+          if (bankOther) {
+            bankOther.value = acc.bank;
+            bankOther.classList.remove('hidden');
+          }
+        }
+      }
+    } else if (acc.type === 'wallet') {
+      const kind = document.getElementById('account-wallet-kind');
+      if (kind && acc.kind) {
+        kind.value = acc.kind;
+        window.toggleWalletProviderOptions();
+      }
+
+      const prov = document.getElementById('account-wallet-provider');
+      const provOther = document.getElementById('account-wallet-provider-other');
+      if (prov && acc.provider) {
+        const optionExists = Array.from(prov.options).some(o => o.value === acc.provider);
+        if (optionExists) {
+          prov.value = acc.provider;
+          if (provOther) provOther.classList.add('hidden');
+        } else {
+          prov.value = 'Other';
+          if (provOther) {
+            provOther.value = acc.provider;
+            provOther.classList.remove('hidden');
+          }
+        }
+      }
+    }
+
+    const nick = document.getElementById('account-nickname');
+    if (nick) nick.value = acc.nickname || '';
+
+    const submitBtn = document.querySelector('#account-form button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Save Changes';
+
+    const cancelBtn = document.getElementById('account-edit-cancel-btn');
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
+
+    document.getElementById('account-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     if (typeof window.triggerToast === 'function') {
-      window.triggerToast('Payment accounts are permanent and cannot be edited for financial audit integrity.', 'warning');
+      window.triggerToast(`Editing account: ${acc.label}`, 'info');
     }
   };
 
@@ -751,12 +827,74 @@
     editingAccountId = null;
     document.getElementById('account-form')?.reset();
     window.toggleAccountTypeFields();
+    const submitBtn = document.querySelector('#account-form button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Add Account';
+    const cancelBtn = document.getElementById('account-edit-cancel-btn');
+    if (cancelBtn) cancelBtn.classList.add('hidden');
   };
 
-  window.deleteAccount = function(id) {
-    if (typeof window.triggerToast === 'function') {
-      window.triggerToast('Payment accounts are permanent and cannot be deleted for financial audit integrity.', 'warning');
+  window.deleteAccount = function(id, evt) {
+    if (evt) {
+      if (typeof evt.preventDefault === 'function') evt.preventDefault();
+      if (typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    } else if (typeof window !== 'undefined' && window.event) {
+      if (typeof window.event.preventDefault === 'function') window.event.preventDefault();
+      if (typeof window.event.stopPropagation === 'function') window.event.stopPropagation();
     }
+
+    const acc = (window.accounts || []).find(a => a.id === id);
+    if (!acc) return;
+
+    const txnCount = (window.transactions || []).filter(t => t.accountId === id).length;
+    const transferCount = (window.accountTransfers || []).filter(tr => tr.fromId === id || tr.toId === id).length;
+
+    let confirmMsg = `Delete payment account "${acc.label}"?`;
+    if (txnCount > 0 || transferCount > 0) {
+      confirmMsg += `\n\nNotice: This account is referenced in ${txnCount} transaction(s) and ${transferCount} transfer(s).`;
+    }
+
+    const confirmed = confirm(confirmMsg);
+    if (!confirmed) return;
+
+    window.accounts = (window.accounts || []).filter(a => a.id !== id);
+
+    if (Array.isArray(window.transactions)) {
+      window.transactions.forEach(t => {
+        if (t.accountId === id) t.accountId = '';
+      });
+      window.saveTransactionsDatabase();
+    }
+
+    window.saveAccountsDatabase();
+
+    const vaultId = (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.getVaultId === 'function')
+      ? window.ForecasterCloudSync.getVaultId()
+      : 'shared-main-vault';
+
+    const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
+      ? window.ForecasterAuth.getToken()
+      : (localStorage.getItem('forecaster_auth_token') || '');
+
+    fetch(`/api/cloud-sync/accounts/${encodeURIComponent(id)}?vaultId=${encodeURIComponent(vaultId)}`, {
+      method: 'DELETE',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : ''
+      }
+    }).catch(() => {});
+
+    if (editingAccountId === id) {
+      window.cancelAccountEdit();
+    }
+
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast(`Payment account "${acc.label}" deleted.`, 'info');
+    }
+
+    window.renderAccountsView();
+    window.populateAccountSelects();
+    window.renderDashboardAccountsAnalysis();
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
   window.deleteAccountTransfer = function(id) {
@@ -812,9 +950,12 @@
                 </div>
               </div>
               <div class="flex items-center gap-1">
-                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-200/60 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md" title="Payment accounts are permanent and cannot be edited or deleted for audit integrity">
-                  🔒 Permanent
-                </span>
+                <button type="button" onclick="window.editAccount('${acc.id}', event)" class="px-2 py-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/60 rounded-lg transition flex items-center gap-1 cursor-pointer" title="Edit Account">
+                  <span>✏️</span> Edit
+                </button>
+                <button type="button" onclick="window.deleteAccount('${acc.id}', event)" class="px-2 py-1 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 rounded-lg transition flex items-center gap-1 cursor-pointer" title="Delete Account">
+                  <span>🗑️</span> Delete
+                </button>
               </div>
             </div>
 
