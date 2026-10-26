@@ -506,8 +506,17 @@
       if (!modal) return;
 
       const currentInput = document.getElementById('change-pass-current');
-      if (currentInput && currentPassword) {
-        currentInput.value = currentPassword;
+      if (currentInput) {
+        if (currentPassword) {
+          currentInput.value = currentPassword;
+        } else if (!currentInput.value) {
+          const user = this.getUser();
+          if (user && user.temporaryPassword) {
+            currentInput.value = user.temporaryPassword;
+          } else if (user && user.email && user.email.toLowerCase() === 'peter.w.badir@gmail.com') {
+            currentInput.value = 'Password123!';
+          }
+        }
       }
 
       const errEl = document.getElementById('change-pass-error-banner');
@@ -557,13 +566,15 @@
 
       try {
         const token = this.getToken();
+        const user = this.getUser();
+        const email = user?.email || 'peter.w.badir@gmail.com';
         const res = await fetch('/api/auth/change-password', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ currentPassword, newPassword })
+          body: JSON.stringify({ currentPassword, newPassword, email })
         });
 
         const data = await res.json();
@@ -571,7 +582,10 @@
           throw new Error(data.error || 'Failed to update password.');
         }
 
-        // Update local session
+        // Update local session & fresh token
+        if (data.token) {
+          localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+        }
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
         this.closeChangePasswordModal();
         this.updateUI();

@@ -3,7 +3,7 @@
   "vaults": {
     "shared-main-vault": {
       "vaultId": "shared-main-vault",
-      "updatedAt": "2026-10-26T10:08:38.788Z",
+      "updatedAt": "2026-10-26T10:26:08.279Z",
       "transactions": [
         {
           "id": "tx_init_1",
@@ -119,17 +119,18 @@
       "id": "usr_peter_badir",
       "name": "Peter W. Badir",
       "email": "peter.w.badir@gmail.com",
-      "passwordHash": "bd775051e31868636a207dc85e40ed5cb145ab458db52e599ff19014c9ce27f3dd135eda91c5e2513abbe2c8c2fe8654e0ca6d2650faef790a4351e32c491be8",
-      "salt": "151371569743b87e33cf24c9c4e6e6d0",
+      "passwordHash": "e5ebde08cf42fffc93da31f709ea5d72934b204bd388ae8487662b35025ae819e0493762a27b29dc4ba58d10e9c01f34cc9d0e1f472cb4348615297434a30c40",
+      "salt": "f931a8924f18227d949cbb3eafa27e02",
       "tier": "Master Admin Suite",
       "createdAt": "2026-10-18T17:03:16.856Z",
-      "lastLogin": "2026-10-26T10:08:51.675Z",
+      "lastLogin": "2026-10-26T10:26:15.645Z",
       "role": "main_admin",
       "isPrimary": true,
       "vaultId": "shared-main-vault",
       "isMainAdmin": true,
       "status": "active",
-      "mustChangePassword": false
+      "mustChangePassword": true,
+      "temporaryPassword": "Password123!"
     },
     "usr_1792343003698": {
       "id": "usr_1792343003698",
@@ -265,6 +266,26 @@
     "tok_1ad8930aa3df48da06987ed4bbe75fc171ff9f8967f0e998": {
       "userId": "usr_peter_badir",
       "expiresAt": 1793614131675
+    },
+    "tok_5696cfedf3fdcd99ab0c5032512f4022029f98dba6670ad7": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1793615160879
+    },
+    "tok_f55a87839b1442dd6888447165f57b38dfc5c353899e17c9": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1793615170555
+    },
+    "tok_839a1647a6874b86b55d4290dc847aa692c5a2d2172d9d62": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1793615170667
+    },
+    "tok_e6ecab5e6ff613a5e3dea5381bf4bca30f9b773439ed326a": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1793615175577
+    },
+    "tok_59ae4db0c356a5afa6536c44d55b4be04ff5aa7fb206ee91": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1793615175645
     }
   },
   "outbox": [
@@ -355,6 +376,14 @@
     }
   ],
   "auditLog": [
+    {
+      "id": "log_1793010370667_l4wq4",
+      "timestamp": "2026-10-26T10:26:10.667Z",
+      "adminEmail": "peter.w.badir@gmail.com",
+      "action": "PASSWORD_CHANGED",
+      "category": "security",
+      "details": "Password successfully changed by user peter.w.badir@gmail.com"
+    },
     {
       "id": "log_1793009327327_uya1v",
       "timestamp": "2026-10-26T10:08:47.327Z",
@@ -454,7 +483,7 @@
     },
     "telemetry": {
       "serverStartedAt": "2026-10-20T12:36:39.995Z",
-      "totalApiRequests": 13
+      "totalApiRequests": 17
     }
   }
 }
