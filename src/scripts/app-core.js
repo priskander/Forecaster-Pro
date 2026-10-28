@@ -2957,6 +2957,7 @@
     });
 
     const labels = Object.keys(window.expenseAllocationBlueprint);
+    const actualSpentData = labels.map(lbl => expenseCategoriesMap[lbl] || 0);
     const totalAllIncome = (window.transactions || [])
       .filter(t => t.type === 'income')
       .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
