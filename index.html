@@ -674,6 +674,17 @@
           <div class="relative h-[300px]">
             <canvas id="overviewChart"></canvas>
           </div>
+          <!-- Subcategory Breakdown Explorer (Hover on Desktop, Click/Tap on Mobile/Tablet) -->
+          <div class="pt-3 border-t border-slate-100 dark:border-slate-700/80 space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span>🏷️</span> Category Subcategories
+              </span>
+              <span class="text-[10px] text-slate-400 font-medium">Hover on desktop • Tap on mobile/tablet</span>
+            </div>
+            <div id="financial-performance-subcat-chips" class="flex flex-wrap gap-1.5 items-center"></div>
+            <div id="financial-performance-subcat-popover" class="hidden p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 text-xs transition-all duration-200"></div>
+          </div>
         </div>
 
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4 flex flex-col justify-between">
@@ -1013,6 +1024,17 @@
               </div>
 
               <p class="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium mt-1" id="form-txn-tip">🥦 Grocery &amp; 💊 Medical expenses are generated automatically when registering Stock batches.</p>
+            </div>
+            <!-- Subcategory Linked Selector -->
+            <div id="form-txn-subcategory-wrap" class="space-y-1">
+              <div class="flex items-center justify-between">
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404">Subcategory</label>
+                <span class="text-[10px] text-blue-600 dark:text-blue-400 font-semibold" id="form-subcat-linked-badge">Linked</span>
+              </div>
+              <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none" id="form-txn-subcategory" onchange="window.handleSubcategoryChange(this.value)"></select>
+              <div id="form-txn-custom-subcat-wrap" class="hidden pt-1">
+                <input type="text" id="form-txn-custom-subcat-input" placeholder="Type custom subcategory..." class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 focus:outline-none"/>
+              </div>
             </div>
             <div class="hidden" id="form-txn-utility-wrap">
               <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Utility Type</label>
@@ -2070,9 +2092,13 @@
         <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Transaction Date</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-date" required="" type="date"/></div>
         <div>
           <label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Category</label>
-          <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-category" required="">
+          <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-category" required="" onchange="window.handleEditCategoryChange('expense')">
             <option value="Groceries">🥦 Groceries</option><option value="Utilities">Utilities</option><option value="Rent">Rent</option><option value="Entertainment">Entertainment</option><option value="Medical">💊 Medical</option><option value="God Savings">God Savings</option><option value="Tobacco">🚬 Tobacco</option><option value="Pet Supplies">Pet Supplies</option><option value="Transportation">🚗 Transportation</option><option value="Subscriptions">📺 Subscriptions</option><option value="Education">🎓 Education</option><option value="Savings / Investments">💰 Savings / Investments</option><option value="Fast Food / Work Meals">🍔 Fast Food / Work Meals</option><option value="Others">Others</option>
           </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Subcategory</label>
+          <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-subcategory"></select>
         </div>
         <div class="hidden" id="edit-expense-utility-wrap"><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Utility Type</label><select class="utility-type-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-utility-type"></select></div>
         <div class="hidden" id="edit-expense-utility-duedate-wrap"><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Due Date</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-expense-utility-duedate" type="date"/></div>
@@ -2092,7 +2118,11 @@
       <form class="space-y-4" id="edit-income-form" onsubmit="handleEditIncomeSubmit(event)">
         <input id="edit-income-id" type="hidden"/>
         <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Date</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-date" required="" type="date"/></div>
-        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Category</label><select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-category" required=""><option value="Salary">Salary</option><option value="Freelance">Freelance</option><option value="Investments">Investments</option><option value="Gifts">Gifts</option><option value="Others">Others</option></select></div>
+        <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Category</label><select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-category" required="" onchange="window.handleEditCategoryChange('income')"><option value="Salary">Salary</option><option value="Freelance">Freelance</option><option value="Investments">Investments</option><option value="Gifts">Gifts</option><option value="Others">Others</option></select></div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Subcategory</label>
+          <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-subcategory"></select>
+        </div>
         <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Amount (EGP)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-amount" min="0.01" required="" step="0.01" type="number"/></div>
         <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Description</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-desc" type="text"/></div>
         <div><label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label><select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-income-account"></select></div>

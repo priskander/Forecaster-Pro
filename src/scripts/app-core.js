@@ -548,6 +548,29 @@
     "General": "🏷️"
   };
 
+  const DEFAULT_CATEGORY_SUBCATEGORIES = {
+    "Groceries": ["Fresh Produce", "Dairy & Eggs", "Meat & Poultry", "Bakery", "Beverages", "Snacks", "Pantry Essentials", "General Groceries"],
+    "Utilities": ["Electricity", "Water", "Natural Gas", "Internet & Wi-Fi", "Mobile Phone", "Waste & Maintenance"],
+    "Rent": ["Monthly Lease", "Building Maintenance", "Security Deposit", "Parking Space"],
+    "Entertainment": ["Dining Out & Cafes", "Streaming & Media", "Gaming", "Movies & Events", "Outings & Hobbies"],
+    "God Savings": ["Charity & Donations", "Zakat / Sadaqah", "Tithe / Church Offering", "Community Aid"],
+    "Tobacco": ["Cigarettes", "Vape / Pods", "Tobacco Supplies"],
+    "Pet Supplies": ["Pet Food", "Veterinary Care", "Medications & Grooming", "Pet Toys & Gear"],
+    "Medical": ["Prescription Drugs", "Doctor Consultation", "Lab & Diagnostics", "Dental Care", "Health Insurance"],
+    "Transportation": ["Fuel & Petrol", "Public Transit / Metro", "Ride Hailing (Uber/Careem)", "Parking & Tolls", "Vehicle Repairs & Wash"],
+    "Subscriptions": ["Software / SaaS", "Cloud Storage", "Gym & Fitness", "News & Subscriptions"],
+    "Education": ["Tuition Fees", "Books & Study Supplies", "Courses & Certifications"],
+    "Savings / Investments": ["Emergency Reserve", "Stocks & Index Funds", "Gold & Metals", "Retirement Pool"],
+    "Fast Food / Work Meals": ["Work Lunches", "Takeaway & Delivery", "Coffee & Drinks"],
+    "Spare Parts": ["Vehicle Parts", "Residential Maintenance", "Hardware & Tools"],
+    "Others": ["General Miscellaneous", "Gifts & Shopping", "Household Sundries"],
+    "Salary": ["Base Salary", "Performance Bonus", "Overtime Pay", "Allowance"],
+    "Freelance": ["Client Projects", "Consulting", "Retainer Work"],
+    "Investments": ["Stock Dividends", "Interest", "Rental Yield", "Capital Gain"],
+    "Gifts": ["Family Support", "Holiday Gifts", "Prizes & Grants"],
+    "General": ["General"]
+  };
+
   function loadCustomCategories() {
     try {
       const raw = localStorage.getItem('pro_custom_categories');
@@ -557,7 +580,17 @@
     }
   }
 
+  function loadCustomSubcategories() {
+    try {
+      const raw = localStorage.getItem('pro_custom_subcategories');
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
   window.customCategories = loadCustomCategories();
+  window.customSubcategories = loadCustomSubcategories();
   window._selectedCustomIcon = '🏷️';
   window._catIconsRendered = false;
 
@@ -565,6 +598,76 @@
     localStorage.setItem('pro_custom_categories', JSON.stringify(window.customCategories || []));
     if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
       window.ForecasterCloudSync.notifyDataChanged();
+    }
+  };
+
+  window.saveCustomSubcategories = function() {
+    localStorage.setItem('pro_custom_subcategories', JSON.stringify(window.customSubcategories || {}));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
+  };
+
+  window.getSubcategoriesForCategory = function(rawCategory) {
+    const clean = window.cleanCategoryLabel(rawCategory) || 'General';
+    const defaults = DEFAULT_CATEGORY_SUBCATEGORIES[clean] || [
+      `${clean} - General`,
+      `${clean} - Supplies`,
+      `${clean} - Service`,
+      `${clean} - Other`
+    ];
+    const customList = (window.customSubcategories && window.customSubcategories[clean]) ? window.customSubcategories[clean] : [];
+    return [...new Set([...defaults, ...customList])];
+  };
+
+  window.addCustomSubcategory = function(category, subcatName) {
+    const cleanCat = window.cleanCategoryLabel(category) || 'General';
+    const cleanSub = (subcatName || '').trim();
+    if (!cleanSub) return;
+    if (!window.customSubcategories) window.customSubcategories = {};
+    if (!Array.isArray(window.customSubcategories[cleanCat])) window.customSubcategories[cleanCat] = [];
+    if (!window.customSubcategories[cleanCat].includes(cleanSub)) {
+      window.customSubcategories[cleanCat].push(cleanSub);
+      window.saveCustomSubcategories();
+    }
+  };
+
+  window.updateSubcategoryOptions = function(category, selectedSubcat = '', targetSelectId = 'form-txn-subcategory') {
+    const selectEl = document.getElementById(targetSelectId);
+    if (!selectEl) return;
+    const subcats = window.getSubcategoriesForCategory(category);
+    selectEl.innerHTML = '';
+
+    subcats.forEach(sub => {
+      const opt = document.createElement('option');
+      opt.value = sub;
+      opt.textContent = sub;
+      if (selectedSubcat && selectedSubcat === sub) opt.selected = true;
+      selectEl.appendChild(opt);
+    });
+
+    if (targetSelectId === 'form-txn-subcategory') {
+      const customOpt = document.createElement('option');
+      customOpt.value = '__new_custom_subcat__';
+      customOpt.textContent = '✨ + Add Custom Subcategory...';
+      selectEl.appendChild(customOpt);
+
+      const customWrap = document.getElementById('form-txn-custom-subcat-wrap');
+      if (customWrap) customWrap.classList.add('hidden');
+    }
+  };
+
+  window.handleSubcategoryChange = function(val) {
+    const customWrap = document.getElementById('form-txn-custom-subcat-wrap');
+    const customInput = document.getElementById('form-txn-custom-subcat-input');
+    if (val === '__new_custom_subcat__') {
+      if (customWrap) customWrap.classList.remove('hidden');
+      if (customInput) {
+        customInput.focus();
+        customInput.select();
+      }
+    } else {
+      if (customWrap) customWrap.classList.add('hidden');
     }
   };
 
@@ -629,6 +732,7 @@
       }
     } else {
       window.toggleCustomCategoryCreator(false);
+      window.updateSubcategoryOptions(val);
     }
   };
 
@@ -714,6 +818,7 @@
     const selectEl = document.getElementById('form-txn-category');
     if (selectEl) {
       selectEl.value = name;
+      window.updateSubcategoryOptions(name);
     }
 
     // Clear inputs and close panel
@@ -806,6 +911,8 @@
 
     if (type === 'transfer') {
       if (categoryWrap) categoryWrap.classList.add('hidden');
+      const subcatWrap = document.getElementById('form-txn-subcategory-wrap');
+      if (subcatWrap) subcatWrap.classList.add('hidden');
       if (accountWrap) accountWrap.classList.add('hidden');
       if (transferFields) transferFields.classList.remove('hidden');
       if (tipEl) tipEl.classList.add('hidden');
@@ -813,6 +920,8 @@
       if (utilityDueDateWrap) utilityDueDateWrap.classList.add('hidden');
     } else {
       if (categoryWrap) categoryWrap.classList.remove('hidden');
+      const subcatWrap = document.getElementById('form-txn-subcategory-wrap');
+      if (subcatWrap) subcatWrap.classList.remove('hidden');
       if (accountWrap) accountWrap.classList.remove('hidden');
       if (transferFields) transferFields.classList.add('hidden');
 
@@ -883,6 +992,10 @@
           addCustomOpt.textContent = '✨ + Add Custom Category...';
           selectEl.appendChild(addCustomOpt);
         }
+
+        if (selectEl.value) {
+          window.updateSubcategoryOptions(selectEl.value);
+        }
       }
     }
   };
@@ -951,6 +1064,9 @@
 
     const rawCategory = document.getElementById('form-txn-category')?.value || 'General';
     const accountId = document.getElementById('form-txn-account')?.value || '';
+    const subcatSelect = document.getElementById('form-txn-subcategory');
+    const customSubcatInput = document.getElementById('form-txn-custom-subcat-input');
+    let subcategory = subcatSelect?.value || '';
 
     // Check if custom category panel is open and has a name entered
     const customPanel = document.getElementById('custom-category-panel');
@@ -971,10 +1087,22 @@
       icon = window.getCategoryIcon(rawCategory);
     }
 
+    if (subcategory === '__new_custom_subcat__' || (customSubcatInput && customSubcatInput.value.trim())) {
+      const typed = (customSubcatInput?.value || '').trim();
+      if (typed) {
+        subcategory = typed;
+        window.addCustomSubcategory(category, typed);
+      } else {
+        subcategory = `${category} - General`;
+      }
+      if (customSubcatInput) customSubcatInput.value = '';
+    }
+
     const entry = {
       id: 'tx_' + Date.now(),
       date: date,
       category: category,
+      subcategory: subcategory,
       icon: icon,
       amount: amount,
       description: desc || `${type.charAt(0).toUpperCase() + type.slice(1)} Entry`,
@@ -1208,6 +1336,14 @@
     }
   };
 
+  window.handleEditCategoryChange = function(type) {
+    const catSelect = document.getElementById(type === 'expense' ? 'edit-expense-category' : 'edit-income-category');
+    const targetSelectId = type === 'expense' ? 'edit-expense-subcategory' : 'edit-income-subcategory';
+    if (catSelect) {
+      window.updateSubcategoryOptions(catSelect.value, '', targetSelectId);
+    }
+  };
+
   window.editTransaction = function(id) {
     const txn = window.transactions.find(t => t.id === id);
     if (!txn) return;
@@ -1231,6 +1367,7 @@
       document.getElementById('edit-expense-id').value = txn.id;
       document.getElementById('edit-expense-date').value = txn.date;
       document.getElementById('edit-expense-category').value = txn.category;
+      window.updateSubcategoryOptions(txn.category, txn.subcategory || '', 'edit-expense-subcategory');
       document.getElementById('edit-expense-amount').value = txn.amount;
       document.getElementById('edit-expense-desc').value = txn.description;
     } else {
@@ -1249,6 +1386,7 @@
       document.getElementById('edit-income-id').value = txn.id;
       document.getElementById('edit-income-date').value = txn.date;
       document.getElementById('edit-income-category').value = txn.category;
+      window.updateSubcategoryOptions(txn.category, txn.subcategory || '', 'edit-income-subcategory');
       document.getElementById('edit-income-amount').value = txn.amount;
       document.getElementById('edit-income-desc').value = txn.description;
     }
@@ -1259,6 +1397,7 @@
     const id = document.getElementById('edit-expense-id').value;
     const date = document.getElementById('edit-expense-date').value;
     const category = document.getElementById('edit-expense-category').value;
+    const subcategory = document.getElementById('edit-expense-subcategory')?.value || '';
     const amount = parseFloat(document.getElementById('edit-expense-amount').value);
     const desc = document.getElementById('edit-expense-desc').value.trim();
 
@@ -1266,6 +1405,7 @@
     if (index !== -1) {
       window.transactions[index].date = date;
       window.transactions[index].category = window.cleanCategoryLabel ? window.cleanCategoryLabel(category) : category;
+      window.transactions[index].subcategory = subcategory;
       window.transactions[index].icon = window.getCategoryIcon ? window.getCategoryIcon(category, window.transactions[index].icon) : '🏷️';
       window.transactions[index].amount = amount;
       window.transactions[index].description = desc;
@@ -1281,6 +1421,7 @@
     const id = document.getElementById('edit-income-id').value;
     const date = document.getElementById('edit-income-date').value;
     const category = document.getElementById('edit-income-category').value;
+    const subcategory = document.getElementById('edit-income-subcategory')?.value || '';
     const amount = parseFloat(document.getElementById('edit-income-amount').value);
     const desc = document.getElementById('edit-income-desc').value.trim();
 
@@ -1288,6 +1429,7 @@
     if (index !== -1) {
       window.transactions[index].date = date;
       window.transactions[index].category = window.cleanCategoryLabel ? window.cleanCategoryLabel(category) : category;
+      window.transactions[index].subcategory = subcategory;
       window.transactions[index].icon = window.getCategoryIcon ? window.getCategoryIcon(category, window.transactions[index].icon) : '🏷️';
       window.transactions[index].amount = amount;
       window.transactions[index].description = desc;
@@ -1897,6 +2039,7 @@
             <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 font-bold text-slate-700 dark:text-slate-200 text-xs shadow-xs">
               <span class="text-sm select-none leading-none">${icon}</span>
               <span>${window.escapeHtml(cleanCat)}</span>
+              ${r.subcategory ? `<span class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-200/60 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md">• ${window.escapeHtml(r.subcategory)}</span>` : ''}
             </span>
           </td>
           <td class="py-3 px-2 text-slate-900 dark:text-slate-100">${window.escapeHtml(r.description)}</td>
@@ -2745,6 +2888,37 @@
   };
 
   /* CHARTS AND VISUALS */
+  window.getSubcategoryBreakdownForCategory = function(rawCategory) {
+    const cleanCat = window.cleanCategoryLabel ? window.cleanCategoryLabel(rawCategory) : rawCategory;
+    const txns = (window.transactions || []).filter(t => {
+      const cat = window.cleanCategoryLabel ? window.cleanCategoryLabel(t.category) : t.category;
+      return cat.toLowerCase() === cleanCat.toLowerCase() && t.type === 'expense';
+    });
+
+    const subcatMap = {};
+    let totalSpent = 0;
+
+    txns.forEach(t => {
+      const amt = parseFloat(t.amount) || 0;
+      totalSpent += amt;
+      const sub = (t.subcategory && t.subcategory.trim()) ? t.subcategory.trim() : 'General';
+      if (!subcatMap[sub]) subcatMap[sub] = { amount: 0, count: 0 };
+      subcatMap[sub].amount += amt;
+      subcatMap[sub].count += 1;
+    });
+
+    const subcategories = Object.entries(subcatMap)
+      .map(([name, data]) => ({
+        name,
+        amount: data.amount,
+        count: data.count,
+        pct: totalSpent > 0 ? (data.amount / totalSpent * 100) : 0
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    return { category: cleanCat, totalSpent, subcategories };
+  };
+
   window.renderChartsPerformanceTrend = function() {
     const ctx = document.getElementById('overviewChart');
     if (!ctx || typeof Chart === 'undefined') return;
@@ -2756,10 +2930,11 @@
     Object.keys(window.incomeAllocationBlueprint).forEach(k => incomeSourcesMap[k] = 0);
 
     window.transactions.forEach(t => {
-      if (t.type === 'expense' && t.category in expenseCategoriesMap) {
-        expenseCategoriesMap[t.category] += parseFloat(t.amount);
-      } else if (t.type === 'income' && t.category in incomeSourcesMap) {
-        incomeSourcesMap[t.category] += parseFloat(t.amount);
+      const clean = window.cleanCategoryLabel ? window.cleanCategoryLabel(t.category) : t.category;
+      if (t.type === 'expense' && clean in expenseCategoriesMap) {
+        expenseCategoriesMap[clean] += parseFloat(t.amount);
+      } else if (t.type === 'income' && clean in incomeSourcesMap) {
+        incomeSourcesMap[clean] += parseFloat(t.amount);
       }
     });
 
@@ -2799,6 +2974,13 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        onClick: (event, elements) => {
+          if (elements && elements.length > 0) {
+            const index = elements[0].index;
+            const clickedCategory = labels[index];
+            window.showFinancialPerformanceSubcategory(clickedCategory, true);
+          }
+        },
         plugins: {
           legend: {
             position: 'top',
@@ -2813,7 +2995,23 @@
             titleFont: { family: 'Inter', weight: 'bold' },
             bodyFont: { family: 'Inter' },
             padding: 10,
-            cornerRadius: 8
+            cornerRadius: 8,
+            callbacks: {
+              afterBody: function(tooltipItems) {
+                if (!tooltipItems || !tooltipItems.length) return [];
+                const catName = tooltipItems[0].label;
+                const breakdown = window.getSubcategoryBreakdownForCategory(catName);
+                if (!breakdown || !breakdown.subcategories.length || breakdown.totalSpent <= 0) {
+                  const defaults = window.getSubcategoriesForCategory(catName).slice(0, 4);
+                  return ['', '📌 Linked Subcategories:', ...defaults.map(s => `  • ${s}`)];
+                }
+                const lines = ['', '📌 Subcategories Breakdown:'];
+                breakdown.subcategories.slice(0, 5).forEach(s => {
+                  lines.push(`  • ${s.name}: EGP ${s.amount.toFixed(2)} (${s.pct.toFixed(0)}%)`);
+                });
+                return lines;
+              }
+            }
           }
         },
         scales: {
@@ -2829,6 +3027,99 @@
         }
       }
     });
+
+    window.renderFinancialPerformanceSubcategoryChips(labels, expenseCategoriesMap);
+  };
+
+  window.renderFinancialPerformanceSubcategoryChips = function(labels, expenseCategoriesMap) {
+    const container = document.getElementById('financial-performance-subcat-chips');
+    if (!container) return;
+
+    container.innerHTML = labels.map(cat => {
+      const icon = window.getCategoryIcon ? window.getCategoryIcon(cat) : '🏷️';
+      const spent = expenseCategoriesMap[cat] || 0;
+      return `
+        <button type="button"
+          class="subcat-chip px-2.5 py-1 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-blue-50 dark:bg-slate-700/60 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all flex items-center gap-1.5 cursor-pointer border border-transparent hover:border-blue-300 dark:hover:border-blue-800"
+          onmouseenter="window.showFinancialPerformanceSubcategory('${cat}', false)"
+          onclick="window.showFinancialPerformanceSubcategory('${cat}', true)"
+          data-category="${cat}">
+          <span>${icon}</span>
+          <span class="font-bold">${cat}</span>
+          <span class="text-[10px] opacity-75 font-mono">EGP ${spent.toFixed(0)}</span>
+        </button>
+      `;
+    }).join('');
+  };
+
+  window.showFinancialPerformanceSubcategory = function(rawCategory, isPinned = false) {
+    const popover = document.getElementById('financial-performance-subcat-popover');
+    if (!popover) return;
+    const cat = window.cleanCategoryLabel ? window.cleanCategoryLabel(rawCategory) : rawCategory;
+    const icon = window.getCategoryIcon ? window.getCategoryIcon(rawCategory) : '🏷️';
+    const breakdown = window.getSubcategoryBreakdownForCategory(cat);
+    const availableSubcats = window.getSubcategoriesForCategory ? window.getSubcategoriesForCategory(cat) : [];
+
+    // Highlight active chip
+    document.querySelectorAll('.subcat-chip').forEach(btn => {
+      if (btn.getAttribute('data-category') === cat) {
+        btn.classList.add('bg-blue-600', 'text-white', 'border-blue-600');
+        btn.classList.remove('bg-slate-100', 'dark:bg-slate-700/60', 'text-slate-700', 'dark:text-slate-200');
+      } else {
+        btn.classList.remove('bg-blue-600', 'text-white', 'border-blue-600');
+        btn.classList.add('bg-slate-100', 'dark:bg-slate-700/60', 'text-slate-700', 'dark:text-slate-200');
+      }
+    });
+
+    let contentHtml = `
+      <div class="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+        <div class="flex items-center gap-2">
+          <span class="text-base">${icon}</span>
+          <span class="font-black text-slate-900 dark:text-white text-xs">${cat} Subcategories</span>
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+            Total: EGP ${breakdown.totalSpent.toFixed(2)}
+          </span>
+        </div>
+        <button type="button" onclick="document.getElementById('financial-performance-subcat-popover').classList.add('hidden')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm leading-none p-1 cursor-pointer" title="Close details">&times;</button>
+      </div>
+    `;
+
+    if (breakdown.subcategories.length > 0 && breakdown.totalSpent > 0) {
+      contentHtml += `
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2.5">
+          ${breakdown.subcategories.map(s => `
+            <div class="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 space-y-1">
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="font-bold text-slate-800 dark:text-slate-200 truncate">${s.name}</span>
+                <span class="font-black text-slate-900 dark:text-white shrink-0 ml-1">EGP ${s.amount.toFixed(2)}</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <div class="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div class="h-full bg-blue-600 rounded-full transition-all duration-300" style="width: ${Math.min(s.pct, 100).toFixed(0)}%"></div>
+                </div>
+                <span class="text-[9px] font-bold text-slate-400 font-mono">${s.pct.toFixed(0)}%</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    } else {
+      contentHtml += `
+        <div class="mt-2.5 space-y-1.5">
+          <p class="text-[11px] text-slate-500 dark:text-slate-404 font-medium">No expenses logged for this category yet. Linked subcategories configured:</p>
+          <div class="flex flex-wrap gap-1">
+            ${availableSubcats.map(sub => `
+              <span class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                ${sub}
+              </span>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    popover.innerHTML = contentHtml;
+    popover.classList.remove('hidden');
   };
 
   /* REPORTS INSPECTOR */
