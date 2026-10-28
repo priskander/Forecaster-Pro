@@ -282,6 +282,20 @@
       50% { opacity: 0.45; color: #ef4444; }
     }
 
+    @keyframes recentTxnFadeIn {
+      0% {
+        opacity: 0;
+        transform: translateY(-6px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .animate-subtle-fade-in {
+      animation: recentTxnFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
     @media screen and (max-width: 768px) {
       input, select, textarea {
         font-size: 16px !important;

@@ -413,6 +413,7 @@
       description: `Purchase: ${name}`,
       type: 'expense'
     };
+    window._lastAddedTxnId = autoExpense.id;
     window.transactions.push(autoExpense);
     window.saveTransactionsDatabase();
     window.triggerToast(`Auto-Expense compiled: EGP ${totalCost.toFixed(2)} successfully logged to ${category}!`, "info");
@@ -1110,6 +1111,7 @@
       accountId: accountId
     };
 
+    window._lastAddedTxnId = entry.id;
     window.transactions.push(entry);
     window.saveTransactionsDatabase();
     window.triggerToast(`${type.charAt(0).toUpperCase() + type.slice(1)} captured successfully!`, "success");
@@ -2064,19 +2066,24 @@
       
       topDash.forEach(td => {
         const isInc = td.type === 'income';
+        const isNew = td.id === window._lastAddedTxnId;
+        const animClass = isNew ? 'animate-subtle-fade-in ring-1 ring-blue-500/40 bg-blue-50/50 dark:bg-blue-950/40' : '';
         const cleanCat = window.cleanCategoryLabel ? window.cleanCategoryLabel(td.category) : td.category;
         const icon = window.getCategoryIcon ? window.getCategoryIcon(td.category, td.icon) : '🏷️';
         const blueprint = isInc ? window.incomeAllocationBlueprint[cleanCat] : window.expenseAllocationBlueprint[cleanCat];
         const catColor = blueprint ? blueprint.color : (isInc ? '#10b981' : '#f43f5e');
 
         recentDashboardList.innerHTML += `
-          <div class="flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition font-medium">
+          <div class="flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all duration-300 font-medium ${animClass}">
             <div class="flex items-center gap-2.5">
               <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-base shadow-xs" style="background-color: ${catColor}15; border: 1px solid ${catColor}35">
                 ${icon}
               </div>
               <div>
-                <p class="text-xs font-bold text-slate-900 dark:text-white mb-0.5">${td.description}</p>
+                <div class="flex items-center gap-1.5">
+                  <p class="text-xs font-bold text-slate-900 dark:text-white">${td.description}</p>
+                  ${isNew ? '<span class="text-[9px] font-extrabold uppercase px-1 py-0.2 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">New</span>' : ''}
+                </div>
                 <span class="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded" style="color: ${catColor}; background-color: ${catColor}15">
                   ${cleanCat}
                 </span>
@@ -2093,6 +2100,9 @@
       });
       if (topDash.length === 0) {
         recentDashboardList.innerHTML = `<p class="text-center text-xs text-slate-404 py-6 font-semibold">Pristine database registry.</p>`;
+      }
+      if (window._lastAddedTxnId) {
+        setTimeout(() => { window._lastAddedTxnId = null; }, 4000);
       }
     }
   };
@@ -3753,6 +3763,7 @@
       accountId: document.getElementById('input-account')?.value || ''
     };
 
+    window._lastAddedTxnId = entry.id;
     window.transactions.push(entry);
     window.saveTransactionsDatabase();
     window.closeAddTransactionModal();

@@ -7,7 +7,25 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
+function getPort(): number {
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const val = parseInt(process.argv[portArgIndex + 1], 10);
+    if (!isNaN(val) && val > 0) return val;
+  }
+  return parseInt(process.env.PORT || '3000', 10);
+}
+
+function getHost(): string {
+  const hostArgIndex = process.argv.indexOf('--host');
+  if (hostArgIndex !== -1 && process.argv[hostArgIndex + 1]) {
+    return process.argv[hostArgIndex + 1];
+  }
+  return process.env.HOST || '0.0.0.0';
+}
+
+const PORT = getPort();
+const HOST = getHost();
 const DATA_DIR = path.resolve(__dirname, 'data');
 const DB_FILE = path.resolve(DATA_DIR, 'cloud-ledger-db.json');
 
@@ -1958,11 +1976,54 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
+
+    app.use('*', async (req, res, next) => {
+      const url = req.originalUrl;
+      if (url.startsWith('/api') || (url.includes('.') && !url.endsWith('.html'))) {
+        return next();
+      }
+      try {
+        const indexPath = path.resolve(__dirname, 'index.html');
+        if (fs.existsSync(indexPath)) {
+          let html = fs.readFileSync(indexPath, 'utf-8');
+          html = await vite.transformIndexHtml(url, html);
+          res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+        } else {
+          next();
+        }
+      } catch (e) {
+        next(e);
+      }
+    });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Forecaster Pro] Server with Cloud Sync listening at http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`[Forecaster Pro] Server with Cloud Sync listening at http://${HOST}:${PORT}`);
   });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[Forecaster Pro] Port ${PORT} temporarily in use, retrying in 1s...`);
+      setTimeout(() => {
+        try { server.close(); } catch (_) {}
+        server.listen(PORT, HOST);
+      }, 1000);
+    } else {
+      console.error('[Forecaster Pro] Server error:', err);
+    }
+  });
+
+  const shutdown = () => {
+    try {
+      server.close(() => process.exit(0));
+    } catch (_) {
+      process.exit(0);
+    }
+    setTimeout(() => process.exit(0), 1000);
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 startServer().catch(err => {
