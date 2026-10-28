@@ -1820,26 +1820,23 @@
       const pct = forecasted > 0 ? (registered / forecasted * 100) : 0;
 
       incContainer.innerHTML += `
-        <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 space-y-1.5 transition">
+        <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 space-y-2 transition">
           <div class="flex items-center justify-between text-xs">
             <div class="flex items-center gap-1.5 min-w-0">
               <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${data.color}"></span>
-              <span class="font-semibold text-slate-800 dark:text-slate-200 truncate">${name}</span>
-              <span class="text-[10px] text-slate-400 shrink-0">(${data.pct}%)</span>
+              <span class="font-bold text-slate-800 dark:text-slate-200 truncate">${name}</span>
+              <span class="text-[10px] text-slate-400 shrink-0 font-medium">(${data.pct}%)</span>
             </div>
-            <div class="text-right font-mono text-xs shrink-0 ml-2">
-              <span class="font-bold text-emerald-600 dark:text-emerald-400">EGP ${registered.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <span class="text-slate-400 font-normal"> / </span>
-              <span class="font-semibold text-slate-700 dark:text-slate-300">EGP ${forecasted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-              <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${data.color}"></div>
-            </div>
-            <span class="text-[10px] font-bold ${pct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'} font-mono shrink-0">
+            <span class="text-[11px] font-bold ${pct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'} font-mono shrink-0">
               ${pct.toFixed(0)}%
             </span>
+          </div>
+          <div class="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+            <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${data.color}"></div>
+          </div>
+          <div class="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
+            <span>Reg: <strong class="font-bold text-emerald-600 dark:text-emerald-400">EGP ${registered.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+            <span>Forecast: <strong class="font-semibold text-slate-700 dark:text-slate-300">EGP ${forecasted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
           </div>
         </div>
       `;
@@ -1862,26 +1859,23 @@
       const isOver = registered > forecasted && forecasted > 0;
 
       expContainer.innerHTML += `
-        <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border ${isOver ? 'border-rose-300 dark:border-rose-800/80 bg-rose-50/20' : 'border-slate-100 dark:border-slate-700'} space-y-1.5 transition">
+        <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border ${isOver ? 'border-rose-300 dark:border-rose-800/80 bg-rose-50/20' : 'border-slate-100 dark:border-slate-700'} space-y-2 transition">
           <div class="flex items-center justify-between text-xs">
             <div class="flex items-center gap-1.5 min-w-0">
               <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${data.color}"></span>
-              <span class="font-semibold text-slate-800 dark:text-slate-200 truncate">${name}</span>
-              <span class="text-[10px] text-slate-400 shrink-0">(${data.pct}%)</span>
+              <span class="font-bold text-slate-800 dark:text-slate-200 truncate">${name}</span>
+              <span class="text-[10px] text-slate-400 shrink-0 font-medium">(${data.pct}%)</span>
             </div>
-            <div class="text-right font-mono text-xs shrink-0 ml-2">
-              <span class="font-bold ${isOver ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}">EGP ${registered.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <span class="text-slate-400 font-normal"> / </span>
-              <span class="font-semibold text-slate-700 dark:text-slate-300">EGP ${forecasted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-              <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${isOver ? '#f43f5e' : data.color}"></div>
-            </div>
-            <span class="text-[10px] font-bold ${isOver ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'} font-mono shrink-0">
+            <span class="text-[11px] font-bold ${isOver ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'} font-mono shrink-0">
               ${pct.toFixed(0)}%
             </span>
+          </div>
+          <div class="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+            <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${isOver ? '#f43f5e' : data.color}"></div>
+          </div>
+          <div class="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
+            <span>Reg: <strong class="font-bold ${isOver ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}">EGP ${registered.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+            <span>Forecast: <strong class="font-semibold text-slate-700 dark:text-slate-300">EGP ${forecasted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
           </div>
         </div>
       `;
