@@ -329,15 +329,38 @@
   window.populateCategoryFilters = function() {
     const filterCat = document.getElementById('filter-txn-cat');
     if (!filterCat) return;
+    const currentVal = filterCat.value;
     filterCat.innerHTML = '<option value="">All Categories</option>';
     
-    const allCats = [...Object.keys(window.incomeAllocationBlueprint), ...Object.keys(window.expenseAllocationBlueprint)];
-    allCats.forEach(cat => {
-      const opt = document.createElement('option');
-      opt.value = cat;
-      opt.textContent = cat;
-      filterCat.appendChild(opt);
-    });
+    const standardCats = [...new Set([...Object.keys(window.incomeAllocationBlueprint || {}), ...Object.keys(window.expenseAllocationBlueprint || {})])];
+    
+    if (standardCats.length > 0) {
+      const stdGroup = document.createElement('optgroup');
+      stdGroup.label = 'Standard Categories';
+      standardCats.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat;
+        const icon = window.getCategoryIcon ? window.getCategoryIcon(cat) : '🏷️';
+        opt.textContent = `${icon} ${cat}`;
+        stdGroup.appendChild(opt);
+      });
+      filterCat.appendChild(stdGroup);
+    }
+
+    const customCats = window.customCategories || [];
+    if (customCats.length > 0) {
+      const custGroup = document.createElement('optgroup');
+      custGroup.label = 'Custom Categories';
+      customCats.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.name;
+        opt.textContent = `${c.icon || '🏷️'} ${c.name}`;
+        custGroup.appendChild(opt);
+      });
+      filterCat.appendChild(custGroup);
+    }
+
+    if (currentVal) filterCat.value = currentVal;
   };
 
   window.togglePackagingMath = function(tab) {
@@ -420,6 +443,314 @@
     } catch (e) { return 'tenant'; }
   };
 
+  /* =========================================================================
+   * CUSTOM CATEGORIES & VISUAL ICON SELECTOR ENGINE
+   * ========================================================================= */
+  const CATEGORY_ICON_PRESETS = [
+    // Food & Drinks
+    { icon: '🥦', name: 'Groceries', group: 'food' },
+    { icon: '🍔', name: 'Fast Food', group: 'food' },
+    { icon: '🍕', name: 'Dining', group: 'food' },
+    { icon: '☕', name: 'Coffee & Cafes', group: 'food' },
+    { icon: '🛒', name: 'Supermarket', group: 'food' },
+    { icon: '🍞', name: 'Bakery', group: 'food' },
+    { icon: '🥩', name: 'Meat & Butcher', group: 'food' },
+    { icon: '🍎', name: 'Fruits & Veg', group: 'food' },
+    { icon: '🍿', name: 'Snacks', group: 'food' },
+    { icon: '🍩', name: 'Sweets', group: 'food' },
+    { icon: '🥤', name: 'Beverages', group: 'food' },
+
+    // Home & Living
+    { icon: '🏠', name: 'Rent & Housing', group: 'home' },
+    { icon: '⚡', name: 'Electricity', group: 'home' },
+    { icon: '💧', name: 'Water', group: 'home' },
+    { icon: '🛋️', name: 'Furniture', group: 'home' },
+    { icon: '🧹', name: 'Cleaning', group: 'home' },
+    { icon: '🛠️', name: 'Repairs', group: 'home' },
+    { icon: '🔑', name: 'Maintenance', group: 'home' },
+    { icon: '🪴', name: 'Garden & Plants', group: 'home' },
+    { icon: '📦', name: 'Storage', group: 'home' },
+    { icon: '🚿', name: 'Plumbing', group: 'home' },
+
+    // Health, Family & Pets
+    { icon: '💊', name: 'Pharmacy & Medicine', group: 'health' },
+    { icon: '🏥', name: 'Doctor & Clinic', group: 'health' },
+    { icon: '🏋️', name: 'Gym & Fitness', group: 'health' },
+    { icon: '🧘', name: 'Wellness', group: 'health' },
+    { icon: '💇', name: 'Hair & Beauty', group: 'health' },
+    { icon: '👶', name: 'Baby & Kids', group: 'health' },
+    { icon: '🐶', name: 'Pets', group: 'health' },
+    { icon: '🐾', name: 'Pet Care', group: 'health' },
+    { icon: '🦷', name: 'Dental Care', group: 'health' },
+
+    // Travel & Commute
+    { icon: '🚗', name: 'Car & Auto', group: 'travel' },
+    { icon: '⛽', name: 'Gas / Fuel', group: 'travel' },
+    { icon: '🚕', name: 'Taxi & Rideshare', group: 'travel' },
+    { icon: '🚌', name: 'Public Transit', group: 'travel' },
+    { icon: '✈️', name: 'Flights & Travel', group: 'travel' },
+    { icon: '🚆', name: 'Trains', group: 'travel' },
+    { icon: '🚴', name: 'Bicycle', group: 'travel' },
+    { icon: '🅿️', name: 'Parking', group: 'travel' },
+
+    // Work, Tech & Education
+    { icon: '💻', name: 'Software & Cloud', group: 'tech' },
+    { icon: '📱', name: 'Mobile & Telecom', group: 'tech' },
+    { icon: '💼', name: 'Work & Business', group: 'tech' },
+    { icon: '📚', name: 'Books & Courses', group: 'tech' },
+    { icon: '🎓', name: 'Tuition & School', group: 'tech' },
+    { icon: '🖥️', name: 'Hardware', group: 'tech' },
+    { icon: '🎧', name: 'Electronics', group: 'tech' },
+    { icon: '📡', name: 'Internet', group: 'tech' },
+
+    // Fun, Shopping & Leisure
+    { icon: '🎮', name: 'Gaming', group: 'leisure' },
+    { icon: '🎬', name: 'Movies & Cinema', group: 'leisure' },
+    { icon: '🎵', name: 'Music', group: 'leisure' },
+    { icon: '👕', name: 'Clothing & Apparel', group: 'leisure' },
+    { icon: '👟', name: 'Shoes', group: 'leisure' },
+    { icon: '🎁', name: 'Gifts', group: 'leisure' },
+    { icon: '⚽', name: 'Sports', group: 'leisure' },
+    { icon: '🏖️', name: 'Vacation', group: 'leisure' },
+    { icon: '🎨', name: 'Hobbies & Crafts', group: 'leisure' },
+
+    // Finance, Habits & Misc
+    { icon: '💰', name: 'Savings & Investments', group: 'misc' },
+    { icon: '💳', name: 'Credit & Loans', group: 'misc' },
+    { icon: '🙏', name: 'Charity / Donations', group: 'misc' },
+    { icon: '🚬', name: 'Tobacco', group: 'misc' },
+    { icon: '🧾', name: 'Taxes & Fees', group: 'misc' },
+    { icon: '🛡️', name: 'Insurance', group: 'misc' },
+    { icon: '🏷️', name: 'General / Other', group: 'misc' },
+    { icon: '✨', name: 'Personal', group: 'misc' }
+  ];
+
+  const DEFAULT_CATEGORY_ICONS = {
+    "Groceries": "🥦",
+    "Utilities": "⚡",
+    "Rent": "🏠",
+    "Entertainment": "🎬",
+    "God Savings": "🙏",
+    "Tobacco": "🚬",
+    "Pet Supplies": "🐾",
+    "Medical": "💊",
+    "Transportation": "🚗",
+    "Subscriptions": "📱",
+    "Education": "📚",
+    "Savings / Investments": "💰",
+    "Fast Food / Work Meals": "🍔",
+    "Others": "🏷️",
+    "Salary": "💼",
+    "Freelance": "💻",
+    "Investments": "📈",
+    "Gifts": "🎁",
+    "Spare Parts": "🧰",
+    "General": "🏷️"
+  };
+
+  function loadCustomCategories() {
+    try {
+      const raw = localStorage.getItem('pro_custom_categories');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  window.customCategories = loadCustomCategories();
+  window._selectedCustomIcon = '🏷️';
+  window._catIconsRendered = false;
+
+  window.saveCustomCategories = function() {
+    localStorage.setItem('pro_custom_categories', JSON.stringify(window.customCategories || []));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
+  };
+
+  window.cleanCategoryLabel = function(categoryName) {
+    if (!categoryName) return 'Others';
+    return categoryName.replace(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic}|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]|\uD83D[\uDE80-\uDEFF])\s*/u, '').trim();
+  };
+
+  window.getCategoryIcon = function(categoryName, txnIcon) {
+    if (txnIcon && txnIcon.trim()) return txnIcon.trim();
+    if (!categoryName) return '🏷️';
+
+    // If category name starts with an emoji, extract it
+    const emojiMatch = categoryName.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic}|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]|\uD83D[\uDE80-\uDEFF])/u);
+    if (emojiMatch) return emojiMatch[0];
+
+    const clean = window.cleanCategoryLabel(categoryName);
+
+    // Check customCategories
+    const custom = (window.customCategories || []).find(c => c.name.toLowerCase() === clean.toLowerCase());
+    if (custom && custom.icon) return custom.icon;
+
+    // Check default mapping
+    if (DEFAULT_CATEGORY_ICONS[clean]) return DEFAULT_CATEGORY_ICONS[clean];
+
+    // Fuzzy check
+    const lower = clean.toLowerCase();
+    for (const [key, icon] of Object.entries(DEFAULT_CATEGORY_ICONS)) {
+      if (lower.includes(key.toLowerCase()) || key.toLowerCase().includes(lower)) {
+        return icon;
+      }
+    }
+
+    return '🏷️';
+  };
+
+  window.toggleCustomCategoryCreator = function(forceOpen) {
+    const panel = document.getElementById('custom-category-panel');
+    if (!panel) return;
+    const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : panel.classList.contains('hidden');
+    if (shouldOpen) {
+      panel.classList.remove('hidden');
+      window.renderCategoryIconSelector();
+      const nameInput = document.getElementById('custom-cat-name-input');
+      if (nameInput) nameInput.focus();
+    } else {
+      panel.classList.add('hidden');
+      const selectEl = document.getElementById('form-txn-category');
+      if (selectEl && selectEl.value === '__new_custom__') {
+        selectEl.selectedIndex = 0;
+      }
+    }
+  };
+
+  window.handleCategorySelectChange = function(val) {
+    if (val === '__new_custom__') {
+      window.toggleCustomCategoryCreator(true);
+      const nameInput = document.getElementById('custom-cat-name-input');
+      if (nameInput) {
+        nameInput.focus();
+        nameInput.select();
+      }
+    } else {
+      window.toggleCustomCategoryCreator(false);
+    }
+  };
+
+  window.renderCategoryIconSelector = function(filterGroup = 'all') {
+    const grid = document.getElementById('custom-cat-icons-grid');
+    if (!grid) return;
+    window._catIconsRendered = true;
+
+    let icons = CATEGORY_ICON_PRESETS;
+    if (filterGroup && filterGroup !== 'all') {
+      icons = icons.filter(i => i.group === filterGroup);
+    }
+
+    const currentIcon = window._selectedCustomIcon || '🏷️';
+
+    grid.innerHTML = icons.map(item => {
+      const isSelected = item.icon === currentIcon;
+      const activeClasses = isSelected
+        ? 'bg-blue-100 dark:bg-blue-950/90 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500 scale-105 shadow-xs'
+        : 'bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700';
+
+      return `
+        <button type="button" 
+          onclick="window.selectCustomIcon('${item.icon}')" 
+          class="w-8 h-8 rounded-xl flex items-center justify-center text-base transition-all duration-150 cursor-pointer ${activeClasses}" 
+          title="${item.name}">
+          ${item.icon}
+        </button>
+      `;
+    }).join('');
+
+    // Update active tab buttons
+    const tabBtns = document.querySelectorAll('.cat-icon-tab');
+    tabBtns.forEach(btn => {
+      const tabKey = btn.getAttribute('data-cat-tab');
+      if (tabKey === filterGroup) {
+        btn.className = 'cat-icon-tab active px-2.5 py-1 rounded-lg bg-blue-600 text-white shrink-0 cursor-pointer font-bold shadow-xs';
+      } else {
+        btn.className = 'cat-icon-tab px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 shrink-0 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold';
+      }
+    });
+  };
+
+  window.filterCategoryIcons = function(group) {
+    window.renderCategoryIconSelector(group);
+  };
+
+  window.selectCustomIcon = function(icon) {
+    if (!icon || !icon.trim()) return;
+    const cleanIcon = icon.trim();
+    window._selectedCustomIcon = cleanIcon;
+
+    const badge = document.getElementById('custom-cat-selected-icon-badge');
+    if (badge) badge.textContent = cleanIcon;
+
+    const manualInput = document.getElementById('custom-cat-manual-icon');
+    if (manualInput && manualInput.value !== cleanIcon) {
+      manualInput.value = cleanIcon;
+    }
+
+    const activeTab = document.querySelector('.cat-icon-tab.active')?.getAttribute('data-cat-tab') || 'all';
+    window.renderCategoryIconSelector(activeTab);
+  };
+
+  window.saveAndApplyCustomCategory = function() {
+    const nameInput = document.getElementById('custom-cat-name-input');
+    const name = (nameInput?.value || '').trim();
+    if (!name) {
+      if (typeof window.triggerToast === 'function') {
+        window.triggerToast('Please enter a name for the custom category.', 'warning');
+      }
+      if (nameInput) nameInput.focus();
+      return;
+    }
+
+    const icon = window._selectedCustomIcon || '🏷️';
+    const type = document.getElementById('form-txn-type')?.value || 'expense';
+
+    window.addCustomCategory(name, icon, type);
+
+    // Refresh select dropdown and select this new custom category
+    window.setFormType(type);
+    const selectEl = document.getElementById('form-txn-category');
+    if (selectEl) {
+      selectEl.value = name;
+    }
+
+    // Clear inputs and close panel
+    if (nameInput) nameInput.value = '';
+    window.toggleCustomCategoryCreator(false);
+
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast(`Category "${icon} ${name}" added and selected!`, 'success');
+    }
+  };
+
+  window.addCustomCategory = function(name, icon, type = 'expense') {
+    const cleanName = window.cleanCategoryLabel(name);
+    if (!cleanName) return;
+
+    if (!Array.isArray(window.customCategories)) {
+      window.customCategories = [];
+    }
+
+    const existingIdx = window.customCategories.findIndex(c => c.name.toLowerCase() === cleanName.toLowerCase());
+    if (existingIdx >= 0) {
+      window.customCategories[existingIdx].icon = icon || window.customCategories[existingIdx].icon || '🏷️';
+      window.customCategories[existingIdx].type = type;
+    } else {
+      window.customCategories.push({
+        id: 'cat_' + Date.now(),
+        name: cleanName,
+        icon: icon || '🏷️',
+        type: type,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    window.saveCustomCategories();
+    window.populateCategoryFilters();
+  };
+
   window.expenseCategoriesForPropertyRole = function() {
     const base = ["Groceries", "Utilities", "Rent", "Entertainment", "God Savings", "Tobacco", "Pet Supplies", "Medical", "Transportation", "Subscriptions", "Education", "Savings / Investments", "Fast Food / Work Meals", "Others"];
     const role = window.getPropertyRole();
@@ -490,23 +821,67 @@
         if (type === 'expense') {
           if (tipEl) tipEl.classList.remove('hidden');
           const expCats = window.expenseCategoriesForPropertyRole();
+          const stdGroup = document.createElement('optgroup');
+          stdGroup.label = 'Standard Categories';
           expCats.forEach(cat => {
             const opt = document.createElement('option');
             opt.value = cat;
-            opt.innerHTML = cat === "Groceries" ? "🥦 Groceries" : (cat === "Medical" ? "💊 Medical" : cat === "Tobacco" ? "🚬 Tobacco" : cat);
-            selectEl.appendChild(opt);
+            const icon = window.getCategoryIcon(cat);
+            opt.textContent = `${icon} ${cat}`;
+            stdGroup.appendChild(opt);
           });
+          selectEl.appendChild(stdGroup);
+
+          const customCats = (window.customCategories || []).filter(c => !c.type || c.type === 'expense');
+          if (customCats.length > 0) {
+            const custGroup = document.createElement('optgroup');
+            custGroup.label = 'Custom Categories';
+            customCats.forEach(c => {
+              const opt = document.createElement('option');
+              opt.value = c.name;
+              opt.textContent = `${c.icon || '🏷️'} ${c.name}`;
+              custGroup.appendChild(opt);
+            });
+            selectEl.appendChild(custGroup);
+          }
+
+          const addCustomOpt = document.createElement('option');
+          addCustomOpt.value = '__new_custom__';
+          addCustomOpt.textContent = '✨ + Add Custom Category...';
+          selectEl.appendChild(addCustomOpt);
         } else {
           if (tipEl) tipEl.classList.add('hidden');
           if (utilityWrap) utilityWrap.classList.add('hidden');
           if (utilityDueDateWrap) utilityDueDateWrap.classList.add('hidden');
           const incCats = window.incomeCategoriesForPropertyRole();
+          const stdGroup = document.createElement('optgroup');
+          stdGroup.label = 'Standard Categories';
           incCats.forEach(cat => {
             const opt = document.createElement('option');
             opt.value = cat;
-            opt.innerHTML = cat;
-            selectEl.appendChild(opt);
+            const icon = window.getCategoryIcon(cat);
+            opt.textContent = `${icon} ${cat}`;
+            stdGroup.appendChild(opt);
           });
+          selectEl.appendChild(stdGroup);
+
+          const customCats = (window.customCategories || []).filter(c => c.type === 'income');
+          if (customCats.length > 0) {
+            const custGroup = document.createElement('optgroup');
+            custGroup.label = 'Custom Categories';
+            customCats.forEach(c => {
+              const opt = document.createElement('option');
+              opt.value = c.name;
+              opt.textContent = `${c.icon || '🏷️'} ${c.name}`;
+              custGroup.appendChild(opt);
+            });
+            selectEl.appendChild(custGroup);
+          }
+
+          const addCustomOpt = document.createElement('option');
+          addCustomOpt.value = '__new_custom__';
+          addCustomOpt.textContent = '✨ + Add Custom Category...';
+          selectEl.appendChild(addCustomOpt);
         }
       }
     }
@@ -574,13 +949,33 @@
       return;
     }
 
-    const category = document.getElementById('form-txn-category')?.value || 'General';
+    const rawCategory = document.getElementById('form-txn-category')?.value || 'General';
     const accountId = document.getElementById('form-txn-account')?.value || '';
+
+    // Check if custom category panel is open and has a name entered
+    const customPanel = document.getElementById('custom-category-panel');
+    const customNameInput = document.getElementById('custom-cat-name-input');
+    let category = rawCategory;
+    let icon = '';
+
+    if (customPanel && !customPanel.classList.contains('hidden') && customNameInput && customNameInput.value.trim()) {
+      const customName = customNameInput.value.trim();
+      const customIcon = window._selectedCustomIcon || '🏷️';
+      window.addCustomCategory(customName, customIcon, type);
+      category = customName;
+      icon = customIcon;
+      customNameInput.value = '';
+      window.toggleCustomCategoryCreator(false);
+    } else {
+      category = window.cleanCategoryLabel(rawCategory);
+      icon = window.getCategoryIcon(rawCategory);
+    }
 
     const entry = {
       id: 'tx_' + Date.now(),
       date: date,
       category: category,
+      icon: icon,
       amount: amount,
       description: desc || `${type.charAt(0).toUpperCase() + type.slice(1)} Entry`,
       type: type,
@@ -592,6 +987,7 @@
     window.triggerToast(`${type.charAt(0).toUpperCase() + type.slice(1)} captured successfully!`, "success");
 
     e.target.reset();
+    window.toggleCustomCategoryCreator(false);
     window.setFormType('expense');
     const today = new Date().toISOString().split('T')[0];
     const dateInput = document.getElementById('form-txn-date');
@@ -825,6 +1221,13 @@
 
       const expCategorySelect = document.getElementById('edit-expense-category');
       window.syncRentOptionForEdit(expCategorySelect, role !== 'landlord' || txn.category === 'Rent');
+      if (expCategorySelect && txn.category && !expCategorySelect.querySelector(`option[value="${txn.category}"]`)) {
+        const opt = document.createElement('option');
+        opt.value = txn.category;
+        const icon = txn.icon || (window.getCategoryIcon ? window.getCategoryIcon(txn.category) : '🏷️');
+        opt.textContent = `${icon} ${txn.category}`;
+        expCategorySelect.appendChild(opt);
+      }
       document.getElementById('edit-expense-id').value = txn.id;
       document.getElementById('edit-expense-date').value = txn.date;
       document.getElementById('edit-expense-category').value = txn.category;
@@ -836,6 +1239,13 @@
 
       const incCategorySelect = document.getElementById('edit-income-category');
       window.syncRentOptionForEdit(incCategorySelect, role === 'landlord' || role === 'both' || txn.category === 'Rent');
+      if (incCategorySelect && txn.category && !incCategorySelect.querySelector(`option[value="${txn.category}"]`)) {
+        const opt = document.createElement('option');
+        opt.value = txn.category;
+        const icon = txn.icon || (window.getCategoryIcon ? window.getCategoryIcon(txn.category) : '🏷️');
+        opt.textContent = `${icon} ${txn.category}`;
+        incCategorySelect.appendChild(opt);
+      }
       document.getElementById('edit-income-id').value = txn.id;
       document.getElementById('edit-income-date').value = txn.date;
       document.getElementById('edit-income-category').value = txn.category;
@@ -855,7 +1265,8 @@
     const index = window.transactions.findIndex(t => t.id === id);
     if (index !== -1) {
       window.transactions[index].date = date;
-      window.transactions[index].category = category;
+      window.transactions[index].category = window.cleanCategoryLabel ? window.cleanCategoryLabel(category) : category;
+      window.transactions[index].icon = window.getCategoryIcon ? window.getCategoryIcon(category, window.transactions[index].icon) : '🏷️';
       window.transactions[index].amount = amount;
       window.transactions[index].description = desc;
       window.saveTransactionsDatabase();
@@ -876,7 +1287,8 @@
     const index = window.transactions.findIndex(t => t.id === id);
     if (index !== -1) {
       window.transactions[index].date = date;
-      window.transactions[index].category = category;
+      window.transactions[index].category = window.cleanCategoryLabel ? window.cleanCategoryLabel(category) : category;
+      window.transactions[index].icon = window.getCategoryIcon ? window.getCategoryIcon(category, window.transactions[index].icon) : '🏷️';
       window.transactions[index].amount = amount;
       window.transactions[index].description = desc;
       window.saveTransactionsDatabase();
@@ -1471,6 +1883,8 @@
     tbody.innerHTML = '';
     records.forEach(r => {
       const colorTag = r.type === 'income' ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50';
+      const icon = window.getCategoryIcon ? window.getCategoryIcon(r.category, r.icon) : '🏷️';
+      const cleanCat = window.cleanCategoryLabel ? window.cleanCategoryLabel(r.category) : r.category;
       tbody.innerHTML += `
         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition border-b border-slate-100 dark:border-slate-800 font-medium">
           <td class="py-3 px-2 whitespace-nowrap text-slate-500 font-bold">${r.date}</td>
@@ -1480,7 +1894,10 @@
             </span>
           </td>
           <td class="py-3 px-2 whitespace-nowrap">
-            <span class="font-bold text-slate-707 dark:text-slate-200">${window.escapeHtml(r.category)}</span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 font-bold text-slate-700 dark:text-slate-200 text-xs shadow-xs">
+              <span class="text-sm select-none leading-none">${icon}</span>
+              <span>${window.escapeHtml(cleanCat)}</span>
+            </span>
           </td>
           <td class="py-3 px-2 text-slate-900 dark:text-slate-100">${window.escapeHtml(r.description)}</td>
           <td class="py-3 px-2 text-right font-black ${r.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}">
@@ -1504,17 +1921,21 @@
       
       topDash.forEach(td => {
         const isInc = td.type === 'income';
-        const blueprint = isInc ? window.incomeAllocationBlueprint[td.category] : window.expenseAllocationBlueprint[td.category];
+        const cleanCat = window.cleanCategoryLabel ? window.cleanCategoryLabel(td.category) : td.category;
+        const icon = window.getCategoryIcon ? window.getCategoryIcon(td.category, td.icon) : '🏷️';
+        const blueprint = isInc ? window.incomeAllocationBlueprint[cleanCat] : window.expenseAllocationBlueprint[cleanCat];
         const catColor = blueprint ? blueprint.color : (isInc ? '#10b981' : '#f43f5e');
 
         recentDashboardList.innerHTML += `
           <div class="flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition font-medium">
-            <div class="flex items-center gap-3">
-              <div class="w-2 h-10 rounded-full" style="background-color: ${catColor}"></div>
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-base shadow-xs" style="background-color: ${catColor}15; border: 1px solid ${catColor}35">
+                ${icon}
+              </div>
               <div>
                 <p class="text-xs font-bold text-slate-900 dark:text-white mb-0.5">${td.description}</p>
                 <span class="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded" style="color: ${catColor}; background-color: ${catColor}15">
-                  ${td.category}
+                  ${cleanCat}
                 </span>
               </div>
             </div>
