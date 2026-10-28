@@ -1689,9 +1689,9 @@
     }
 
     if (!isManual || forceSync) {
-      // Auto-calculate budget limits based on monthly registered income, expenses, and transfer fees
+      // Auto-calculate budget limits: forecast expense quotas directly from registered income
       const autoIncome = registeredIncome > 0 ? registeredIncome : (window.budgetLimits.income || 3500);
-      const autoExpense = (registeredExpenses + totalTransferFees) > 0 ? (registeredExpenses + totalTransferFees) : (window.budgetLimits.expense || 2000);
+      const autoExpense = registeredIncome > 0 ? registeredIncome : ((registeredExpenses + totalTransferFees) > 0 ? (registeredExpenses + totalTransferFees) : (window.budgetLimits.expense || 2000));
 
       window.budgetLimits.income = autoIncome;
       window.budgetLimits.expense = autoExpense;
@@ -1845,9 +1845,17 @@
       `;
     }
 
-    // Monthly Expense Quotas Blueprint (Amount Registered / Amount Forecasted per Category)
+    // Base for expense categories forecast: derived directly from registered income
+    const totalAllRegisteredIncome = (window.transactions || [])
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+    const incomeBaseForExpenseForecast = totalRegisteredIncome > 0 
+      ? totalRegisteredIncome 
+      : (window.budgetLimits.income > 0 ? window.budgetLimits.income : (totalAllRegisteredIncome > 0 ? totalAllRegisteredIncome : window.budgetLimits.expense));
+
+    // Monthly Expense Quotas Blueprint: Forecasted based on registered income
     for (const [name, data] of Object.entries(window.expenseAllocationBlueprint)) {
-      const forecasted = window.budgetLimits.expense * (data.pct / 100);
+      const forecasted = incomeBaseForExpenseForecast * (data.pct / 100);
       totalForecastedExpense += forecasted;
       const registered = expenseByCategory[name] || 0;
       const pct = forecasted > 0 ? (registered / forecasted * 100) : 0;
@@ -2949,8 +2957,11 @@
     });
 
     const labels = Object.keys(window.expenseAllocationBlueprint);
-    const actualSpentData = labels.map(lbl => expenseCategoriesMap[lbl]);
-    const limitsData = labels.map(lbl => window.budgetLimits.expense * (window.expenseAllocationBlueprint[lbl].pct / 100));
+    const totalAllIncome = (window.transactions || [])
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+    const incomeBaseForLimits = totalAllIncome > 0 ? totalAllIncome : (window.budgetLimits.income || window.budgetLimits.expense || 3500);
+    const limitsData = labels.map(lbl => incomeBaseForLimits * (window.expenseAllocationBlueprint[lbl].pct / 100));
 
     if (window.performanceChartInstance) {
       window.performanceChartInstance.destroy();
