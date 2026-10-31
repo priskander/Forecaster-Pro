@@ -1789,7 +1789,29 @@
     incContainer.innerHTML = '';
     expContainer.innerHTML = '';
 
-    const { scopedTxns } = window.getAllocationsScopedData();
+    const { activeMonth, scopedTxns } = window.getAllocationsScopedData();
+
+    // Determine previous month (YYYY-MM)
+    const refMonth = (activeMonth && activeMonth !== 'all') ? activeMonth : window.getActiveAllocationsMonth();
+    let prevMonthStr = '';
+    if (refMonth && refMonth.length >= 7) {
+      const [rY, rM] = refMonth.split('-').map(Number);
+      const prevDate = new Date(rY, rM - 2, 1);
+      prevMonthStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    const prevMonthExpenses = {};
+    const prevMonthIncome = {};
+    if (prevMonthStr) {
+      (window.transactions || []).forEach(t => {
+        if ((t.date || '').startsWith(prevMonthStr)) {
+          const cat = t.category || 'Others';
+          const amt = parseFloat(t.amount) || 0;
+          if (t.type === 'expense') prevMonthExpenses[cat] = (prevMonthExpenses[cat] || 0) + amt;
+          if (t.type === 'income') prevMonthIncome[cat] = (prevMonthIncome[cat] || 0) + amt;
+        }
+      });
+    }
 
     const incomeByCategory = {};
     const expenseByCategory = {};
@@ -1818,6 +1840,18 @@
       totalForecastedIncome += forecasted;
       const registered = incomeByCategory[name] || 0;
       const pct = forecasted > 0 ? (registered / forecasted * 100) : 0;
+      const prevAmt = prevMonthIncome[name] || 0;
+      const diff = registered - prevAmt;
+      let incTrend = '';
+      if (prevMonthStr) {
+        if (diff > 0.01) {
+          incTrend = `<span class="inline-flex items-center text-[10px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0" title="Income increased by EGP ${diff.toFixed(2)} vs previous month">▲</span>`;
+        } else if (diff < -0.01) {
+          incTrend = `<span class="inline-flex items-center text-[10px] font-bold text-rose-500 dark:text-rose-400 shrink-0" title="Income decreased by EGP ${Math.abs(diff).toFixed(2)} vs previous month">▼</span>`;
+        } else {
+          incTrend = `<span class="inline-flex items-center text-[10px] font-bold text-slate-400 shrink-0" title="No change vs previous month">—</span>`;
+        }
+      }
 
       incContainer.innerHTML += `
         <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 space-y-2 transition">
@@ -1831,8 +1865,11 @@
               ${pct.toFixed(0)}%
             </span>
           </div>
-          <div class="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-            <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${data.color}"></div>
+          <div class="flex items-center gap-1.5">
+            <div class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${data.color}"></div>
+            </div>
+            ${incTrend}
           </div>
           <div class="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
             <span>Reg: <strong class="font-bold text-emerald-600 dark:text-emerald-400">EGP ${registered.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
@@ -1857,6 +1894,18 @@
       const registered = expenseByCategory[name] || 0;
       const pct = forecasted > 0 ? (registered / forecasted * 100) : 0;
       const isOver = registered > forecasted && forecasted > 0;
+      const prevSpent = prevMonthExpenses[name] || 0;
+      const diff = registered - prevSpent;
+      let expTrend = '';
+      if (prevMonthStr) {
+        if (diff > 0.01) {
+          expTrend = `<span class="inline-flex items-center text-[10px] font-bold text-rose-500 dark:text-rose-400 shrink-0" title="Spending increased by EGP ${diff.toFixed(2)} vs previous month">▲</span>`;
+        } else if (diff < -0.01) {
+          expTrend = `<span class="inline-flex items-center text-[10px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0" title="Spending decreased by EGP ${Math.abs(diff).toFixed(2)} vs previous month">▼</span>`;
+        } else {
+          expTrend = `<span class="inline-flex items-center text-[10px] font-bold text-slate-400 shrink-0" title="No change vs previous month">—</span>`;
+        }
+      }
 
       expContainer.innerHTML += `
         <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border ${isOver ? 'border-rose-300 dark:border-rose-800/80 bg-rose-50/20' : 'border-slate-100 dark:border-slate-700'} space-y-2 transition">
@@ -1870,8 +1919,11 @@
               ${pct.toFixed(0)}%
             </span>
           </div>
-          <div class="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-            <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${isOver ? '#f43f5e' : data.color}"></div>
+          <div class="flex items-center gap-1.5">
+            <div class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${isOver ? '#f43f5e' : data.color}"></div>
+            </div>
+            ${expTrend}
           </div>
           <div class="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
             <span>Reg: <strong class="font-bold ${isOver ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}">EGP ${registered.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
