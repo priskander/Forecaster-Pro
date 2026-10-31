@@ -1781,36 +1781,38 @@
             <div>
               <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Account Type</label>
               <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-type" onchange="toggleAccountTypeFields()">
-                <option value="cash">💵 Cash</option>
-                <option value="card">💳 Card (Visa / Mastercard / Meeza)</option>
-                <option value="wallet">📱 Mobile Wallet</option>
+                <option value="cash">💵 Cash Reserve</option>
+                <option value="card">💳 Bank Card (Visa / Mastercard / Meeza)</option>
+                <option value="bank_account">🏦 Bank Account / Current / Savings / Deposit</option>
+                <option value="wallet">📱 Mobile Wallet &amp; Digital Payments (InstaPay / Telecom / onebank)</option>
+                <option value="nbfi">💼 Investment / NBFI / Financing (EFG / CI / MNT-Halan)</option>
                 <option value="general">❔ General / Unidentified</option>
               </select>
             </div>
             <div class="hidden space-y-4" id="account-card-fields">
-              <div>
+              <div id="account-card-network-wrap">
                 <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Card Network</label>
                 <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-card-network">
                   <option value="Visa">Visa</option><option value="Mastercard">Mastercard</option><option value="Meeza">Meeza</option>
                 </select>
               </div>
-              <div>
+              <div id="account-card-mode-wrap">
                 <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Card Mode</label>
                 <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-card-mode">
-                  <option value="Credit">Credit Card</option><option value="Debit">Debit Card</option>
+                  <option value="Debit">Debit Card</option><option value="Credit">Credit Card</option><option value="Prepaid">Prepaid / Meeza Card</option>
                 </select>
               </div>
               <div>
-                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Issuing Bank</label>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="account-bank-label">Issuing Bank / Institution</label>
                 <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-card-bank" onchange="toggleCardBankOtherField()"></select>
-                <input class="hidden mt-2 w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-card-bank-other" placeholder="Type bank name" type="text"/>
+                <input class="hidden mt-2 w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-card-bank-other" placeholder="Type bank / institution name" type="text"/>
               </div>
             </div>
             <div class="hidden space-y-4" id="account-wallet-fields">
               <div>
                 <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Operator Type</label>
                 <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-wallet-kind" onchange="toggleWalletProviderOptions()">
-                  <option value="Telecom">Telecom Company</option><option value="Bank">Bank</option>
+                  <option value="Bank">Bank / Fintech / EBC</option><option value="Telecom">Telecom Operator</option>
                 </select>
               </div>
               <div>
@@ -1823,8 +1825,8 @@
               <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Nickname (Optional)</label>
               <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="account-nickname" placeholder="Leave blank for auto-label" type="text"/>
             </div>
-            <button class="w-full bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition" type="submit">Add Account</button>
-            <button class="hidden w-full bg-slate-100 dark:bg-slate-700 text-slate-707 dark:text-slate-200 font-bold p-2.5 rounded-xl text-sm" id="account-edit-cancel-btn" onclick="cancelAccountEdit()" type="button">Cancel Edit</button>
+            <button class="w-full bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition cursor-pointer" type="submit">Add Account</button>
+            <button class="hidden w-full bg-slate-100 dark:bg-slate-700 text-slate-707 dark:text-slate-200 font-bold p-2.5 rounded-xl text-sm cursor-pointer" id="account-edit-cancel-btn" onclick="cancelAccountEdit()" type="button">Cancel Edit</button>
           </form>
         </div>
 
@@ -1853,6 +1855,38 @@
             <button class="text-xs bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-100 transition" onclick="switchView('transactions', document.querySelector('[onclick*=\'transactions\']'))">🔁 Log a New Transfer</button>
           </div>
           <div class="space-y-2" id="account-transfers-list"></div>
+        </div>
+
+        <!-- Egyptian Banking Sector Directory Explorer (CBE & FRA Regulated Institutions) -->
+        <div class="lg:col-span-3 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+          <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xl">🏛️</span>
+                <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Egyptian Banking &amp; Financial Sector Directory</h3>
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800">47 CBE &amp; FRA Institutions</span>
+              </div>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Explore licensed commercial banks, Islamic institutions, digital banks &amp; NBFIs in Egypt</p>
+            </div>
+            <div class="w-full md:w-80">
+              <input type="text" id="bank-directory-search" placeholder="Search institution, type, parent..." oninput="window.filterBankDirectory(this.value)" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"/>
+            </div>
+          </div>
+
+          <!-- Category filter chips -->
+          <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-bold custom-scrollbar" id="bank-directory-chips">
+            <button type="button" class="px-3 py-1.5 rounded-xl bg-blue-600 text-white shrink-0 cursor-pointer shadow-xs" onclick="window.selectBankDirectoryGroup('all', this)">All (47)</button>
+            <button type="button" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 shrink-0 cursor-pointer" onclick="window.selectBankDirectoryGroup('state', this)">State-Owned</button>
+            <button type="button" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 shrink-0 cursor-pointer" onclick="window.selectBankDirectoryGroup('private', this)">Private Commercial</button>
+            <button type="button" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 shrink-0 cursor-pointer" onclick="window.selectBankDirectoryGroup('islamic', this)">Islamic Banks</button>
+            <button type="button" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 shrink-0 cursor-pointer" onclick="window.selectBankDirectoryGroup('foreign', this)">Foreign &amp; Regional</button>
+            <button type="button" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 shrink-0 cursor-pointer" onclick="window.selectBankDirectoryGroup('specialized', this)">Specialized / Dev</button>
+            <button type="button" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 shrink-0 cursor-pointer" onclick="window.selectBankDirectoryGroup('digital', this)">Digital &amp; Payments</button>
+            <button type="button" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 shrink-0 cursor-pointer" onclick="window.selectBankDirectoryGroup('nbfi', this)">NBFI &amp; Investment</button>
+          </div>
+
+          <!-- Directory list grid -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[460px] overflow-y-auto custom-scrollbar p-1" id="bank-directory-grid"></div>
         </div>
       </div>
     </div>

@@ -495,9 +495,11 @@
   let dashboardAccountsChartInstance = null;
 
   window.accountIcon = function(type) {
-    if (type === 'card' || type === 'credit' || type === 'bank') return '💳';
+    if (type === 'card' || type === 'credit') return '💳';
+    if (type === 'bank_account' || type === 'bank') return '🏦';
     if (type === 'wallet') return '📱';
     if (type === 'cash') return '💵';
+    if (type === 'nbfi') return '💼';
     return '🏦';
   };
 
@@ -552,42 +554,85 @@
 
   /* -------------------------------------------------------------------------
    * PAYMENT ACCOUNTS CONTROLLER & REPOSITORY ENGINE
+   * (Aligned with Official Egyptian Banking Sector Directory - CBE & FRA)
    * ------------------------------------------------------------------------- */
-  const EGYPT_BANKS = [
-    'National Bank of Egypt (NBE)',
-    'Banque Misr',
-    'Commercial International Bank (CIB)',
-    'Banque du Caire',
-    'QNB Alahli',
-    'Alex Bank',
-    'Faisal Islamic Bank',
-    'Arab African International Bank (AAIB)',
-    'HSBC Egypt',
-    'Emirates NBD',
-    'Abu Dhabi Islamic Bank (ADIB)',
-    'Credit Agricole Egypt',
-    'Other'
+  const EGYPT_BANKING_DIRECTORY = [
+    { name: 'Central Bank of Egypt (CBE)', category: 'Central Bank / Monetary Authority', ownership: 'State-Owned (Egyptian Government)', focus: 'Monetary Policy, Regulator & Supervisor', regulator: 'Central Bank of Egypt', group: 'Regulator & Monetary Authority' },
+    { name: 'National Bank of Egypt (NBE)', category: 'Major State-Owned Commercial', ownership: '100% State-Owned', focus: 'Corporate, Retail, SME & Trade Finance', regulator: 'Central Bank of Egypt', group: 'Major State-Owned Commercial' },
+    { name: 'Banque Misr', category: 'Major State-Owned Commercial', ownership: '100% State-Owned', focus: 'Corporate, Retail, SMEs & Financial Inclusion', regulator: 'Central Bank of Egypt', group: 'Major State-Owned Commercial' },
+    { name: 'Banque du Caire', category: 'Major State-Owned Commercial', ownership: 'State-Owned (via Banque Misr / Investment Arms)', focus: 'Retail, Microfinance & Corporate Banking', regulator: 'Central Bank of Egypt', group: 'Major State-Owned Commercial' },
+    { name: 'The United Bank', category: 'State-Owned Commercial', ownership: 'Central Bank of Egypt / State Entities', focus: 'Universal Banking, Digital Banking & SMEs', regulator: 'Central Bank of Egypt', group: 'Major State-Owned Commercial' },
+    { name: 'Bank of Alexandria (Alexbank)', category: 'Commercial Bank', ownership: 'Intesa Sanpaolo Group (Italy) & State Share', focus: 'Retail, Corporate & SME Banking', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'Commercial International Bank (CIB)', category: 'Private Commercial Bank', ownership: 'Publicly Traded / Institutional Investors', focus: 'Corporate Banking, Retail & Digital Solutions', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'QNB Egypt (Qatar National Bank Alahli)', category: 'Private Commercial Bank', ownership: 'QNB Group (Qatar)', focus: 'Corporate, Retail & SME Financing', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'Emirates NBD Egypt', category: 'Private Commercial Bank', ownership: 'Emirates NBD Group (UAE)', focus: 'Corporate, Wealth Management & Retail', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'First Abu Dhabi Bank Egypt (FAB Misr)', category: 'Private Commercial Bank', ownership: 'First Abu Dhabi Bank (UAE)', focus: 'Universal & Investment Banking', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'HSBC Bank Egypt', category: 'Multinational Commercial Bank', ownership: 'HSBC Holdings (UK)', focus: 'Global Trade, Foreign Exchange & Corporate', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'Crédit Agricole Egypt', category: 'Private Commercial Bank', ownership: 'Crédit Agricole Group (France)', focus: 'Corporate, Retail & Digital Banking', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'Arab African International Bank (AAIB)', category: 'Commercial Bank', ownership: 'Central Bank of Egypt & Kuwait Investment Authority', focus: 'Corporate Banking, Investment & Retail', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'Bank ABC Egypt', category: 'Private Commercial Bank', ownership: 'Arab Banking Corporation (Bahrain)', focus: 'Corporate & Commercial Banking', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'Egyptian Gulf Bank (EGBANK)', category: 'Private Commercial Bank', ownership: 'Private Shareholders (Egyptian & Gulf Investors)', focus: 'SME, Corporate & Young Retail Banking', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'Suez Canal Bank', category: 'Private Commercial Bank', ownership: 'Joint Venture (Public & Private Shareholders)', focus: 'Corporate, Project Finance & Retail', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'saib Bank (Société Arabe Internationale de Banque)', category: 'Private Commercial Bank', ownership: 'Arab International Bank Group', focus: 'Corporate, Trade Finance & Retail', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'MIDBank (Misr Iran Development Bank)', category: 'Private Commercial Bank', ownership: 'Egyptian & Foreign Financial Institutions', focus: 'Development, Corporate & Trade Banking', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'Arab Investment Bank (aiBANK)', category: 'Private Commercial Bank', ownership: 'EFG Hermes Holding & Sovereign Fund of Egypt', focus: 'Corporate, SME & Retail Banking', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'Arab International Bank (AIB)', category: 'Joint Treaty Commercial Bank', ownership: 'Multiple Arab Governments (Egypt, Libya, UAE, Kuwait, Oman)', focus: 'Foreign Trade, Treasury & Corporate', regulator: 'Central Bank of Egypt', group: 'Private & Joint Venture Commercial' },
+    { name: 'Abu Dhabi Islamic Bank - Egypt (ADIB-Egypt)', category: 'Islamic Commercial Bank', ownership: 'Abu Dhabi Islamic Bank (UAE)', focus: "Shari'a-Compliant Retail & Corporate", regulator: 'Central Bank of Egypt', group: 'Islamic Commercial Banks' },
+    { name: 'Faisal Islamic Bank of Egypt', category: 'Islamic Commercial Bank', ownership: 'Publicly Traded / Faisal Islamic Group', focus: "Shari'a-Compliant Commercial Banking", regulator: 'Central Bank of Egypt', group: 'Islamic Commercial Banks' },
+    { name: 'Al Baraka Bank Egypt', category: 'Islamic Commercial Bank', ownership: 'Al Baraka Banking Group (Bahrain)', focus: "Shari'a-Compliant Commercial & Retail", regulator: 'Central Bank of Egypt', group: 'Islamic Commercial Banks' },
+    { name: 'Arab Bank PLC', category: 'Foreign Branch Bank', ownership: 'Arab Bank Group (Jordan)', focus: 'Corporate, Institutional & Wealth Management', regulator: 'Central Bank of Egypt', group: 'Regional & Foreign Branch Banks' },
+    { name: 'Citibank Egypt', category: 'Foreign Branch Bank', ownership: 'Citigroup (USA)', focus: 'Institutional, Treasury & Investment Services', regulator: 'Central Bank of Egypt', group: 'Regional & Foreign Branch Banks' },
+    { name: 'Mashreq Bank', category: 'Foreign Branch Bank', ownership: 'Mashreq (UAE)', focus: 'Retail Digital Banking & Corporate', regulator: 'Central Bank of Egypt', group: 'Regional & Foreign Branch Banks' },
+    { name: 'Standard Chartered Bank Egypt', category: 'Foreign Branch Bank', ownership: 'Standard Chartered PLC (UK)', focus: 'Corporate, Treasury & Cross-Border Banking', regulator: 'Central Bank of Egypt', group: 'Regional & Foreign Branch Banks' },
+    { name: 'Al Ahli Bank of Kuwait - Egypt (ABK-Egypt)', category: 'Regional Commercial Bank', ownership: 'Al Ahli Bank of Kuwait (Kuwait)', focus: 'Corporate, SME & Retail Finance', regulator: 'Central Bank of Egypt', group: 'Regional & Foreign Branch Banks' },
+    { name: 'National Bank of Kuwait - Egypt (NBK-Egypt)', category: 'Regional Commercial Bank', ownership: 'National Bank of Kuwait (Kuwait)', focus: 'Corporate Banking & Retail Finance', regulator: 'Central Bank of Egypt', group: 'Regional & Foreign Branch Banks' },
+    { name: 'Abu Dhabi Commercial Bank - Egypt (ADCB-Egypt)', category: 'Regional Commercial Bank', ownership: 'ADCB Group (UAE)', focus: 'Corporate, SME & Retail Banking', regulator: 'Central Bank of Egypt', group: 'Regional & Foreign Branch Banks' },
+    { name: 'Ahli United Bank Egypt', category: 'Regional Commercial Bank', ownership: 'Ahli United Bank (Bahrain / KFH)', focus: 'Corporate, Retail & Private Banking', regulator: 'Central Bank of Egypt', group: 'Regional & Foreign Branch Banks' },
+    { name: 'Attijariwafa Bank Egypt', category: 'Regional Commercial Bank', ownership: 'Attijariwafa Bank (Morocco)', focus: 'Trade Finance, Corporate & Retail', regulator: 'Central Bank of Egypt', group: 'Regional & Foreign Branch Banks' },
+    { name: 'Agricultural Bank of Egypt (ABE)', category: 'Specialized / Development Bank', ownership: '100% State-Owned', focus: 'Agri-financing, Rural Development & SMEs', regulator: 'Central Bank of Egypt', group: 'Specialized & Development Banks' },
+    { name: 'Housing and Development Bank (HDB)', category: 'Specialized Commercial Bank', ownership: 'State Institutions & Public Shareholders', focus: 'Real Estate, Mortgage & Commercial Banking', regulator: 'Central Bank of Egypt', group: 'Specialized & Development Banks' },
+    { name: 'Export Development Bank of Egypt (EDBE)', category: 'Specialized Commercial Bank', ownership: 'State Institutions & Public Shareholders', focus: 'Export Trade Finance & Manufacturing', regulator: 'Central Bank of Egypt', group: 'Specialized & Development Banks' },
+    { name: 'Industrial Development Bank (IDB)', category: 'Specialized Development Bank', ownership: '100% State-Owned', focus: 'Industrial SMEs & Factory Financing', regulator: 'Central Bank of Egypt', group: 'Specialized & Development Banks' },
+    { name: 'Egyptian Arab Land Bank', category: 'Specialized Development Bank', ownership: 'State-Owned', focus: 'Real Estate, Mortgage & Corporate Banking', regulator: 'Central Bank of Egypt', group: 'Specialized & Development Banks' },
+    { name: 'Nasser Social Bank', category: 'Specialized Social Bank', ownership: 'Ministry of Social Solidarity', focus: 'Social Grants, Zero-Interest Loans & Pensions', regulator: 'Ministry of Social Solidarity / CBE Oversight', group: 'Specialized & Development Banks' },
+    { name: 'National Investment Bank (NIB)', category: 'Specialized Investment Bank', ownership: '100% State-Owned', focus: 'Public Infrastructure & National Plan Projects', regulator: 'CBE / Ministry of Planning', group: 'Specialized & Development Banks' },
+    { name: 'onebank S.A.E.', category: 'Digital Bank', ownership: 'Misr Digital Financial Holding / Banque Misr', focus: 'Digital-Only Retail & Financial Inclusion', regulator: 'Central Bank of Egypt', group: 'Digital Banks' },
+    { name: 'Egyptian Banks Company (EBC)', category: 'Financial Infrastructure', ownership: 'CBE, Ministry of Finance & Egyptian Banks', focus: 'Payment Switches, InstaPay & Meeza Systems', regulator: 'Central Bank of Egypt', group: 'Financial Infrastructure & Payments' },
+    { name: 'Egyptian Credit Bureau (I-Score)', category: 'Financial Infrastructure', ownership: 'Jointly owned by Egyptian Banks & Social Insurance', focus: 'Credit Scoring, Risk Assessment & Analytics', regulator: 'Central Bank of Egypt', group: 'Financial Infrastructure & Payments' },
+    { name: 'EFG Hermes Holding', category: 'Investment Bank / NBFI', ownership: 'Publicly Traded / Institutional Investors', focus: 'Asset Management, Investment Banking, Brokerage', regulator: 'Financial Regulatory Authority (FRA)', group: 'Investment Banking & NBFI' },
+    { name: 'CI Capital', category: 'Investment Bank / NBFI', ownership: 'Misr Capital / Banque Misr', focus: 'Capital Markets, Investment Banking & Leasing', regulator: 'Financial Regulatory Authority (FRA)', group: 'Investment Banking & NBFI' },
+    { name: 'MNT-Halan', category: 'Non-Bank Financial Institution', ownership: 'Fintech Venture / Private Investors', focus: 'Microfinance, BNPL & Consumer Lending', regulator: 'Financial Regulatory Authority (FRA)', group: 'Fintech & Non-Bank Institutions' },
+    { name: 'Tanmeyah Microfinance', category: 'Non-Bank Financial Institution', ownership: 'EFG Hermes Corp-Solutions', focus: 'Microfinance, Small Business Financing', regulator: 'Financial Regulatory Authority (FRA)', group: 'Fintech & Non-Bank Institutions' },
+    { name: 'Tamweely Microfinance', category: 'Non-Bank Financial Institution', ownership: 'NI Capital & Egyptian Investment Arms', focus: 'Microfinance & SME Financing', regulator: 'Financial Regulatory Authority (FRA)', group: 'Fintech & Non-Bank Institutions' }
   ];
+
+  const EGYPT_BANKS = EGYPT_BANKING_DIRECTORY.map(b => b.name);
 
   const WALLET_TELECOM_PROVIDERS = [
     'Vodafone Cash',
     'Orange Money',
-    'Etisalat Cash',
+    'Etisalat Cash (e&)',
     'WE Pay',
     'Other'
   ];
 
   const WALLET_BANK_PROVIDERS = [
-    'Instapay / IPN',
+    'InstaPay / Meeza IPN (EBC)',
+    'onebank Digital Wallet',
     'Smart Wallet (CIB)',
     'BM Wallet (Banque Misr)',
     'Al Ahly Phone Cash (NBE)',
-    'QNB Wallet',
+    'QNB Mobile Wallet',
+    'CairoPay (Banque du Caire)',
+    'Ma7fazty (Alexbank)',
+    'ADIB Smart Wallet',
+    'saib Wallet',
+    'MNT-Halan Wallet',
     'Other'
   ];
 
   const TRANSFER_METHODS = [
-    'Instapay',
+    'Instapay (EBC / Meeza)',
     'ATM Cash Deposit',
     'ATM Cash Withdrawal',
     'Bank ACH / Wire Transfer',
@@ -596,16 +641,139 @@
   ];
 
   let editingAccountId = null;
+  let activeDirectoryGroup = 'all';
+  let activeDirectoryQuery = '';
+
+  window.selectBankDirectoryGroup = function(groupKey, btn) {
+    activeDirectoryGroup = groupKey || 'all';
+    const chips = document.getElementById('bank-directory-chips');
+    if (chips) {
+      chips.querySelectorAll('button').forEach(b => {
+        b.className = 'px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 shrink-0 cursor-pointer';
+      });
+      if (btn) btn.className = 'px-3 py-1.5 rounded-xl bg-blue-600 text-white shrink-0 cursor-pointer shadow-xs';
+    }
+    window.renderBankDirectoryGrid();
+  };
+
+  window.filterBankDirectory = function(q) {
+    activeDirectoryQuery = (q || '').trim().toLowerCase();
+    window.renderBankDirectoryGrid();
+  };
+
+  window.useBankInAccountForm = function(bankName, category) {
+    const typeSelect = document.getElementById('account-type');
+    const isNBFI = (category || '').includes('Non-Bank') || (category || '').includes('Investment Bank') || (category || '').includes('Microfinance');
+    if (typeSelect) {
+      typeSelect.value = isNBFI ? 'nbfi' : 'bank_account';
+      window.toggleAccountTypeFields();
+    }
+    const bankSelect = document.getElementById('account-card-bank');
+    if (bankSelect) {
+      bankSelect.value = bankName;
+      window.toggleCardBankOtherField();
+    }
+    const nicknameInput = document.getElementById('account-nickname');
+    if (nicknameInput && !nicknameInput.value) {
+      nicknameInput.value = bankName + (isNBFI ? ' Account' : ' Checking');
+    }
+    const form = document.getElementById('account-form');
+    if (form) {
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast(`Selected ${bankName}. Ready to register.`, 'info');
+    }
+  };
+
+  window.renderBankDirectoryGrid = function() {
+    const grid = document.getElementById('bank-directory-grid');
+    if (!grid) return;
+
+    let list = EGYPT_BANKING_DIRECTORY;
+    if (activeDirectoryGroup !== 'all') {
+      if (activeDirectoryGroup === 'state') {
+        list = list.filter(b => b.group === 'Major State-Owned Commercial');
+      } else if (activeDirectoryGroup === 'private') {
+        list = list.filter(b => b.group === 'Private & Joint Venture Commercial');
+      } else if (activeDirectoryGroup === 'islamic') {
+        list = list.filter(b => b.group === 'Islamic Commercial Banks');
+      } else if (activeDirectoryGroup === 'foreign') {
+        list = list.filter(b => b.group === 'Regional & Foreign Branch Banks');
+      } else if (activeDirectoryGroup === 'specialized') {
+        list = list.filter(b => b.group === 'Specialized & Development Banks');
+      } else if (activeDirectoryGroup === 'digital') {
+        list = list.filter(b => b.group === 'Digital Banks' || b.group === 'Financial Infrastructure & Payments');
+      } else if (activeDirectoryGroup === 'nbfi') {
+        list = list.filter(b => b.group === 'Investment Banking & NBFI' || b.group === 'Fintech & Non-Bank Institutions');
+      }
+    }
+
+    if (activeDirectoryQuery) {
+      list = list.filter(b => 
+        b.name.toLowerCase().includes(activeDirectoryQuery) ||
+        b.category.toLowerCase().includes(activeDirectoryQuery) ||
+        b.ownership.toLowerCase().includes(activeDirectoryQuery) ||
+        b.focus.toLowerCase().includes(activeDirectoryQuery) ||
+        b.regulator.toLowerCase().includes(activeDirectoryQuery)
+      );
+    }
+
+    if (list.length === 0) {
+      grid.innerHTML = '<div class="col-span-full py-8 text-center text-xs text-slate-400">No institutions found matching your search.</div>';
+      return;
+    }
+
+    grid.innerHTML = list.map(b => {
+      const isCBE = b.regulator.includes('Central Bank');
+      return `
+        <div class="p-3.5 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/80 rounded-2xl flex flex-col justify-between gap-2.5 hover:border-blue-300 dark:hover:border-slate-600 transition shadow-xs">
+          <div>
+            <div class="flex items-start justify-between gap-1.5 mb-1">
+              <h4 class="text-xs font-black text-slate-900 dark:text-white leading-tight">${b.name}</h4>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-black shrink-0 ${isCBE ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-900' : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-900'}">
+                ${isCBE ? 'CBE' : 'FRA'}
+              </span>
+            </div>
+            <span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 mb-1.5">
+              ${b.category}
+            </span>
+            <div class="text-[10px] space-y-0.5 text-slate-500 dark:text-slate-400">
+              <p><strong class="text-slate-700 dark:text-slate-300">Ownership:</strong> ${b.ownership}</p>
+              <p><strong class="text-slate-700 dark:text-slate-300">Focus:</strong> ${b.focus}</p>
+            </div>
+          </div>
+
+          <div class="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between">
+            <span class="text-[9px] text-slate-400 font-semibold truncate max-w-[140px]">${b.regulator}</span>
+            <button type="button" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-blue-50 dark:hover:bg-slate-700 hover:text-blue-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-xs" onclick="window.useBankInAccountForm('${b.name.replace(/'/g, "\\'")}', '${b.category.replace(/'/g, "\\'")}')">
+              <span>➕</span> Use in Account
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  };
 
   window.toggleAccountTypeFields = function() {
     const typeSelect = document.getElementById('account-type');
     const cardFields = document.getElementById('account-card-fields');
     const walletFields = document.getElementById('account-wallet-fields');
+    const networkWrap = document.getElementById('account-card-network-wrap');
+    const modeWrap = document.getElementById('account-card-mode-wrap');
+    const bankLabel = document.getElementById('account-bank-label');
     if (!typeSelect) return;
 
     const val = typeSelect.value;
-    if (cardFields) cardFields.classList.toggle('hidden', val !== 'card');
+    const isBankOrCard = val === 'card' || val === 'bank_account' || val === 'nbfi';
+    if (cardFields) cardFields.classList.toggle('hidden', !isBankOrCard);
     if (walletFields) walletFields.classList.toggle('hidden', val !== 'wallet');
+
+    if (networkWrap) networkWrap.classList.toggle('hidden', val !== 'card');
+    if (modeWrap) modeWrap.classList.toggle('hidden', val !== 'card');
+    if (bankLabel) {
+      bankLabel.textContent = val === 'nbfi' ? 'Investment / Financing Institution' : (val === 'bank_account' ? 'Bank / Financial Institution' : 'Issuing Bank / Institution');
+    }
   };
 
   window.toggleCardBankOtherField = function() {
@@ -637,8 +805,23 @@
 
   window.populateAccountBankAndProviderOptions = function() {
     const bankSelect = document.getElementById('account-card-bank');
-    if (bankSelect && bankSelect.options.length === 0) {
-      bankSelect.innerHTML = EGYPT_BANKS.map(b => `<option value="${b}">${b}</option>`).join('');
+    if (bankSelect && (bankSelect.options.length === 0 || bankSelect.options.length <= 13)) {
+      const groups = {};
+      EGYPT_BANKING_DIRECTORY.forEach(b => {
+        if (!groups[b.group]) groups[b.group] = [];
+        groups[b.group].push(b);
+      });
+
+      let html = '<option value="">Select Bank / Institution...</option>';
+      for (const [groupName, banks] of Object.entries(groups)) {
+        html += `<optgroup label="${groupName}">`;
+        banks.forEach(b => {
+          html += `<option value="${b.name}">${b.name}</option>`;
+        });
+        html += `</optgroup>`;
+      }
+      html += `<option value="Other">Other Bank / Institution</option>`;
+      bankSelect.innerHTML = html;
     }
 
     const walletProviderSelect = document.getElementById('account-wallet-provider');
@@ -651,7 +834,7 @@
       transferMethodSelect.innerHTML = TRANSFER_METHODS.map(m => `<option value="${m}">${m}</option>`).join('');
       transferMethodSelect.addEventListener('change', () => {
         const feeWrap = document.getElementById('form-transfer-instapay-fee-wrap');
-        if (feeWrap) feeWrap.classList.toggle('hidden', transferMethodSelect.value !== 'Instapay');
+        if (feeWrap) feeWrap.classList.toggle('hidden', !transferMethodSelect.value.includes('Instapay'));
       });
     }
   };
@@ -676,6 +859,18 @@
         bank = (document.getElementById('account-card-bank-other')?.value || '').trim() || 'Bank';
       }
       autoLabel = `${bank} ${network} (${mode})`;
+    } else if (type === 'bank_account') {
+      bank = document.getElementById('account-card-bank')?.value || 'Bank';
+      if (bank === 'Other') {
+        bank = (document.getElementById('account-card-bank-other')?.value || '').trim() || 'Bank';
+      }
+      autoLabel = `${bank} Account`;
+    } else if (type === 'nbfi') {
+      bank = document.getElementById('account-card-bank')?.value || 'Institution';
+      if (bank === 'Other') {
+        bank = (document.getElementById('account-card-bank-other')?.value || '').trim() || 'Institution';
+      }
+      autoLabel = `${bank} Financing`;
     } else if (type === 'wallet') {
       kind = document.getElementById('account-wallet-kind')?.value || 'Telecom';
       provider = document.getElementById('account-wallet-provider')?.value || 'Wallet';
@@ -762,7 +957,7 @@
       window.toggleAccountTypeFields();
     }
 
-    if (acc.type === 'card') {
+    if (acc.type === 'card' || acc.type === 'bank_account' || acc.type === 'nbfi') {
       const net = document.getElementById('account-card-network');
       if (net && acc.network) net.value = acc.network;
 
@@ -913,6 +1108,9 @@
   };
 
   window.renderAccountsView = function() {
+    window.populateAccountBankAndProviderOptions();
+    window.renderBankDirectoryGrid();
+
     const cardsContainer = document.getElementById('accounts-list-cards');
     const transfersContainer = document.getElementById('account-transfers-list');
     if (!cardsContainer) return;
@@ -935,9 +1133,17 @@
         const transfersOut = (window.accountTransfers || []).filter(tr => tr.fromId === acc.id).reduce((s, tr) => s + parseFloat(tr.amount || 0), 0);
         const netBalance = (acc.initialBalance || 0) + income - expense + transfersIn - transfersOut;
 
+        const dirEntry = EGYPT_BANKING_DIRECTORY.find(b => b.name === acc.bank);
+        const isCBE = dirEntry && dirEntry.regulator.includes('Central Bank');
+        const regulatorBadge = dirEntry ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-black shrink-0 ${isCBE ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-900' : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-900'}">${isCBE ? 'CBE' : 'FRA'}</span>` : '';
+
         const subdetail = acc.type === 'card'
           ? `${acc.bank || 'Bank'} • ${acc.network || 'Visa'} ${acc.mode || 'Card'}`
-          : (acc.type === 'wallet' ? `${acc.provider || 'Wallet'} • ${acc.kind || 'Telecom'}` : (acc.type === 'cash' ? 'Physical Cash Reserve' : 'General Ledger Account'));
+          : (acc.type === 'bank_account'
+            ? `${acc.bank || 'Bank'}${dirEntry ? ' • ' + dirEntry.category : ''}`
+            : (acc.type === 'nbfi'
+              ? `${acc.bank || 'Institution'} • NBFI / Financing`
+              : (acc.type === 'wallet' ? `${acc.provider || 'Wallet'} • ${acc.kind || 'Telecom'}` : (acc.type === 'cash' ? 'Physical Cash Reserve' : 'General Ledger Account'))));
 
         return `
           <div class="bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/80 p-5 rounded-2xl shadow-sm hover:shadow transition space-y-3 relative overflow-hidden">
@@ -945,7 +1151,10 @@
               <div class="flex items-center gap-2.5">
                 <span class="text-2xl">${window.accountIcon(acc.type)}</span>
                 <div>
-                  <h3 class="font-bold text-sm text-slate-900 dark:text-white leading-tight">${acc.label}</h3>
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <h3 class="font-bold text-sm text-slate-900 dark:text-white leading-tight">${acc.label}</h3>
+                    ${regulatorBadge}
+                  </div>
                   <p class="text-[10px] font-semibold text-slate-404 uppercase tracking-wider">${subdetail}</p>
                 </div>
               </div>
