@@ -1865,27 +1865,48 @@
             <h3 class="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Your Financial Insights</h3>
             <p class="text-xs text-slate-404">Select an analyzer to review online or compile standalone PDF/Excel reports</p>
           </div>
-          <div class="flex flex-col gap-1">
-            <button class="w-full text-left py-3.5 px-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-spending" onclick="selectInsight('spending')">
-              <div class="flex items-center gap-4">
-                <div class="w-11 h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center text-amber-500"><i class="w-5 h-5" data-lucide="wallet"></i></div>
-                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Spending Insights</h4><p class="text-[10px] text-slate-404 font-semibold">Spending analysis</p></div>
+          <div class="flex flex-col gap-1.5">
+            <button class="w-full text-left py-3 px-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-spending" onclick="selectInsight('spending')">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center text-amber-500 shrink-0"><i class="w-4 h-4" data-lucide="wallet"></i></div>
+                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Spending Insights</h4><p class="text-[10px] text-slate-400 font-semibold">Spending analysis &amp; patterns</p></div>
               </div>
-              <i class="w-4 h-4 text-slate-404" data-lucide="chevron-right"></i>
+              <i class="w-4 h-4 text-slate-400" data-lucide="chevron-right"></i>
             </button>
-            <button class="w-full text-left py-3.5 px-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-categories" onclick="selectInsight('categories')">
-              <div class="flex items-center gap-4">
-                <div class="w-11 h-11 rounded-2xl bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center text-purple-600"><i class="w-5 h-5" data-lucide="layers"></i></div>
-                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Categories Insights</h4><p class="text-[10px] text-slate-404 font-semibold">Category breakdown</p></div>
+            <button class="w-full text-left py-3 px-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-categories" onclick="selectInsight('categories')">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center text-purple-600 shrink-0"><i class="w-4 h-4" data-lucide="layers"></i></div>
+                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Categories Breakdown</h4><p class="text-[10px] text-slate-400 font-semibold">Category distribution &amp; quotas</p></div>
               </div>
-              <i class="w-4 h-4 text-slate-404" data-lucide="chevron-right"></i>
+              <i class="w-4 h-4 text-slate-400" data-lucide="chevron-right"></i>
             </button>
-            <button class="w-full text-left py-3.5 px-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-income-vs-expense" onclick="selectInsight('income-vs-expense')">
-              <div class="flex items-center gap-4">
-                <div class="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600"><i class="w-5 h-5" data-lucide="arrow-left-right"></i></div>
-                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Income vs Expense</h4><p class="text-[10px] text-slate-404 font-semibold">Cashflow comparison</p></div>
+            <button class="w-full text-left py-3 px-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-income-vs-expense" onclick="selectInsight('income-vs-expense')">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 shrink-0"><i class="w-4 h-4" data-lucide="arrow-left-right"></i></div>
+                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Income vs Expense</h4><p class="text-[10px] text-slate-400 font-semibold">Net cashflow &amp; savings margin</p></div>
               </div>
-              <i class="w-4 h-4 text-slate-404" data-lucide="chevron-right"></i>
+              <i class="w-4 h-4 text-slate-400" data-lucide="chevron-right"></i>
+            </button>
+            <button class="w-full text-left py-3 px-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-fueling-history" onclick="selectInsight('fueling-history')">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center text-blue-600 shrink-0"><i class="w-4 h-4" data-lucide="fuel"></i></div>
+                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Fuel &amp; Fleet History</h4><p class="text-[10px] text-slate-400 font-semibold">Vehicle fuel costs &amp; mileage</p></div>
+              </div>
+              <i class="w-4 h-4 text-slate-400" data-lucide="chevron-right"></i>
+            </button>
+            <button class="w-full text-left py-3 px-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-living-costs" onclick="selectInsight('living-costs')">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-600 shrink-0"><i class="w-4 h-4" data-lucide="home"></i></div>
+                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Housing &amp; Living Costs</h4><p class="text-[10px] text-slate-404 font-semibold">Rent, utilities &amp; essential needs</p></div>
+              </div>
+              <i class="w-4 h-4 text-slate-400" data-lucide="chevron-right"></i>
+            </button>
+            <button class="w-full text-left py-3 px-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-2xl transition border border-transparent" id="btn-insight-subscriptions" onclick="selectInsight('subscriptions')">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-pink-50 dark:bg-pink-950/40 flex items-center justify-center text-pink-600 shrink-0"><i class="w-4 h-4" data-lucide="repeat"></i></div>
+                <div><h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100">Subscriptions &amp; Recurring</h4><p class="text-[10px] text-slate-400 font-semibold">Monthly memberships &amp; services</p></div>
+              </div>
+              <i class="w-4 h-4 text-slate-400" data-lucide="chevron-right"></i>
             </button>
           </div>
         </div>

@@ -3197,6 +3197,7 @@
   };
 
   /* REPORTS INSPECTOR */
+  /* REPORTS INSPECTOR */
   window.selectInsight = function(insightId) {
     window.activeInsightId = insightId;
     const listIds = ['spending', 'fueling-history', 'categories', 'income-vs-expense', 'living-costs', 'subscriptions'];
@@ -3204,9 +3205,9 @@
       const button = document.getElementById(`btn-insight-${id}`);
       if (button) {
         if (id === insightId) {
-          button.className = "w-full text-left py-3.5 px-4 flex items-center justify-between bg-blue-50/85 dark:bg-blue-950/40 border-l-4 border-l-blue-600 rounded-2xl transition-all duration-200 group";
+          button.className = "w-full text-left py-3 px-3.5 flex items-center justify-between bg-blue-50/85 dark:bg-blue-950/40 border-l-4 border-l-blue-600 rounded-2xl transition-all duration-200 group";
         } else {
-          button.className = "w-full text-left py-3.5 px-4 flex items-center justify-between hover:bg-slate-50/70 dark:hover:bg-slate-800/70 rounded-2xl transition-all duration-200 group border border-transparent";
+          button.className = "w-full text-left py-3 px-3.5 flex items-center justify-between hover:bg-slate-50/70 dark:hover:bg-slate-800/70 rounded-2xl transition-all duration-200 group border border-transparent";
         }
       }
     });
@@ -3217,56 +3218,66 @@
     const container = document.getElementById('insight-report-content');
     if (!container) return;
 
-    const expenseTxns = window.transactions.filter(t => t.type === 'expense');
+    const txns = Array.isArray(window.transactions) ? window.transactions : [];
+    const expenseTxns = txns.filter(t => t.type === 'expense');
+    const incomeTxns = txns.filter(t => t.type === 'income');
     const totalSpent = expenseTxns.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
-    const incomeTxns = window.transactions.filter(t => t.type === 'income');
     const totalIncome = incomeTxns.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
 
-    if (window.activeInsightId === 'spending') {
+    const activeId = window.activeInsightId || 'spending';
+
+    if (activeId === 'spending') {
       const txCount = expenseTxns.length;
       const avgSpend = txCount > 0 ? (totalSpent / txCount) : 0;
       
       let weekendSpent = 0;
       let weekdaySpent = 0;
       expenseTxns.forEach(t => {
-        const day = new Date(t.date).getDay();
-        if (day === 0 || day === 6) weekendSpent += t.amount;
-        else weekdaySpent += t.amount;
+        const amt = parseFloat(t.amount || 0);
+        const day = new Date(t.date || Date.now()).getDay();
+        if (day === 0 || day === 6) weekendSpent += amt;
+        else weekdaySpent += amt;
       });
       
       const totalCalculated = weekendSpent + weekdaySpent;
       const weekendPct = totalCalculated > 0 ? (weekendSpent / totalCalculated * 100) : 0;
       const weekdayPct = totalCalculated > 0 ? (weekdaySpent / totalCalculated * 100) : 0;
 
-      let maxTx = { description: 'None', amount: 0, date: 'N/A' };
+      let maxTx = { description: 'No entries recorded', amount: 0, date: 'N/A', category: 'General' };
       expenseTxns.forEach(t => {
-        if (t.amount > maxTx.amount) maxTx = t;
+        const amt = parseFloat(t.amount || 0);
+        if (amt > maxTx.amount) maxTx = { ...t, amount: amt };
       });
 
+      const recentOutflows = [...expenseTxns].reverse().slice(0, 5);
+
       container.innerHTML = `
-        <div class="space-y-4 font-medium">
-          <div>
-            <span class="px-2.5 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-[10px] font-extrabold uppercase rounded-full">Automated Spending Analysis</span>
-            <h4 class="text-lg font-black text-slate-900 dark:text-white mt-1.5">Spending Insights Overview</h4>
+        <div class="space-y-4 font-medium animate-in fade-in duration-200">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="px-2.5 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-[10px] font-extrabold uppercase rounded-full">Automated Spending Analysis</span>
+              <h4 class="text-lg font-black text-slate-900 dark:text-white mt-1">Spending Insights Overview</h4>
+            </div>
+            <span class="text-xs font-bold text-slate-500">${txCount} total expense transactions</span>
           </div>
           
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl">
-              <span class="text-[10px] text-slate-404 block uppercase font-bold mb-0.5">Total Outflow</span>
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Total Outflow</span>
               <span class="text-lg font-extrabold text-slate-900 dark:text-white">EGP ${totalSpent.toFixed(2)}</span>
             </div>
-            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl">
-              <span class="text-[10px] text-slate-404 block uppercase font-bold mb-0.5">Avg Transaction</span>
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Avg Transaction</span>
               <span class="text-lg font-extrabold text-slate-900 dark:text-white">EGP ${avgSpend.toFixed(2)}</span>
             </div>
-            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl">
-              <span class="text-[10px] text-slate-404 block uppercase font-bold mb-0.5">Volume Count</span>
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Volume Count</span>
               <span class="text-lg font-extrabold text-slate-900 dark:text-white">${txCount} Entry Logs</span>
             </div>
           </div>
 
-          <div class="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl space-y-3">
-            <h5 class="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider font-semibold">Weekly Disbursal Footprint</h5>
+          <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl space-y-3">
+            <h5 class="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Weekly Disbursal Footprint</h5>
             <div class="space-y-2">
               <div>
                 <div class="flex justify-between text-xs text-slate-600 dark:text-slate-300 font-semibold mb-1">
@@ -3274,7 +3285,7 @@
                   <span>EGP ${weekdaySpent.toFixed(2)} (${weekdayPct.toFixed(0)}%)</span>
                 </div>
                 <div class="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-                  <div class="bg-amber-500 h-full rounded-full" style="width: ${weekdayPct}%"></div>
+                  <div class="bg-amber-500 h-full rounded-full transition-all duration-300" style="width: ${weekdayPct}%"></div>
                 </div>
               </div>
               <div>
@@ -3283,19 +3294,329 @@
                   <span>EGP ${weekendSpent.toFixed(2)} (${weekendPct.toFixed(0)}%)</span>
                 </div>
                 <div class="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-                  <div class="bg-indigo-500 h-full rounded-full" style="width: ${weekendPct}%"></div>
+                  <div class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: ${weekendPct}%"></div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl flex items-center justify-between">
+          <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl flex items-center justify-between">
             <div>
-              <span class="text-[10px] text-slate-404 block uppercase font-bold">Largest Single Outflow</span>
+              <span class="text-[10px] text-slate-400 block uppercase font-bold">Largest Single Outflow</span>
               <span class="text-sm font-extrabold text-slate-800 dark:text-slate-200">${maxTx.description}</span>
-              <span class="text-[10px] text-slate-404 block">${maxTx.date} (${maxTx.category})</span>
+              <span class="text-[10px] text-slate-400 block">${maxTx.date} (${maxTx.category || 'General'})</span>
             </div>
             <span class="text-lg font-black text-rose-600">EGP ${maxTx.amount.toFixed(2)}</span>
+          </div>
+
+          ${recentOutflows.length > 0 ? `
+            <div class="space-y-1.5 pt-1">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Recent Outflow Logs</span>
+              <div class="divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden text-xs">
+                ${recentOutflows.map(t => `
+                  <div class="p-2.5 flex items-center justify-between">
+                    <div>
+                      <span class="font-bold text-slate-800 dark:text-slate-200">${t.description || 'Expense Entry'}</span>
+                      <span class="text-[10px] text-slate-400 block">${t.date} • ${t.category || 'Unassigned'}</span>
+                    </div>
+                    <span class="font-black text-rose-600">EGP ${(parseFloat(t.amount) || 0).toFixed(2)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    } else if (activeId === 'categories') {
+      const blueprint = window.expenseAllocationBlueprint || {};
+      const catTotals = {};
+      Object.keys(blueprint).forEach(c => { catTotals[c] = 0; });
+      expenseTxns.forEach(t => {
+        const cat = t.category || 'Other';
+        catTotals[cat] = (catTotals[cat] || 0) + parseFloat(t.amount || 0);
+      });
+
+      const sortedCats = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
+      const topCat = sortedCats[0] || ['None', 0];
+
+      container.innerHTML = `
+        <div class="space-y-4 font-medium animate-in fade-in duration-200">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="px-2.5 py-0.5 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-[10px] font-extrabold uppercase rounded-full">Category Distribution</span>
+              <h4 class="text-lg font-black text-slate-900 dark:text-white mt-1">Categories Breakdown &amp; Quotas</h4>
+            </div>
+            <span class="text-xs font-bold text-purple-600 dark:text-purple-400">${sortedCats.length} Categories</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Top Spending Category</span>
+              <span class="text-base font-extrabold text-slate-900 dark:text-white">${topCat[0]}</span>
+              <span class="text-xs font-black text-purple-600 block mt-0.5">EGP ${topCat[1].toFixed(2)}</span>
+            </div>
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Total Outflow Monitored</span>
+              <span class="text-base font-extrabold text-slate-900 dark:text-white">EGP ${totalSpent.toFixed(2)}</span>
+              <span class="text-xs text-slate-400 block mt-0.5">Across ${expenseTxns.length} transactions</span>
+            </div>
+          </div>
+
+          <div class="space-y-2.5 pt-1">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Category Consumption Breakdown</span>
+            <div class="space-y-2">
+              ${sortedCats.map(([cat, amt]) => {
+                const cfg = blueprint[cat] || { color: '#6366f1', pct: 0 };
+                const sharePct = totalSpent > 0 ? ((amt / totalSpent) * 100).toFixed(1) : '0';
+                return `
+                  <div class="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/80 rounded-2xl space-y-1.5">
+                    <div class="flex items-center justify-between text-xs">
+                      <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full shrink-0" style="background-color: ${cfg.color}"></span>
+                        <span class="font-extrabold text-slate-800 dark:text-slate-200">${cat}</span>
+                      </div>
+                      <div class="text-right">
+                        <span class="font-black text-slate-900 dark:text-white">EGP ${amt.toFixed(2)}</span>
+                        <span class="text-[10px] text-slate-400 font-bold ml-1.5">(${sharePct}%)</span>
+                      </div>
+                    </div>
+                    <div class="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-300" style="background-color: ${cfg.color}; width: ${sharePct}%"></div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    } else if (activeId === 'income-vs-expense') {
+      const netCashflow = totalIncome - totalSpent;
+      const isPositive = netCashflow >= 0;
+      const savingsRate = totalIncome > 0 ? ((netCashflow / totalIncome) * 100).toFixed(1) : '0';
+      const maxFlow = Math.max(totalIncome, totalSpent, 1);
+      const incBarPct = Math.min((totalIncome / maxFlow) * 100, 100);
+      const expBarPct = Math.min((totalSpent / maxFlow) * 100, 100);
+
+      container.innerHTML = `
+        <div class="space-y-4 font-medium animate-in fade-in duration-200">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="px-2.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-extrabold uppercase rounded-full">Cashflow Balance</span>
+              <h4 class="text-lg font-black text-slate-900 dark:text-white mt-1">Income vs Expense Insights</h4>
+            </div>
+            <span class="px-2.5 py-1 rounded-xl text-xs font-bold ${isPositive ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'}">
+              ${isPositive ? '✨ Net Surplus' : '⚠️ Net Deficit'}
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/60 rounded-2xl">
+              <span class="text-[10px] text-emerald-700 dark:text-emerald-400 block uppercase font-bold mb-0.5">Total Inflows</span>
+              <span class="text-lg font-extrabold text-emerald-800 dark:text-emerald-300">EGP ${totalIncome.toFixed(2)}</span>
+            </div>
+            <div class="p-3.5 bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-800/60 rounded-2xl">
+              <span class="text-[10px] text-rose-700 dark:text-rose-400 block uppercase font-bold mb-0.5">Total Outflows</span>
+              <span class="text-lg font-extrabold text-rose-800 dark:text-rose-300">EGP ${totalSpent.toFixed(2)}</span>
+            </div>
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Net Cashflow</span>
+              <span class="text-lg font-extrabold ${isPositive ? 'text-emerald-600' : 'text-rose-600'}">
+                ${isPositive ? '+' : ''}EGP ${netCashflow.toFixed(2)}
+              </span>
+            </div>
+          </div>
+
+          <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl space-y-3">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-bold text-slate-900 dark:text-white uppercase tracking-wider">Flow Comparison</span>
+              <span class="text-slate-500 font-semibold">Retention Rate: <strong class="${isPositive ? 'text-emerald-600' : 'text-rose-600'}">${savingsRate}%</strong></span>
+            </div>
+            <div class="space-y-2">
+              <div>
+                <div class="flex justify-between text-xs text-emerald-700 dark:text-emerald-400 font-semibold mb-1">
+                  <span>Inflows (Income)</span>
+                  <span>EGP ${totalIncome.toFixed(2)}</span>
+                </div>
+                <div class="w-full bg-slate-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                  <div class="bg-emerald-500 h-full rounded-full transition-all duration-300" style="width: ${incBarPct}%"></div>
+                </div>
+              </div>
+              <div>
+                <div class="flex justify-between text-xs text-rose-700 dark:text-rose-400 font-semibold mb-1">
+                  <span>Outflows (Expenses)</span>
+                  <span>EGP ${totalSpent.toFixed(2)}</span>
+                </div>
+                <div class="w-full bg-slate-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                  <div class="bg-rose-500 h-full rounded-full transition-all duration-300" style="width: ${expBarPct}%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    } else if (activeId === 'fueling-history') {
+      const fuelTxns = expenseTxns.filter(t => {
+        const c = (t.category || '').toLowerCase();
+        const d = (t.description || '').toLowerCase();
+        return c.includes('fuel') || c.includes('vehicle') || c.includes('transport') || d.includes('fuel') || d.includes('gas') || d.includes('benzin');
+      });
+      const totalFuelSpent = fuelTxns.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
+      const avgFuel = fuelTxns.length > 0 ? (totalFuelSpent / fuelTxns.length) : 0;
+
+      container.innerHTML = `
+        <div class="space-y-4 font-medium animate-in fade-in duration-200">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="px-2.5 py-0.5 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[10px] font-extrabold uppercase rounded-full">Fleet Operations</span>
+              <h4 class="text-lg font-black text-slate-900 dark:text-white mt-1">Fuel &amp; Fleet History</h4>
+            </div>
+            <span class="text-xs font-bold text-blue-600 dark:text-blue-400">${fuelTxns.length} Fuel Entries</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Total Fuel Outlay</span>
+              <span class="text-lg font-extrabold text-blue-600 dark:text-blue-400">EGP ${totalFuelSpent.toFixed(2)}</span>
+            </div>
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Avg Fill Cost</span>
+              <span class="text-lg font-extrabold text-slate-900 dark:text-white">EGP ${avgFuel.toFixed(2)}</span>
+            </div>
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Fleet Share</span>
+              <span class="text-lg font-extrabold text-slate-900 dark:text-white">${totalSpent > 0 ? ((totalFuelSpent / totalSpent) * 100).toFixed(1) : 0}%</span>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Recent Fueling Entries</span>
+            ${fuelTxns.length === 0 ? `
+              <div class="p-6 text-center text-xs text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700">
+                <span>⛽</span> No specific fuel entries logged yet. Log transactions with category "Fuel" or "Vehicles" to populate this fleet report.
+              </div>
+            ` : `
+              <div class="divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden text-xs">
+                ${fuelTxns.slice(-6).reverse().map(t => `
+                  <div class="p-3 flex items-center justify-between">
+                    <div>
+                      <span class="font-bold text-slate-800 dark:text-slate-200">${t.description || 'Fuel Disbursal'}</span>
+                      <span class="text-[10px] text-slate-400 block">${t.date} • ${t.category}</span>
+                    </div>
+                    <span class="font-black text-blue-600">EGP ${(parseFloat(t.amount) || 0).toFixed(2)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    } else if (activeId === 'living-costs') {
+      const propRole = typeof window.getPropertyRole === 'function' ? window.getPropertyRole() : 'tenant';
+      const livingTxns = expenseTxns.filter(t => {
+        const c = (t.category || '').toLowerCase();
+        return c.includes('rent') || c.includes('util') || c.includes('grocer') || c.includes('house') || c.includes('home') || c.includes('maintenance');
+      });
+      const totalLiving = livingTxns.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
+
+      container.innerHTML = `
+        <div class="space-y-4 font-medium animate-in fade-in duration-200">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="px-2.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-extrabold uppercase rounded-full">Housing &amp; Basics</span>
+              <h4 class="text-lg font-black text-slate-900 dark:text-white mt-1">Living &amp; Housing Costs</h4>
+            </div>
+            <span class="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+              Role: ${propRole}
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Essential Outflow</span>
+              <span class="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">EGP ${totalLiving.toFixed(2)}</span>
+            </div>
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Share of Budget</span>
+              <span class="text-lg font-extrabold text-slate-900 dark:text-white">${totalSpent > 0 ? ((totalLiving / totalSpent) * 100).toFixed(1) : 0}%</span>
+            </div>
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Entries Tracked</span>
+              <span class="text-lg font-extrabold text-slate-900 dark:text-white">${livingTxns.length}</span>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Essential Records</span>
+            ${livingTxns.length === 0 ? `
+              <div class="p-6 text-center text-xs text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700">
+                <span>🏡</span> No living or housing costs recorded yet. Entries categorized under Rent, Utilities, or Groceries will appear here.
+              </div>
+            ` : `
+              <div class="divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden text-xs">
+                ${livingTxns.slice(-6).reverse().map(t => `
+                  <div class="p-3 flex items-center justify-between">
+                    <div>
+                      <span class="font-bold text-slate-800 dark:text-slate-200">${t.description || 'Living Cost'}</span>
+                      <span class="text-[10px] text-slate-400 block">${t.date} • ${t.category}</span>
+                    </div>
+                    <span class="font-black text-indigo-600">EGP ${(parseFloat(t.amount) || 0).toFixed(2)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    } else if (activeId === 'subscriptions') {
+      const subTxns = expenseTxns.filter(t => {
+        const c = (t.category || '').toLowerCase();
+        const d = (t.description || '').toLowerCase();
+        return c.includes('subscript') || c.includes('recurring') || c.includes('member') || d.includes('netflix') || d.includes('spotify') || d.includes('internet') || d.includes('sub');
+      });
+      const totalSubs = subTxns.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
+      const annualized = totalSubs * 12;
+
+      container.innerHTML = `
+        <div class="space-y-4 font-medium animate-in fade-in duration-200">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="px-2.5 py-0.5 bg-pink-50 dark:bg-pink-950/40 text-pink-700 dark:text-pink-300 text-[10px] font-extrabold uppercase rounded-full">Recurring Obligations</span>
+              <h4 class="text-lg font-black text-slate-900 dark:text-white mt-1">Subscriptions &amp; Services</h4>
+            </div>
+            <span class="text-xs font-bold text-pink-600 dark:text-pink-400">${subTxns.length} Recurring Services</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Monthly Run-Rate</span>
+              <span class="text-lg font-extrabold text-pink-600 dark:text-pink-400">EGP ${totalSubs.toFixed(2)}</span>
+            </div>
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Projected Annual Cost</span>
+              <span class="text-lg font-extrabold text-slate-900 dark:text-white">EGP ${annualized.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Logged Subscriptions</span>
+            ${subTxns.length === 0 ? `
+              <div class="p-6 text-center text-xs text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700">
+                <span>🔄</span> No recurring subscriptions logged yet. Add recurring services or transactions under "Subscriptions" to audit your commitments.
+              </div>
+            ` : `
+              <div class="divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden text-xs">
+                ${subTxns.map(t => `
+                  <div class="p-3 flex items-center justify-between">
+                    <div>
+                      <span class="font-bold text-slate-800 dark:text-slate-200">${t.description || 'Subscription Service'}</span>
+                      <span class="text-[10px] text-slate-400 block">${t.date} • ${t.category}</span>
+                    </div>
+                    <span class="font-black text-pink-600">EGP ${(parseFloat(t.amount) || 0).toFixed(2)} / mo</span>
+                  </div>
+                `).join('')}
+              </div>
+            `}
           </div>
         </div>
       `;
@@ -3307,16 +3628,39 @@
     try {
       if (typeof XLSX === 'undefined') return;
       const wb = XLSX.utils.book_new();
-      const dataRows = window.transactions.filter(t => t.type === 'expense').map(t => ({
-        "Transaction Date": t.date,
-        "Category": t.category,
-        "Details Description": t.description,
-        "Amount Value (EGP)": t.amount
-      }));
+      const activeId = window.activeInsightId || 'spending';
+      let dataRows = [];
+
+      if (activeId === 'income-vs-expense') {
+        dataRows = window.transactions.map(t => ({
+          "Date": t.date,
+          "Type": (t.type || '').toUpperCase(),
+          "Category": t.category,
+          "Description": t.description,
+          "Amount (EGP)": t.amount
+        }));
+      } else if (activeId === 'categories') {
+        const catTotals = {};
+        window.transactions.filter(t => t.type === 'expense').forEach(t => {
+          catTotals[t.category] = (catTotals[t.category] || 0) + parseFloat(t.amount || 0);
+        });
+        dataRows = Object.entries(catTotals).map(([cat, amt]) => ({
+          "Category Name": cat,
+          "Total Outflow (EGP)": amt
+        }));
+      } else {
+        dataRows = window.transactions.filter(t => t.type === 'expense').map(t => ({
+          "Transaction Date": t.date,
+          "Category": t.category,
+          "Details Description": t.description,
+          "Amount Value (EGP)": t.amount
+        }));
+      }
+
       const sheet = XLSX.utils.json_to_sheet(dataRows);
-      XLSX.utils.book_append_sheet(wb, sheet, "Insight Report");
-      XLSX.writeFile(wb, `Forecaster_Pro_Insight_${window.activeInsightId}_${new Date().toISOString().split('T')[0]}.xlsx`);
-      window.triggerToast("Report spreadsheet downloaded successfully!", "success");
+      XLSX.utils.book_append_sheet(wb, sheet, `${activeId} Report`);
+      XLSX.writeFile(wb, `Forecaster_Pro_Report_${activeId}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      window.triggerToast("Active report spreadsheet downloaded successfully!", "success");
     } catch (err) {
       console.error(err);
       window.triggerToast("Spreadsheet compilation failure.", "error");
@@ -3328,25 +3672,28 @@
       if (!window.jspdf) return;
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+      const activeId = window.activeInsightId || 'spending';
+      const reportTitle = activeId.replace(/-/g, ' ').toUpperCase();
+
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text(`Forecaster Pro - Financial Report`, 14, 20);
+      doc.text(`Forecaster Pro - ${reportTitle} REPORT`, 14, 20);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
       doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 26);
 
-      const expenseTxns = window.transactions.filter(t => t.type === 'expense');
-      const tableRows = expenseTxns.slice(0, 40).map(t => [t.date, t.category, t.description, `EGP ${t.amount.toFixed(2)}`]);
+      const txns = activeId === 'income-vs-expense' ? window.transactions : window.transactions.filter(t => t.type === 'expense');
+      const tableRows = txns.slice(0, 40).map(t => [t.date, (t.type || 'expense').toUpperCase(), t.category || '', t.description || '', `EGP ${(parseFloat(t.amount) || 0).toFixed(2)}`]);
 
       doc.autoTable({
-        head: [['Date', 'Category', 'Description', 'Amount']],
+        head: [['Date', 'Type', 'Category', 'Description', 'Amount']],
         body: tableRows,
         startY: 34,
         theme: 'striped',
         styles: { fontSize: 8.5 }
       });
 
-      doc.save(`Forecaster_Pro_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+      doc.save(`Forecaster_Pro_${activeId}_${new Date().toISOString().split('T')[0]}.pdf`);
       window.triggerToast("Dynamic PDF report compiled and saved!", "success");
     } catch (err) {
       console.error(err);
