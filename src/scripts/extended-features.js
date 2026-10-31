@@ -249,6 +249,132 @@
 
   window.openRentalDocument = function (url) { if (url) window.open(url, '_blank', 'noopener,noreferrer'); };
 
+  window.toggleRentalPayType = function(type) {
+    const incLbl = document.getElementById('rental-pay-type-income-lbl');
+    const expLbl = document.getElementById('rental-pay-type-expense-lbl');
+    if (!incLbl || !expLbl) return;
+    if (type === 'income') {
+      incLbl.className = 'cursor-pointer border-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+      expLbl.className = 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+    } else {
+      expLbl.className = 'cursor-pointer border-2 border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+      incLbl.className = 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+    }
+  };
+
+  window.openRentalPaymentModal = function(contractId) {
+    const c = rentalContracts.find(x => x.id === contractId);
+    if (!c) return;
+
+    const modal = document.getElementById('custom-modal');
+    const payModal = document.getElementById('rental-payment-modal');
+    if (!modal || !payModal) return;
+
+    if (typeof window.closeModal === 'function') window.closeModal();
+
+    modal.classList.remove('hidden');
+    payModal.classList.remove('hidden');
+
+    document.getElementById('rental-pay-contract-id').value = c.id;
+    document.getElementById('rental-pay-tenant-name').textContent = c.tenantName || 'Tenant';
+    document.getElementById('rental-pay-property').textContent = c.property || 'Property Unit';
+
+    const role = (typeof window.getPropertyRole === 'function') ? window.getPropertyRole() : 'landlord';
+    const defaultType = (role === 'tenant') ? 'expense' : 'income';
+    const radio = document.querySelector(`input[name="rental-pay-type"][value="${defaultType}"]`);
+    if (radio) radio.checked = true;
+    window.toggleRentalPayType(defaultType);
+
+    document.getElementById('rental-pay-amount').value = c.rentAmount || '';
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('rental-pay-date').value = today;
+
+    // Default description
+    const monthName = new Date().toLocaleDateString('default', { month: 'short', year: 'numeric' });
+    document.getElementById('rental-pay-desc').value = `Rental Settlement - ${c.tenantName || c.property} (${monthName})`;
+
+    // Calculate next due date suggestion based on frequency
+    let nextDate = '';
+    const baseDate = c.nextPaymentDate ? rentalDate(c.nextPaymentDate) : new Date();
+    if (baseDate && !isNaN(baseDate.getTime())) {
+      const d = new Date(baseDate.getTime());
+      const freq = (c.frequency || 'Monthly').toLowerCase();
+      if (freq === 'quarterly') d.setMonth(d.getMonth() + 3);
+      else if (freq === 'semi-annual') d.setMonth(d.getMonth() + 6);
+      else if (freq === 'annual') d.setFullYear(d.getFullYear() + 1);
+      else d.setMonth(d.getMonth() + 1); // monthly default
+      nextDate = rentalDateInput(d);
+    }
+    const nextInput = document.getElementById('rental-pay-next-due');
+    if (nextInput) nextInput.value = nextDate;
+
+    // Populate payment accounts
+    if (typeof window.populatePaymentAccountSelects === 'function') {
+      window.populatePaymentAccountSelects();
+    }
+  };
+
+  window.handleRentalPaymentSubmit = function(event) {
+    event.preventDefault();
+    const contractId = document.getElementById('rental-pay-contract-id')?.value;
+    const c = rentalContracts.find(x => x.id === contractId);
+
+    const typeRadio = document.querySelector('input[name="rental-pay-type"]:checked');
+    const type = typeRadio ? typeRadio.value : 'income';
+    const amount = parseFloat(document.getElementById('rental-pay-amount')?.value) || 0;
+    const date = document.getElementById('rental-pay-date')?.value || new Date().toISOString().split('T')[0];
+    const accountId = document.getElementById('rental-pay-account')?.value || '';
+    const desc = document.getElementById('rental-pay-desc')?.value.trim() || `Rent Payment (${c ? c.tenantName : ''})`;
+    const nextDue = document.getElementById('rental-pay-next-due')?.value;
+
+    if (amount <= 0) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a valid payment amount.', 'error');
+      return;
+    }
+
+    // Build the linked transaction entry
+    const entry = {
+      id: 'tx_rent_' + Date.now(),
+      date: date,
+      category: 'Rent',
+      subcategory: (type === 'income') ? 'Rental Inflow' : 'Lease Settlement',
+      icon: '🏠',
+      amount: amount,
+      description: desc,
+      type: type,
+      accountId: accountId,
+      contractId: contractId || null
+    };
+
+    if (!Array.isArray(window.transactions)) window.transactions = [];
+    window._lastAddedTxnId = entry.id;
+    window.transactions.push(entry);
+
+    // Save transactions database & sync cloud
+    if (typeof window.saveTransactionsDatabase === 'function') {
+      window.saveTransactionsDatabase();
+    }
+
+    // Advance contract next payment date if supplied
+    if (c && nextDue) {
+      c.nextPaymentDate = nextDue;
+      c.updatedAt = new Date().toISOString();
+      saveRentalDatabase();
+    }
+
+    // Close modal
+    if (typeof window.closeModal === 'function') window.closeModal();
+
+    // Trigger toast notification
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast(`Rental payment of EGP ${amount.toLocaleString()} linked & recorded in Transactions!`, 'success');
+    }
+
+    // Re-render everything so the transaction tab, blueprint, and dashboard reflect immediately
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+    renderRentalManagement();
+  };
+
   window.toggleRentalFilterDrawer = function () {
     document.getElementById('rental-filter-drawer')?.classList.toggle('hidden');
   };
@@ -290,7 +416,12 @@
       const urgency = d <= 30 ? { border: 'border-rose-100', bg: 'bg-rose-50', text: 'text-rose-700' } : { border: 'border-amber-100', bg: 'bg-amber-50', text: 'text-amber-700' };
       return `<div class="border ${urgency.border} ${urgency.bg} rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-2">
         <div><div class="text-xs font-black text-slate-800">🔔 Renewal: ${rentalEscape(c.tenantName)} — ${rentalEscape(c.property)}</div><div class="text-[10px] ${urgency.text} font-bold mt-1">Lease ends ${rentalFormatDate(c.endDate)} • ${d} day${d===1?'':'s'} remaining</div></div>
-        <div class="flex gap-2"><button onclick="sendRentalReminder('${c.id}','email')" class="text-[10px] font-bold text-indigo-700 hover:underline">✉️ Email</button><button onclick="sendRentalReminder('${c.id}','sms')" class="text-[10px] font-bold text-sky-700 hover:underline">📱 SMS</button><button onclick="renewRentalContract('${c.id}')" class="text-[10px] font-bold text-emerald-700 hover:underline">Renew</button></div>
+        <div class="flex gap-2">
+          <button onclick="openRentalPaymentModal('${c.id}')" class="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded hover:bg-emerald-100">💳 Pay</button>
+          <button onclick="sendRentalReminder('${c.id}','email')" class="text-[10px] font-bold text-indigo-700 hover:underline">✉️ Email</button>
+          <button onclick="sendRentalReminder('${c.id}','sms')" class="text-[10px] font-bold text-sky-700 hover:underline">📱 SMS</button>
+          <button onclick="renewRentalContract('${c.id}')" class="text-[10px] font-bold text-emerald-700 hover:underline">Renew</button>
+        </div>
       </div>`;
     }).join('') || '';
 
@@ -308,6 +439,7 @@
         <td class="py-3 px-2 align-top">${rentalStatusBadge(effective)}${c.renewalDecision==='non-renew' ? '<div class="text-[9px] text-rose-600 font-bold mt-1">Non-renewal flagged</div>' : ''}</td>
         <td class="py-3 px-2 align-top ${paymentClass}">${rentalEscape(paymentText)}</td>
         <td class="py-3 px-2 align-top"><div class="flex flex-wrap gap-2 justify-center">
+          <button onclick="openRentalPaymentModal('${c.id}')" class="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded font-black hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition shadow-2xs">💳 Pay</button>
           <button onclick="editRentalContract('${c.id}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit</button>
           <button onclick="renewRentalContract('${c.id}')" class="text-[10px] text-emerald-600 font-bold hover:underline">Renew</button>
           <button onclick="flagRentalNonRenewal('${c.id}')" class="text-[10px] text-amber-600 font-bold hover:underline">Non-Renew</button>

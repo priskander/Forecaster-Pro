@@ -2179,6 +2179,82 @@
         <button class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition" type="submit">Submit Ledger Entry</button>
       </form>
     </div>
+
+    <!-- RENTAL PAYMENT MODAL -->
+    <div class="hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl relative text-slate-900 dark:text-white" id="rental-payment-modal">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+        <div>
+          <span class="text-[10px] uppercase font-black tracking-wider text-emerald-600 dark:text-emerald-400">Lease Ledger Settlement</span>
+          <h4 class="text-base font-black flex items-center gap-2">
+            <span>💳</span> Record Rental Payment
+          </h4>
+        </div>
+        <button class="text-slate-404 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none" onclick="window.closeModal()" type="button">&times;</button>
+      </div>
+
+      <div class="mt-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700 space-y-1 text-xs">
+        <div class="flex justify-between items-center">
+          <span class="text-slate-500 dark:text-slate-400 font-semibold">Tenant:</span>
+          <span class="font-extrabold text-slate-900 dark:text-white" id="rental-pay-tenant-name">—</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-slate-500 dark:text-slate-404 font-semibold">Property:</span>
+          <span class="font-bold text-slate-700 dark:text-slate-300" id="rental-pay-property">—</span>
+        </div>
+      </div>
+
+      <form class="space-y-3.5 pt-3" id="rental-payment-form" onsubmit="window.handleRentalPaymentSubmit(event)">
+        <input type="hidden" id="rental-pay-contract-id" value=""/>
+        
+        <div>
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Transaction Nature</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="cursor-pointer border-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs" id="rental-pay-type-income-lbl">
+              <input type="radio" name="rental-pay-type" value="income" checked class="sr-only" onchange="window.toggleRentalPayType('income')"/>
+              <span>📥 Income (Received)</span>
+            </label>
+            <label class="cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs" id="rental-pay-type-expense-lbl">
+              <input type="radio" name="rental-pay-type" value="expense" class="sr-only" onchange="window.toggleRentalPayType('expense')"/>
+              <span>📤 Expense (Paid Out)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Amount (EGP)</label>
+            <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="rental-pay-amount" min="0.01" step="0.01" required type="number"/>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Payment Date</label>
+            <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="rental-pay-date" required type="date"/>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Payment Account</label>
+          <select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="rental-pay-account"></select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Description</label>
+          <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="rental-pay-desc" type="text" placeholder="e.g. Rent Payment - Oct 2026"/>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Update Contract Next Payment Date</label>
+          <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold" id="rental-pay-next-due" type="date"/>
+          <p class="text-[10px] text-slate-404 mt-1">Advances the contract schedule to the next payment cycle.</p>
+        </div>
+
+        <div class="flex gap-2 justify-end pt-2">
+          <button class="bg-slate-100 dark:bg-slate-700 text-slate-707 dark:text-slate-300 px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition" onclick="window.closeModal()" type="button">Cancel</button>
+          <button class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-1.5" type="submit">
+            <span>✅</span> Confirm &amp; Sync Ledger
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- =================== SAAS SUBSCRIPTION MODAL =================== -->
