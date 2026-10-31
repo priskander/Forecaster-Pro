@@ -438,9 +438,15 @@
 
   window.getPropertyRole = function() {
     try {
+      const authRaw = localStorage.getItem('forecaster_auth_user');
+      const authUser = authRaw ? JSON.parse(authRaw) : null;
+      if (authUser && authUser.propertyRole) return authUser.propertyRole;
+
       const raw = localStorage.getItem('forecaster_profile_user');
       const profile = raw ? JSON.parse(raw) : null;
-      return (profile && profile.propertyRole) || 'tenant';
+      if (profile && profile.propertyRole) return profile.propertyRole;
+
+      return 'tenant';
     } catch (e) { return 'tenant'; }
   };
 
@@ -3842,6 +3848,7 @@
     const dateInput = document.getElementById('form-txn-date');
     if (dateInput) dateInput.value = today;
 
+    window.applyPropertyRoleToBudgetBlueprints();
     window.setFormType('expense');
     window.populateCategoryFilters();
     window.selectInsight('spending');

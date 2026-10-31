@@ -53,6 +53,7 @@ interface UserRecord {
   vaultId?: string; // ID of the isolated vault/database
   mustChangePassword?: boolean;
   temporaryPassword?: string;
+  propertyRole?: 'landlord' | 'tenant' | 'both';
   createdAt: string;
   lastLogin: string;
 }
@@ -619,9 +620,10 @@ async function startServer() {
   // Sign Up / Register
   app.post('/api/auth/register', registerLimiter, (req, res) => {
     try {
-      const { name, email, password } = req.body || {};
+      const { name, email, password, propertyRole } = req.body || {};
       const cleanEmail = (email || '').trim().toLowerCase();
       const cleanName = (name || '').trim();
+      const cleanPropertyRole = ['landlord', 'tenant', 'both'].includes(propertyRole) ? propertyRole : 'tenant';
 
       if (!cleanName || !cleanEmail || !password) {
         return res.status(400).json({ ok: false, error: 'Full name, email address, and password are required.' });
@@ -653,6 +655,7 @@ async function startServer() {
           existing.temporaryPassword = undefined;
           existing.lastLogin = new Date().toISOString();
           existing.vaultId = parent?.vaultId || 'shared-main-vault';
+          if (cleanPropertyRole) existing.propertyRole = cleanPropertyRole;
 
           if (!db.tokens) db.tokens = {};
           const token = 'tok_' + crypto.randomBytes(24).toString('hex');
@@ -671,6 +674,7 @@ async function startServer() {
               email: existing.email,
               tier: existing.tier,
               role: existing.role,
+              propertyRole: existing.propertyRole || 'tenant',
               isPrimary: false,
               parentId: existing.parentId,
               vaultId: existing.vaultId,
@@ -712,6 +716,7 @@ async function startServer() {
         role: 'owner',
         isPrimary: true,
         vaultId: userVaultId,
+        propertyRole: cleanPropertyRole,
         mustChangePassword: false,
         createdAt: new Date().toISOString(),
         lastLogin: new Date().toISOString()
@@ -739,6 +744,7 @@ async function startServer() {
           email: user.email,
           tier: user.tier,
           role: user.role,
+          propertyRole: user.propertyRole || 'tenant',
           isPrimary: user.isPrimary,
           vaultId: user.vaultId,
           mustChangePassword: false,
@@ -819,6 +825,7 @@ async function startServer() {
           email: user.email,
           tier: user.tier,
           role: (user.email.toLowerCase() === 'peter.w.badir@gmail.com') ? 'main_admin' : (user.role || (user.isPrimary ? 'owner' : 'member')),
+          propertyRole: user.propertyRole || 'tenant',
           isPrimary: !!user.isPrimary,
           isMainAdmin: !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin',
           parentId: user.parentId,
@@ -1016,6 +1023,7 @@ async function startServer() {
           email: user.email,
           tier: user.tier,
           role: user.role || (user.isPrimary ? 'owner' : 'member'),
+          propertyRole: user.propertyRole || 'tenant',
           isPrimary: !!user.isPrimary,
           isMainAdmin: !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin',
           parentId: user.parentId,
@@ -1365,9 +1373,12 @@ async function startServer() {
         return res.status(401).json({ ok: false, error: 'Not authenticated' });
       }
 
-      const { name, tier } = req.body || {};
+      const { name, tier, propertyRole } = req.body || {};
       if (name) user.name = name.trim();
       if (tier) user.tier = tier.trim();
+      if (['landlord', 'tenant', 'both'].includes(propertyRole)) {
+        user.propertyRole = propertyRole;
+      }
 
       saveDatabase(db);
 
@@ -1379,6 +1390,7 @@ async function startServer() {
           email: user.email,
           tier: user.tier,
           role: user.role,
+          propertyRole: user.propertyRole || 'tenant',
           isPrimary: user.isPrimary,
           parentId: user.parentId,
           vaultId: user.vaultId,

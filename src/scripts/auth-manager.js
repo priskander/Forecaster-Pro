@@ -324,6 +324,21 @@
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
         localStorage.setItem(AUTH_TOKEN_KEY, data.token);
 
+        try {
+          const prof = JSON.parse(localStorage.getItem('forecaster_profile_user') || '{}');
+          prof.name = data.user.name;
+          prof.email = data.user.email;
+          prof.propertyRole = data.user.propertyRole || 'tenant';
+          localStorage.setItem('forecaster_profile_user', JSON.stringify(prof));
+        } catch (e) {}
+
+        if (typeof window.applyPropertyRoleToBudgetBlueprints === 'function') {
+          window.applyPropertyRoleToBudgetBlueprints();
+        }
+        if (typeof window.refreshRentCategoryForPropertyRole === 'function') {
+          window.refreshRentCategoryForPropertyRole();
+        }
+
         // Update active database vault to this user's vault and pull their data
         if (window.ForecasterCloudSync && data.user && data.user.vaultId) {
           window.ForecasterCloudSync.setVaultId(data.user.vaultId, false);
@@ -349,7 +364,7 @@
       }
     },
 
-    register: async function(name, email, password, confirmPassword) {
+    register: async function(name, email, password, confirmPassword, propertyRole = 'tenant') {
       try {
         this.clearAuthErrors();
 
@@ -360,7 +375,7 @@
         const res = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, email, password })
+          body: JSON.stringify({ name, email, password, propertyRole })
         });
 
         const data = await res.json();
@@ -371,6 +386,21 @@
         localStorage.removeItem('forecaster_explicit_logout');
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
         localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+
+        try {
+          const prof = JSON.parse(localStorage.getItem('forecaster_profile_user') || '{}');
+          prof.name = data.user.name;
+          prof.email = data.user.email;
+          prof.propertyRole = data.user.propertyRole || propertyRole;
+          localStorage.setItem('forecaster_profile_user', JSON.stringify(prof));
+        } catch (e) {}
+
+        if (typeof window.applyPropertyRoleToBudgetBlueprints === 'function') {
+          window.applyPropertyRoleToBudgetBlueprints();
+        }
+        if (typeof window.refreshRentCategoryForPropertyRole === 'function') {
+          window.refreshRentCategoryForPropertyRole();
+        }
 
         // Crucial: Clear in-memory and local storage of any prior user's historical transactions or accounts
         // "Don't relate a new create account to the same historical database let him create his own unless if the primary user added this newly created primary as a sub user"
@@ -492,6 +522,142 @@
     closeProfileDropdown: function() {
       const menu = document.getElementById('profile-dropdown-menu');
       if (menu) menu.classList.add('hidden');
+    },
+
+    /* -------------------------------------------------------------------------
+     * USER PROFILE & PROPERTY ROLE CONTROLLER (Tenant / Landlord / Both)
+     * ------------------------------------------------------------------------- */
+    selectRegisterPropertyRole: function(role) {
+      const roles = ['tenant', 'landlord', 'both'];
+      roles.forEach(r => {
+        const lbl = document.getElementById(`reg-role-${r}-lbl`);
+        const radio = document.querySelector(`input[name="register-property-role"][value="${r}"]`);
+        if (lbl) {
+          if (r === role) {
+            lbl.className = 'cursor-pointer border-2 border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 shadow-xs ring-2 ring-blue-500/20 rounded-xl p-2.5 text-center flex flex-col items-center gap-1 transition';
+            if (radio) radio.checked = true;
+          } else {
+            lbl.className = 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-xl p-2.5 text-center flex flex-col items-center gap-1 transition';
+          }
+        }
+      });
+    },
+
+    selectEditPropertyRole: function(role) {
+      const roles = ['tenant', 'landlord', 'both'];
+      roles.forEach(r => {
+        const lbl = document.getElementById(`edit-role-${r}-lbl`);
+        const radio = document.querySelector(`input[name="edit-property-role"][value="${r}"]`);
+        if (lbl) {
+          if (r === role) {
+            lbl.className = 'cursor-pointer border-2 border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 shadow-xs ring-2 ring-blue-500/20 rounded-xl p-2.5 text-center flex flex-col items-center gap-1 transition';
+            if (radio) radio.checked = true;
+          } else {
+            lbl.className = 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-xl p-2.5 text-center flex flex-col items-center gap-1 transition';
+          }
+        }
+      });
+    },
+
+    openEditProfileModal: function() {
+      this.closeProfileDropdown();
+      const modal = document.getElementById('edit-profile-modal');
+      if (!modal) return;
+
+      const user = this.getUser() || {};
+      const nameInput = document.getElementById('edit-profile-name');
+      const emailInput = document.getElementById('edit-profile-email');
+      const errEl = document.getElementById('edit-profile-error-banner');
+
+      if (errEl) {
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
+      }
+
+      if (nameInput) nameInput.value = user.name || 'Peter W. Badir';
+      if (emailInput) emailInput.value = user.email || 'peter.w.badir@gmail.com';
+
+      const currentRole = user.propertyRole || (typeof window.getPropertyRole === 'function' ? window.getPropertyRole() : 'tenant');
+      this.selectEditPropertyRole(currentRole);
+
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+      document.body.classList.add('overflow-hidden');
+    },
+
+    closeEditProfileModal: function() {
+      const modal = document.getElementById('edit-profile-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+      document.body.classList.remove('overflow-hidden');
+    },
+
+    handleEditProfileSubmit: async function(e) {
+      e.preventDefault();
+      const nameInput = document.getElementById('edit-profile-name');
+      const errEl = document.getElementById('edit-profile-error-banner');
+      const name = nameInput?.value?.trim() || '';
+      const propertyRole = document.querySelector('input[name="edit-property-role"]:checked')?.value || 'tenant';
+
+      if (errEl) errEl.classList.add('hidden');
+
+      if (!name) {
+        if (errEl) {
+          errEl.textContent = 'Please enter your full name.';
+          errEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      try {
+        const token = this.getToken();
+        const res = await fetch('/api/auth/profile', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ name, propertyRole })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to update user account profile.');
+        }
+
+        // Update local session storage
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
+        try {
+          const prof = JSON.parse(localStorage.getItem('forecaster_profile_user') || '{}');
+          prof.name = data.user.name;
+          prof.propertyRole = data.user.propertyRole;
+          localStorage.setItem('forecaster_profile_user', JSON.stringify(prof));
+        } catch (err) {}
+
+        // Reapply rent category logic dynamically across budgets, blueprints, and forms
+        if (typeof window.applyPropertyRoleToBudgetBlueprints === 'function') {
+          window.applyPropertyRoleToBudgetBlueprints();
+        }
+        if (typeof window.refreshRentCategoryForPropertyRole === 'function') {
+          window.refreshRentCategoryForPropertyRole();
+        }
+
+        this.closeEditProfileModal();
+        this.updateUI();
+
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast(`Account updated! Property role set to ${propertyRole.toUpperCase()}.`, 'success');
+        }
+      } catch (err) {
+        if (errEl) {
+          errEl.textContent = err.message;
+          errEl.classList.remove('hidden');
+        } else if (typeof window.triggerToast === 'function') {
+          window.triggerToast(err.message, 'error');
+        }
+      }
     },
 
     /* -------------------------------------------------------------------------
@@ -2279,7 +2445,8 @@ ${mail.body}
     const email = document.getElementById('register-email')?.value;
     const password = document.getElementById('register-password')?.value;
     const confirmPass = document.getElementById('register-confirm-password')?.value;
-    window.ForecasterAuth.register(name, email, password, confirmPass);
+    const propertyRole = document.querySelector('input[name="register-property-role"]:checked')?.value || 'tenant';
+    window.ForecasterAuth.register(name, email, password, confirmPass, propertyRole);
   };
 
   window.handleAuthForgotSubmit = function(e) {

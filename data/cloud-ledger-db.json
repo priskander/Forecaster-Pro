@@ -3,7 +3,7 @@
   "vaults": {
     "shared-main-vault": {
       "vaultId": "shared-main-vault",
-      "updatedAt": "2026-10-26T10:26:08.279Z",
+      "updatedAt": "2026-10-31T01:53:52.147Z",
       "transactions": [
         {
           "id": "tx_init_1",
@@ -69,7 +69,7 @@
       "accountTransfers": [],
       "budgetLimits": {
         "income": 3500,
-        "expense": 950
+        "expense": 3500
       },
       "stockData": [],
       "pharmacyData": []
@@ -112,6 +112,19 @@
       },
       "stockData": [],
       "pharmacyData": []
+    },
+    "vault_usr_1793411649916": {
+      "vaultId": "vault_usr_1793411649916",
+      "updatedAt": "2026-10-31T01:54:09.916Z",
+      "transactions": [],
+      "accounts": [],
+      "accountTransfers": [],
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      },
+      "stockData": [],
+      "pharmacyData": []
     }
   },
   "users": {
@@ -123,14 +136,15 @@
       "salt": "f931a8924f18227d949cbb3eafa27e02",
       "tier": "Master Admin Suite",
       "createdAt": "2026-10-18T17:03:16.856Z",
-      "lastLogin": "2026-10-26T10:26:15.645Z",
+      "lastLogin": "2026-10-31T01:54:01.992Z",
       "role": "main_admin",
       "isPrimary": true,
       "vaultId": "shared-main-vault",
       "isMainAdmin": true,
       "status": "active",
       "mustChangePassword": true,
-      "temporaryPassword": "Password123!"
+      "temporaryPassword": "Password123!",
+      "propertyRole": "both"
     },
     "usr_1792343003698": {
       "id": "usr_1792343003698",
@@ -233,6 +247,21 @@
       "mustChangePassword": false,
       "createdAt": "2026-10-20T11:57:00.289Z",
       "lastLogin": "2026-10-20T11:57:00.289Z"
+    },
+    "usr_1793411649916": {
+      "id": "usr_1793411649916",
+      "name": "Alice Landlord",
+      "email": "alice.landlord@example.com",
+      "passwordHash": "f5c94addaf101c547c4d5392bb21140eb0f18ddd72f65369e65990cb23729c50593649bec5993d8f772e836d188cd3cf68cc624c69600d7fa960b5e0b47fbf77",
+      "salt": "46acfd9ade3616aef804e092a3beb9cf",
+      "tier": "Free Tier",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1793411649916",
+      "propertyRole": "landlord",
+      "mustChangePassword": false,
+      "createdAt": "2026-10-31T01:54:09.916Z",
+      "lastLogin": "2026-10-31T01:54:09.916Z"
     }
   },
   "tokens": {
@@ -286,7 +315,16 @@
     "tok_59ae4db0c356a5afa6536c44d55b4be04ff5aa7fb206ee91": {
       "userId": "usr_peter_badir",
       "expiresAt": 1793615175645
-    }
+    },
+    "tok_ae57ec5e70cde3b0daf7ea21624ea38b4e9ae82db0cfae5f": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1794016372615
+    },
+    "tok_6d4b60720e1fc55b13ed9210ad1a73486381f8c0a7c968bb": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1794016441992
+    },
+    "tok_3712b0f82f1be2b525e1aac3c8361e64548f71af4d4cd488": "usr_1793411649916"
   },
   "outbox": [
     {
@@ -483,7 +521,7 @@
     },
     "telemetry": {
       "serverStartedAt": "2026-10-20T12:36:39.995Z",
-      "totalApiRequests": 17
+      "totalApiRequests": 35
     }
   }
 }
