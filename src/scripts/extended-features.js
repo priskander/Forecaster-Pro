@@ -614,12 +614,162 @@
   Object.defineProperty(window,'fuels',{get:()=>fuels,configurable:true});
   Object.defineProperty(window,'maint',{get:()=>maint,configurable:true});
 
-  const load=()=>{try{vehicles=JSON.parse(localStorage.getItem(VDB)||'[]')}catch(e){vehicles=[]}try{fuels=JSON.parse(localStorage.getItem(VFU)||'[]')}catch(e){fuels=[]}try{maint=JSON.parse(localStorage.getItem(VMN)||'[]')}catch(e){maint=[]}};
-  window.loadVehicleDatabase = load;
+  const SEED_VEHICLES = [
+    {
+      id: 'veh_toyota_corolla',
+      make: 'Toyota',
+      model: 'Corolla',
+      year: 2024,
+      plate: 'ABC 1234',
+      odometer: 45250,
+      nextMaintenanceOdometer: 50000,
+      createdAt: '2026-08-01T10:00:00.000Z'
+    }
+  ];
+
+  const SEED_FUELS = [
+    {
+      id: 'fuel_toyota_1',
+      vehicleId: 'veh_toyota_corolla',
+      dateTime: '2026-10-22T15:30',
+      odometer: 44600,
+      liters: 42.5,
+      cost: 595,
+      accountId: 'acc_general',
+      notes: 'Full tank - Octane 95',
+      transportationType: 'Fuel'
+    },
+    {
+      id: 'fuel_toyota_2',
+      vehicleId: 'veh_toyota_corolla',
+      dateTime: '2026-10-30T11:45',
+      odometer: 45250,
+      liters: 38.0,
+      cost: 532,
+      accountId: 'acc_general',
+      notes: 'Highway & City driving fill-up',
+      transportationType: 'Fuel'
+    }
+  ];
+
+  const SEED_MAINT = [
+    {
+      id: 'mnt_toyota_40k',
+      vehicleId: 'veh_toyota_corolla',
+      date: '2026-10-15',
+      odometer: 40000,
+      nextMaintenanceOdometer: 50000,
+      description: '40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs',
+      laborCost: 450,
+      partsCost: 850,
+      totalCost: 1300,
+      parts: [
+        { partId: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', quantity: 1, unit: 'bottle', unitCost: 650 },
+        { partId: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', quantity: 1, unit: 'pcs', unitCost: 200 }
+      ],
+      accountId: 'acc_general',
+      txnId: 'exp_mnt_mnt_toyota_40k'
+    }
+  ];
+
   const save=()=>{localStorage.setItem(VDB,JSON.stringify(vehicles));localStorage.setItem(VFU,JSON.stringify(fuels));localStorage.setItem(VMN,JSON.stringify(maint))};
   const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const money=v=>`EGP ${Number(v||0).toFixed(2)}`;
   const vget=id=>vehicles.find(v=>v.id===id);
+
+  window.restoreRegisteredVehicles = function(force = false) {
+    if (!force && vehicles && vehicles.length > 0) return false;
+
+    if (force || !vehicles || vehicles.length === 0) {
+      vehicles = JSON.parse(JSON.stringify(SEED_VEHICLES));
+    } else {
+      SEED_VEHICLES.forEach(sv => {
+        if (!vehicles.some(v => v.id === sv.id || v.plate === sv.plate)) vehicles.push(JSON.parse(JSON.stringify(sv)));
+      });
+    }
+
+    if (force || !fuels || fuels.length === 0) {
+      fuels = JSON.parse(JSON.stringify(SEED_FUELS));
+    } else {
+      SEED_FUELS.forEach(sf => {
+        if (!fuels.some(f => f.id === sf.id)) fuels.push(JSON.parse(JSON.stringify(sf)));
+      });
+    }
+
+    if (force || !maint || maint.length === 0) {
+      maint = JSON.parse(JSON.stringify(SEED_MAINT));
+    } else {
+      SEED_MAINT.forEach(sm => {
+        if (!maint.some(m => m.id === sm.id)) maint.push(JSON.parse(JSON.stringify(sm)));
+      });
+    }
+
+    save();
+
+    // Ensure associated transactions are synced into window.transactions under Transportation
+    if (!Array.isArray(window.transactions)) window.transactions = [];
+
+    // Sync maintenance expenses
+    maint.forEach(m => {
+      const txnId = m.txnId || ('exp_mnt_' + m.id);
+      if (!window.transactions.some(t => t.id === txnId || t.refId === m.id)) {
+        const v = vget(m.vehicleId);
+        window.transactions.unshift({
+          id: txnId,
+          date: m.date,
+          category: 'Transportation',
+          subcategory: 'Vehicle Maintenance',
+          icon: '🚗',
+          amount: parseFloat(Number(m.totalCost || 0).toFixed(2)),
+          description: `Vehicle Maintenance: ${v ? `${v.make} ${v.model} (${v.plate})` : 'Toyota Corolla'} — ${m.description}`,
+          type: 'expense',
+          accountId: m.accountId || 'acc_general',
+          refType: 'maintenance',
+          refId: m.id
+        });
+      }
+    });
+
+    // Sync fuel expenses
+    fuels.forEach(f => {
+      const fuelTxnId = 'exp_fuel_' + f.id;
+      if (!window.transactions.some(t => t.id === fuelTxnId || t.refId === f.id)) {
+        const v = vget(f.vehicleId);
+        window.transactions.unshift({
+          id: fuelTxnId,
+          date: f.dateTime ? f.dateTime.slice(0, 10) : new Date().toISOString().slice(0, 10),
+          category: 'Transportation',
+          subcategory: 'Fuel & Petrol',
+          icon: '🚗',
+          amount: parseFloat(Number(f.cost || 0).toFixed(2)),
+          description: `Vehicle Fuel: ${v ? `${v.make} ${v.model} (${v.plate})` : 'Toyota Corolla'} — ${f.liters}L (${f.notes || 'Refuel'})`,
+          type: 'expense',
+          accountId: f.accountId || 'acc_general',
+          refType: 'fuel',
+          refId: f.id
+        });
+      }
+    });
+
+    if (typeof window.saveTransactionsDatabase === 'function') window.saveTransactionsDatabase();
+
+    window.renderVehicleManagement();
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+    if (force && typeof window.triggerToast === 'function') {
+      window.triggerToast('Registered vehicle, maintenance, and fuel records restored successfully!', 'success');
+    }
+    return true;
+  };
+
+  const load=()=>{
+    try{vehicles=JSON.parse(localStorage.getItem(VDB)||'[]')}catch(e){vehicles=[]}
+    try{fuels=JSON.parse(localStorage.getItem(VFU)||'[]')}catch(e){fuels=[]}
+    try{maint=JSON.parse(localStorage.getItem(VMN)||'[]')}catch(e){maint=[]}
+    if (vehicles.length === 0) {
+      window.restoreRegisteredVehicles(false);
+    }
+  };
+  window.loadVehicleDatabase = load;
   const parts=()=>Array.isArray(window.stockData)?window.stockData.filter(p=>p&&!p.isHidden&&(p.itemType===PART||p.itemType==='residential-spare-part')):[];
   const pget=id=>Array.isArray(window.stockData)?window.stockData.find(p=>p.id===id):null;
   const nowInput=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};

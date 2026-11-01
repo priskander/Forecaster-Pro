@@ -108,9 +108,21 @@
           window.pharmacyData = Array.isArray(remote.pharmacyData) ? remote.pharmacyData : [];
           localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
 
+          if (Array.isArray(remote.vehicles)) {
+            localStorage.setItem('pro_vehicles', JSON.stringify(remote.vehicles));
+          }
+          if (Array.isArray(remote.fuels)) {
+            localStorage.setItem('pro_vehicle_fuel', JSON.stringify(remote.fuels));
+          }
+          if (Array.isArray(remote.maint)) {
+            localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(remote.maint));
+          }
+
           localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
 
           if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+          if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
+          if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
           if (typeof window.renderAllViews === 'function') window.renderAllViews();
           this.updateUI();
           return true;
@@ -148,7 +160,10 @@
         accountTransfers: Array.isArray(window.accountTransfers) ? window.accountTransfers : A('pro_account_transfers'),
         budgetLimits: (window.budgetLimits && typeof window.budgetLimits === 'object') ? window.budgetLimits : O('pro_budget_limits'),
         stockData: Array.isArray(window.stockData) ? window.stockData : A('pro_stock'),
-        pharmacyData: Array.isArray(window.pharmacyData) ? window.pharmacyData : A('pro_pharmacy')
+        pharmacyData: Array.isArray(window.pharmacyData) ? window.pharmacyData : A('pro_pharmacy'),
+        vehicles: Array.isArray(window.vehicles) ? window.vehicles : A('pro_vehicles'),
+        fuels: Array.isArray(window.fuels) ? window.fuels : A('pro_vehicle_fuel'),
+        maint: Array.isArray(window.maint) ? window.maint : A('pro_vehicle_maintenance')
       };
     },
 
@@ -178,8 +193,24 @@
         changed = true;
       }
 
+      // 4. Vehicles & Fleet
+      if (Array.isArray(remoteVault.vehicles)) {
+        localStorage.setItem('pro_vehicles', JSON.stringify(remoteVault.vehicles));
+        changed = true;
+      }
+      if (Array.isArray(remoteVault.fuels)) {
+        localStorage.setItem('pro_vehicle_fuel', JSON.stringify(remoteVault.fuels));
+        changed = true;
+      }
+      if (Array.isArray(remoteVault.maint)) {
+        localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(remoteVault.maint));
+        changed = true;
+      }
+
       if (changed) {
         if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+        if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
+        if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
         if (typeof window.renderAllViews === 'function') window.renderAllViews();
       }
 

@@ -85,6 +85,9 @@ interface VaultData {
   budgetLimits?: any;
   stockData?: any[];
   pharmacyData?: any[];
+  vehicles?: any[];
+  fuels?: any[];
+  maint?: any[];
   profileUser?: any;
 }
 
@@ -1477,6 +1480,9 @@ async function startServer() {
     if (incoming.budgetLimits) current.budgetLimits = incoming.budgetLimits;
     if (Array.isArray(incoming.stockData)) current.stockData = incoming.stockData;
     if (Array.isArray(incoming.pharmacyData)) current.pharmacyData = incoming.pharmacyData;
+    if (Array.isArray(incoming.vehicles)) current.vehicles = incoming.vehicles;
+    if (Array.isArray(incoming.fuels)) current.fuels = incoming.fuels;
+    if (Array.isArray(incoming.maint)) current.maint = incoming.maint;
     if (incoming.profileUser) current.profileUser = incoming.profileUser;
 
     current.updatedAt = new Date().toISOString();

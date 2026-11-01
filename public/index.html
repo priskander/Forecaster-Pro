@@ -1733,7 +1733,10 @@
             </h2>
             <p class="text-xs text-slate-404">Odometer service intervals and preventative maintenance cycle tracking</p>
           </div>
-          <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400" id="vehicle-health-summary-count">0 vehicles tracked</span>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400" id="vehicle-health-summary-count">0 vehicles tracked</span>
+            <button type="button" onclick="window.restoreRegisteredVehicles(true)" class="px-2.5 py-1 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm" title="Restore registered vehicle, maintenance history, and fuel logs"><span>🔄</span> Restore Vehicle Data</button>
+          </div>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5" id="vehicle-health-cards-container"></div>
       </div>
