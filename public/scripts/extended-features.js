@@ -734,6 +734,64 @@
     if (typeof window.triggerToast === 'function') window.triggerToast('Fuel transaction saved.','success');
   };
 
+  window.editVehicleFuel = function(id) {
+    const f = fuels.find(x => x.id === id);
+    if (!f) return;
+    const vEl = document.getElementById('vehicle-fuel-vehicle');
+    if (vEl) vEl.value = f.vehicleId;
+    const dtEl = document.getElementById('vehicle-fuel-datetime');
+    if (dtEl) dtEl.value = f.dateTime || '';
+    const odEl = document.getElementById('vehicle-fuel-odometer');
+    if (odEl) odEl.value = f.odometer || '';
+    const litEl = document.getElementById('vehicle-fuel-liters');
+    if (litEl) litEl.value = f.liters || '';
+    const costEl = document.getElementById('vehicle-fuel-cost');
+    if (costEl) costEl.value = f.cost || '';
+    const accEl = document.getElementById('vehicle-fuel-account');
+    if (accEl) accEl.value = f.accountId || 'acc_general';
+    const notesEl = document.getElementById('vehicle-fuel-notes');
+    if (notesEl) notesEl.value = f.notes || '';
+    const editIdEl = document.getElementById('vehicle-fuel-edit-id');
+    if (editIdEl) editIdEl.value = id;
+    const btn = document.getElementById('vehicle-fuel-save-btn');
+    if (btn) btn.textContent = 'Update Fuel Transaction';
+    document.getElementById('vehicle-fuel-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  window.deleteVehicleFuel = function(id) {
+    const f = fuels.find(x => x.id === id);
+    if (!f) return;
+    if (!confirm('Delete this fuel transaction?')) return;
+    fuels = fuels.filter(x => x.id !== id);
+    if (Array.isArray(window.transactions)) {
+      window.transactions = window.transactions.filter(t => t.refId !== id && t.id !== ('exp_fuel_' + id));
+      if (typeof window.saveTransactionsDatabase === 'function') window.saveTransactionsDatabase();
+    }
+    save();
+    window.renderVehicleManagement();
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+    if (typeof window.triggerToast === 'function') window.triggerToast('Fuel transaction deleted.', 'success');
+  };
+
+  window.currentVehicleHistoryTab = 'maintenance';
+  window.setVehicleHistoryTab = function(tab) {
+    window.currentVehicleHistoryTab = tab;
+    ['maintenance', 'fuel', 'all'].forEach(t => {
+      const btn = document.getElementById(`btn-vh-${t}`);
+      const pane = document.getElementById(`vh-pane-${t}`);
+      if (btn) {
+        if (t === tab) {
+          btn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-xs';
+        } else {
+          btn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900';
+        }
+      }
+      if (pane) {
+        pane.classList.toggle('hidden', t !== tab);
+      }
+    });
+  };
+
   window.syncMaintenanceHistoryToLedgerAndStock = function() {
     if (!Array.isArray(window.transactions)) window.transactions = [];
     let changed = false;
@@ -943,13 +1001,76 @@
       }).join(''):'<tr><td colspan="6" class="py-8 text-center text-xs text-slate-404">No vehicles registered yet.</td></tr>';
     }
 
+    // 1. Maintenance History Table
     const mb=document.getElementById('vehicle-maint-body');
+    const filteredMaint = search ? maint.filter(x => {
+      const v = vget(x.vehicleId);
+      return `${x.date} ${x.description} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`.toLowerCase().includes(search);
+    }) : maint;
+
     if(mb){
-      mb.innerHTML=maint.slice(0,100).map(x=>{
+      mb.innerHTML=filteredMaint.slice(0,100).map(x=>{
         const v=vget(x.vehicleId),plist=(x.parts||[]).map(p=>`${esc(p.name)} × ${p.quantity}`).join(', ')||'None';
-        return `<tr><td class="py-3 px-2">${esc(x.date)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2"><div class="font-semibold">${esc(x.description)}</div><div class="text-[9px] text-slate-404 mt-1">Labor ${money(x.laborCost)} • ${plist}</div></td><td class="py-3 px-2">${Number(x.odometer).toFixed(1)} km</td><td class="py-3 px-2 text-right">${money(x.laborCost)}</td><td class="py-3 px-2 text-right">${money(x.partsCost)}</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(x.totalCost)}</td><td class="py-3 px-2 text-center"><button onclick="deleteVehicleMaintenance('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold">Delete</button></td></tr>`;
-      }).join('')||'<tr><td colspan="8" class="py-8 text-center text-xs text-slate-404">No maintenance records yet.</td></tr>';
+        return `<tr><td class="py-3 px-2">${esc(x.date)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2"><div class="font-semibold">${esc(x.description)}</div><div class="text-[9px] text-slate-404 mt-1">Labor ${money(x.laborCost)} • ${plist}</div></td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2 text-right">${money(x.laborCost)}</td><td class="py-3 px-2 text-right">${money(x.partsCost)}</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(x.totalCost)}</td><td class="py-3 px-2 text-center"><button onclick="deleteVehicleMaintenance('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button></td></tr>`;
+      }).join('')||'<tr><td colspan="8" class="py-8 text-center text-xs text-slate-404">No maintenance records found.</td></tr>';
     }
+
+    // 2. Fueling History Table
+    const fb=document.getElementById('vehicle-fuel-body');
+    const filteredFuels = search ? fuels.filter(x => {
+      const v = vget(x.vehicleId);
+      return `${x.dateTime} ${x.notes||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`.toLowerCase().includes(search);
+    }) : fuels;
+
+    if(fb){
+      fb.innerHTML=filteredFuels.slice(0,100).map(x=>{
+        const v=vget(x.vehicleId);
+        const dtStr = x.dateTime ? x.dateTime.replace('T', ' ') : 'N/A';
+        const acc = (window.accounts || []).find(a => a.id === x.accountId);
+        const accLabel = acc ? acc.label : (x.accountId || 'General');
+        return `<tr><td class="py-3 px-2 font-semibold text-slate-600 dark:text-slate-300">${esc(dtStr)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2 text-right font-bold text-blue-600">${Number(x.liters||0).toFixed(2)} L</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(x.cost)}</td><td class="py-3 px-2 text-slate-500">${esc(accLabel)}</td><td class="py-3 px-2 text-slate-500 italic">${esc(x.notes||'—')}</td><td class="py-3 px-2 text-center whitespace-nowrap"><button onclick="editVehicleFuel('${esc(x.id)}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicleFuel('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button></td></tr>`;
+      }).join('')||'<tr><td colspan="8" class="py-8 text-center text-xs text-slate-404">No fueling records found.</td></tr>';
+    }
+
+    // 3. Combined Activity Timeline Table
+    const ab=document.getElementById('vehicle-all-history-body');
+    if(ab){
+      const combined = [
+        ...maint.map(m => ({ ...m, _type: 'maintenance', _sortDate: m.date || '' })),
+        ...fuels.map(f => ({ ...f, _type: 'fuel', _sortDate: (f.dateTime ? f.dateTime.slice(0,10) : '') }))
+      ].sort((a,b) => (b._sortDate || '').localeCompare(a._sortDate || '') || (Number(b.odometer||0) - Number(a.odometer||0)));
+
+      const filteredCombined = search ? combined.filter(x => {
+        const v = vget(x.vehicleId);
+        const txt = `${x._sortDate} ${x.description||''} ${x.notes||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`;
+        return txt.toLowerCase().includes(search);
+      }) : combined;
+
+      ab.innerHTML=filteredCombined.slice(0,100).map(x=>{
+        const v=vget(x.vehicleId);
+        const isMaint = x._type === 'maintenance';
+        const typeBadge = isMaint
+          ? '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">🔧 Maintenance</span>'
+          : '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">⛽ Fueling</span>';
+        const details = isMaint
+          ? esc(x.description || 'Service')
+          : `${Number(x.liters||0).toFixed(2)} Liters ${x.notes ? `• ${esc(x.notes)}` : ''}`;
+        const amt = isMaint ? Number(x.totalCost || 0) : Number(x.cost || 0);
+        const actionBtn = isMaint
+          ? `<button onclick="deleteVehicleMaintenance('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button>`
+          : `<button onclick="editVehicleFuel('${esc(x.id)}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicleFuel('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button>`;
+
+        return `<tr><td class="py-3 px-2">${esc(x._sortDate)}</td><td class="py-3 px-2">${typeBadge}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2">${details}</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(amt)}</td><td class="py-3 px-2 text-center whitespace-nowrap">${actionBtn}</td></tr>`;
+      }).join('')||'<tr><td colspan="7" class="py-8 text-center text-xs text-slate-404">No vehicle activity records found.</td></tr>';
+    }
+
+    // Counts
+    const cm = document.getElementById('vh-count-maint');
+    const cf = document.getElementById('vh-count-fuel');
+    const ca = document.getElementById('vh-count-all');
+    if (cm) cm.textContent = maint.length;
+    if (cf) cf.textContent = fuels.length;
+    if (ca) ca.textContent = maint.length + fuels.length;
 
     const fc=document.getElementById('vehicle-kpi-count'),ff=document.getElementById('vehicle-kpi-fuel'),fml=document.getElementById('vehicle-kpi-maint-labor'),fmp=document.getElementById('vehicle-kpi-maint-parts'),fp=document.getElementById('vehicle-kpi-parts');
     if(fc)fc.textContent=vehicles.length;

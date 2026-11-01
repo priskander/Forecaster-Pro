@@ -3487,11 +3487,14 @@
     } else if (activeId === 'fueling-history') {
       const fuelTxns = expenseTxns.filter(t => {
         const c = (t.category || '').toLowerCase();
+        const sc = (t.subcategory || '').toLowerCase();
         const d = (t.description || '').toLowerCase();
-        return c.includes('fuel') || c.includes('vehicle') || c.includes('transport') || d.includes('fuel') || d.includes('gas') || d.includes('benzin');
+        return c.includes('fuel') || c.includes('vehicle') || c.includes('transport') || sc.includes('fuel') || sc.includes('vehicle') || sc.includes('repair') || d.includes('fuel') || d.includes('gas') || d.includes('benzin') || d.includes('maintenance');
       });
-      const totalFuelSpent = fuelTxns.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
-      const avgFuel = fuelTxns.length > 0 ? (totalFuelSpent / fuelTxns.length) : 0;
+      const registeredFuels = Array.isArray(window.fuels) ? window.fuels : [];
+      const totalFuelSpent = fuelTxns.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0) || registeredFuels.reduce((sum, f) => sum + parseFloat(f.cost || 0), 0);
+      const entryCount = fuelTxns.length || registeredFuels.length;
+      const avgFuel = entryCount > 0 ? (totalFuelSpent / entryCount) : 0;
 
       container.innerHTML = `
         <div class="space-y-4 font-medium animate-in fade-in duration-200">
@@ -3500,12 +3503,12 @@
               <span class="px-2.5 py-0.5 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[10px] font-extrabold uppercase rounded-full">Fleet Operations</span>
               <h4 class="text-lg font-black text-slate-900 dark:text-white mt-1">Fuel &amp; Fleet History</h4>
             </div>
-            <span class="text-xs font-bold text-blue-600 dark:text-blue-400">${fuelTxns.length} Fuel Entries</span>
+            <span class="text-xs font-bold text-blue-600 dark:text-blue-400">${entryCount} Vehicle Entries</span>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
-              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Total Fuel Outlay</span>
+              <span class="text-[10px] text-slate-400 block uppercase font-bold mb-0.5">Total Outlay</span>
               <span class="text-lg font-extrabold text-blue-600 dark:text-blue-400">EGP ${totalFuelSpent.toFixed(2)}</span>
             </div>
             <div class="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl">
@@ -3519,20 +3522,28 @@
           </div>
 
           <div class="space-y-2">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Recent Fueling Entries</span>
-            ${fuelTxns.length === 0 ? `
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Recent Vehicle &amp; Fleet Entries</span>
+            ${(fuelTxns.length === 0 && registeredFuels.length === 0) ? `
               <div class="p-6 text-center text-xs text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700">
-                <span>⛽</span> No specific fuel entries logged yet. Log transactions with category "Fuel" or "Vehicles" to populate this fleet report.
+                <span>⛽</span> No vehicle fleet entries logged yet. Record fuel or maintenance under Vehicles to populate this fleet report.
               </div>
             ` : `
               <div class="divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden text-xs">
-                ${fuelTxns.slice(-6).reverse().map(t => `
+                ${fuelTxns.length > 0 ? fuelTxns.slice(-8).reverse().map(t => `
                   <div class="p-3 flex items-center justify-between">
                     <div>
-                      <span class="font-bold text-slate-800 dark:text-slate-200">${t.description || 'Fuel Disbursal'}</span>
-                      <span class="text-[10px] text-slate-400 block">${t.date} • ${t.category}</span>
+                      <span class="font-bold text-slate-800 dark:text-slate-200">${t.description || 'Fleet Expense'}</span>
+                      <span class="text-[10px] text-slate-400 block">${t.date} • ${t.category} ${t.subcategory ? '• ' + t.subcategory : ''}</span>
                     </div>
                     <span class="font-black text-blue-600">EGP ${(parseFloat(t.amount) || 0).toFixed(2)}</span>
+                  </div>
+                `).join('') : registeredFuels.slice(-8).map(f => `
+                  <div class="p-3 flex items-center justify-between">
+                    <div>
+                      <span class="font-bold text-slate-800 dark:text-slate-200">Fuel — ${Number(f.liters||0).toFixed(1)}L @ ${Number(f.odometer||0).toFixed(0)} km</span>
+                      <span class="text-[10px] text-slate-400 block">${f.dateTime || 'N/A'} • Transportation</span>
+                    </div>
+                    <span class="font-black text-blue-600">EGP ${(parseFloat(f.cost) || 0).toFixed(2)}</span>
                   </div>
                 `).join('')}
               </div>

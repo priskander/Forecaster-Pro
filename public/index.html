@@ -1828,8 +1828,28 @@
             </div>
           </div>
           <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-            <h2 class="text-base font-bold text-slate-900 dark:text-white">Maintenance History</h2>
-            <div class="overflow-x-auto custom-scrollbar">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700 pb-3">
+              <div>
+                <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>📜</span> Vehicles History
+                </h2>
+                <p class="text-xs text-slate-404">Maintenance services, repairs, and fueling activity</p>
+              </div>
+              <div class="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl">
+                <button type="button" id="btn-vh-maintenance" onclick="window.setVehicleHistoryTab('maintenance')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-xs">
+                  🔧 Maintenance (<span id="vh-count-maint">0</span>)
+                </button>
+                <button type="button" id="btn-vh-fuel" onclick="window.setVehicleHistoryTab('fuel')" class="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900">
+                  ⛽ Fueling (<span id="vh-count-fuel">0</span>)
+                </button>
+                <button type="button" id="btn-vh-all" onclick="window.setVehicleHistoryTab('all')" class="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900">
+                  📋 All Logs (<span id="vh-count-all">0</span>)
+                </button>
+              </div>
+            </div>
+
+            <!-- Pane 1: Maintenance History -->
+            <div id="vh-pane-maintenance" class="overflow-x-auto custom-scrollbar">
               <table class="w-full text-left text-xs">
                 <thead>
                   <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-404 font-bold uppercase tracking-wider">
@@ -1844,6 +1864,43 @@
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 dark:divide-slate-700" id="vehicle-maint-body"></tbody>
+              </table>
+            </div>
+
+            <!-- Pane 2: Fueling History -->
+            <div id="vh-pane-fuel" class="hidden overflow-x-auto custom-scrollbar">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-404 font-bold uppercase tracking-wider">
+                    <th class="py-2.5 px-2">Date &amp; Time</th>
+                    <th class="py-2.5 px-2">Vehicle</th>
+                    <th class="py-2.5 px-2">Odometer</th>
+                    <th class="py-2.5 px-2 text-right">Liters</th>
+                    <th class="py-2.5 px-2 text-right">Cost</th>
+                    <th class="py-2.5 px-2">Account</th>
+                    <th class="py-2.5 px-2">Notes</th>
+                    <th class="py-2.5 px-2 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-700" id="vehicle-fuel-body"></tbody>
+              </table>
+            </div>
+
+            <!-- Pane 3: All Activity Timeline -->
+            <div id="vh-pane-all" class="hidden overflow-x-auto custom-scrollbar">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-404 font-bold uppercase tracking-wider">
+                    <th class="py-2.5 px-2">Date</th>
+                    <th class="py-2.5 px-2">Type</th>
+                    <th class="py-2.5 px-2">Vehicle</th>
+                    <th class="py-2.5 px-2">Odometer</th>
+                    <th class="py-2.5 px-2">Details</th>
+                    <th class="py-2.5 px-2 text-right">Amount</th>
+                    <th class="py-2.5 px-2 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-700" id="vehicle-all-history-body"></tbody>
               </table>
             </div>
           </div>
