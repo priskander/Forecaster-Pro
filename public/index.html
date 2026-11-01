@@ -574,7 +574,6 @@
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('rentals', this)"><span>🏠</span> Rentals</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('vehicles', this)"><span>🚗</span> Vehicles</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('stock', this); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
-    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('stock', this); setStockPharmacyModule('spareparts')"><span>🧰</span> Spare Parts</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('accounts', this)"><span>💳</span> Accounts</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('reports', this)"><span>📄</span> Reports &amp; Backups</a>
   </nav>
@@ -1741,7 +1740,10 @@
                 <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Year</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-year" max="2100" min="1900" placeholder="2024" required="" type="number"/></div>
                 <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Plate / ID</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-plate" placeholder="ABC 1234" required=""/></div>
               </div>
-              <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Initial Odometer</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-odometer" min="0" placeholder="45000" required="" step="0.1" type="number"/></div>
+              <div class="grid grid-cols-2 gap-3">
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Current Odometer (km)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-odometer" min="0" placeholder="45000" required="" step="0.1" type="number"/></div>
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Next Maintenance Odo (km)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-next-odometer" min="0" placeholder="50000" step="0.1" type="number"/></div>
+              </div>
               <div class="flex gap-2"><button class="flex-1 bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition" id="vehicle-save-btn" type="submit">Register Vehicle</button><button class="px-4 bg-slate-100 dark:bg-slate-700 text-slate-707 dark:text-slate-200 font-bold rounded-xl" onclick="resetVehicleForm()" type="button">Clear</button></div>
             </form>
           </div>
@@ -1772,11 +1774,14 @@
               <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Vehicle</label><select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-vehicle" required=""></select></div>
               <div class="grid grid-cols-2 gap-3">
                 <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Date</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="vehicle-maint-date" required="" type="date"/></div>
-                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Odometer</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-odometer" min="0" required="" step="0.1" type="number"/></div>
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Current Odometer (km)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-odometer" min="0" required="" step="0.1" type="number"/></div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Labor Cost (EGP)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-labor" min="0" required="" step="0.01" type="number" value="0"/></div>
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Next Maintenance Odo (km)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-next-odometer" min="0" placeholder="e.g. 55000" step="0.1" type="number"/></div>
               </div>
               <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label><select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-account"></select></div>
               <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Service Details</label><textarea class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-medium" id="vehicle-maint-description" placeholder="Work done..." required="" rows="2"></textarea></div>
-              <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Labor Cost (EGP)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-labor" min="0" required="" step="0.01" type="number" value="0"/></div>
               <div class="border-t border-slate-100 dark:border-slate-700 pt-3">
                 <div class="flex items-center justify-between mb-2"><label class="text-xs font-bold text-slate-505 dark:text-slate-404">Spare Parts Used</label><button class="text-[10px] font-bold text-blue-600 hover:underline" onclick="addVehiclePartRow()" type="button">+ Add Part</button></div>
                 <div class="space-y-2" id="vehicle-maint-parts"></div>
@@ -1793,11 +1798,41 @@
               <h2 class="text-base font-bold text-slate-900 dark:text-white">Vehicle Register</h2>
               <input class="w-full md:w-64 pl-3 pr-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none font-medium bg-transparent" id="vehicle-search" oninput="renderVehicleManagement()" placeholder="Search vehicle..."/>
             </div>
-            <div class="overflow-x-auto custom-scrollbar"><table class="w-full text-left text-xs"><tbody class="divide-y divide-slate-100 dark:divide-slate-700" id="vehicle-register-body"></tbody></table></div>
+            <div class="overflow-x-auto custom-scrollbar">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-404 font-bold uppercase tracking-wider">
+                    <th class="py-2.5 px-2">Vehicle</th>
+                    <th class="py-2.5 px-2">Plate / ID</th>
+                    <th class="py-2.5 px-2">Current Odo</th>
+                    <th class="py-2.5 px-2">Next Maint Odo</th>
+                    <th class="py-2.5 px-2">Year</th>
+                    <th class="py-2.5 px-2 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-700" id="vehicle-register-body"></tbody>
+              </table>
+            </div>
           </div>
           <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
             <h2 class="text-base font-bold text-slate-900 dark:text-white">Maintenance History</h2>
-            <div class="overflow-x-auto custom-scrollbar"><table class="w-full text-left text-xs"><tbody class="divide-y divide-slate-100 dark:divide-slate-700" id="vehicle-maint-body"></tbody></table></div>
+            <div class="overflow-x-auto custom-scrollbar">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-404 font-bold uppercase tracking-wider">
+                    <th class="py-2.5 px-2">Date</th>
+                    <th class="py-2.5 px-2">Vehicle</th>
+                    <th class="py-2.5 px-2">Service Details &amp; Parts</th>
+                    <th class="py-2.5 px-2">Odometer</th>
+                    <th class="py-2.5 px-2 text-right">Labor</th>
+                    <th class="py-2.5 px-2 text-right">Parts Cost</th>
+                    <th class="py-2.5 px-2 text-right">Total (Ledger)</th>
+                    <th class="py-2.5 px-2 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-700" id="vehicle-maint-body"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

@@ -652,22 +652,25 @@
   window.resetVehicleForm=function(){
     document.getElementById('vehicle-registration-form')?.reset();
     document.getElementById('vehicle-edit-id').value='';
+    const nextOdoEl = document.getElementById('vehicle-next-odometer');
+    if (nextOdoEl) nextOdoEl.value = '';
     document.getElementById('vehicle-save-btn').textContent='Register Vehicle';
   };
 
   window.handleVehicleRegistration=function(e){
     e.preventDefault();
     const make=document.getElementById('vehicle-make').value.trim(),model=document.getElementById('vehicle-model').value.trim(),year=Number(document.getElementById('vehicle-year').value),plate=document.getElementById('vehicle-plate').value.trim(),odo=Number(document.getElementById('vehicle-odometer').value),edit=document.getElementById('vehicle-edit-id').value;
+    const nextOdo=Number(document.getElementById('vehicle-next-odometer')?.value)||0;
     if(!make||!model||!plate||!Number.isFinite(year)||!Number.isFinite(odo)||odo<0){if (typeof window.triggerToast === 'function') window.triggerToast('Complete the vehicle fields with valid values.','error');return}
     const key=plate.replace(/\s+/g,'').toUpperCase();
     if(vehicles.some(v=>v.id!==edit&&String(v.plate).replace(/\s+/g,'').toUpperCase()===key)){if (typeof window.triggerToast === 'function') window.triggerToast('Duplicate License Plate / ID.','error');return}
     if(edit){
       const v=vget(edit);
       if(odo<Number(v.odometer||0)){if (typeof window.triggerToast === 'function') window.triggerToast('Odometer cannot move backwards.','error');return}
-      Object.assign(v,{make,model,year,plate,odometer:odo});
+      Object.assign(v,{make,model,year,plate,odometer:odo,nextMaintenanceOdometer:nextOdo});
       if (typeof window.triggerToast === 'function') window.triggerToast('Vehicle updated.','success');
     }else{
-      vehicles.push({id:'veh_'+Date.now()+Math.random().toString(36).slice(2,6),make,model,year,plate,odometer:odo,createdAt:new Date().toISOString()});
+      vehicles.push({id:'veh_'+Date.now()+Math.random().toString(36).slice(2,6),make,model,year,plate,odometer:odo,nextMaintenanceOdometer:nextOdo,createdAt:new Date().toISOString()});
       if (typeof window.triggerToast === 'function') window.triggerToast('Vehicle registered.','success');
     }
     save();window.resetVehicleForm();window.renderVehicleManagement();
@@ -676,6 +679,7 @@
   window.editVehicle=function(id){
     const v=vget(id);if(!v)return;
     ['make','model','year','plate','odometer'].forEach(k=>{const el=document.getElementById('vehicle-'+k);if(el)el.value=v[k]});
+    const nextEl=document.getElementById('vehicle-next-odometer');if(nextEl)nextEl.value=v.nextMaintenanceOdometer||'';
     document.getElementById('vehicle-edit-id').value=id;
     document.getElementById('vehicle-save-btn').textContent='Update Vehicle';
     document.getElementById('view-vehicles')?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -730,10 +734,46 @@
     if (typeof window.triggerToast === 'function') window.triggerToast('Fuel transaction saved.','success');
   };
 
+  window.syncMaintenanceHistoryToLedgerAndStock = function() {
+    if (!Array.isArray(maint) || maint.length === 0) return;
+    if (!Array.isArray(window.transactions)) window.transactions = [];
+    let changed = false;
+    maint.forEach(m => {
+      const total = Number(m.totalCost || 0);
+      if (total <= 0) return;
+      const expectedTxnId = m.txnId || ('exp_mnt_' + m.id);
+      const exists = window.transactions.some(t => t.id === expectedTxnId || t.refId === m.id);
+      if (!exists) {
+        const v = vget(m.vehicleId);
+        const vTitle = v ? `${v.make} ${v.model} (${v.plate})` : 'Fleet Vehicle';
+        window.transactions.unshift({
+          id: expectedTxnId,
+          date: m.date || new Date().toISOString().slice(0, 10),
+          category: 'Vehicle Maintenance',
+          subcategory: 'Repairs & Spare Parts',
+          icon: '🔧',
+          amount: parseFloat(total.toFixed(2)),
+          description: `Vehicle Maintenance: ${vTitle} — ${m.description || 'Service'}`,
+          type: 'expense',
+          accountId: m.accountId || 'acc_general',
+          refType: 'maintenance',
+          refId: m.id
+        });
+        m.txnId = expectedTxnId;
+        changed = true;
+      }
+    });
+    if (changed) {
+      save();
+      if (typeof window.saveTransactionsDatabase === 'function') window.saveTransactionsDatabase();
+    }
+  };
+
   window.handleVehicleMaintenance=function(e){
     e.preventDefault();
     const vehicleId=document.getElementById('vehicle-maint-vehicle').value,v=vget(vehicleId);
     const date=document.getElementById('vehicle-maint-date').value,od=Number(document.getElementById('vehicle-maint-odometer').value);
+    const nextMaintOd=Number(document.getElementById('vehicle-maint-next-odometer')?.value)||0;
     const desc=document.getElementById('vehicle-maint-description').value.trim(),labor=Number(document.getElementById('vehicle-maint-labor').value)||0;
     const acctEl=document.getElementById('vehicle-maint-account');
     const accountId=acctEl?.value||'acc_general';
@@ -757,58 +797,139 @@
 
     used.forEach(d=>{
       const p=pget(d.partId);
-      p.quantity-=d.quantity;
-      p.consumptionLogs=Array.isArray(p.consumptionLogs)?p.consumptionLogs:[];
-      p.consumptionLogs.push({date,quantity:d.quantity,reason:`Vehicle maintenance — ${v.make} ${v.model} (${v.plate})`});
+      if(p){
+        p.quantity=Math.max(0,Number(p.quantity||0)-d.quantity);
+        p.consumptionLogs=Array.isArray(p.consumptionLogs)?p.consumptionLogs:[];
+        p.consumptionLogs.push({date,quantity:d.quantity,amount:d.quantity,type:'consumed',reason:`Vehicle maintenance — ${v.make} ${v.model} (${v.plate})`});
+      }
     });
 
     const total=labor+partsCost;
-    maint.unshift({id:'mnt_'+Date.now(),vehicleId,date,odometer:od,description:desc,laborCost:labor,partsCost,totalCost:total,parts:used,accountId});
+    const maintId='mnt_'+Date.now();
+    const txnId='exp_mnt_'+maintId;
+
+    if(nextMaintOd>0){
+      v.nextMaintenanceOdometer=nextMaintOd;
+    }
+
+    // Direct synchronization to window.transactions
+    if(total>0){
+      if(!Array.isArray(window.transactions)) window.transactions=[];
+      window.transactions.unshift({
+        id: txnId,
+        date: date,
+        category: 'Vehicle Maintenance',
+        subcategory: 'Repairs & Spare Parts',
+        icon: '🔧',
+        amount: parseFloat(total.toFixed(2)),
+        description: `Vehicle Maintenance: ${v.make} ${v.model} (${v.plate}) — ${desc}`,
+        type: 'expense',
+        accountId: accountId,
+        refType: 'maintenance',
+        refId: maintId
+      });
+      if(typeof window.saveTransactionsDatabase==='function') window.saveTransactionsDatabase();
+    }
+
+    maint.unshift({
+      id: maintId,
+      vehicleId,
+      date,
+      odometer: od,
+      nextMaintenanceOdometer: nextMaintOd>0?nextMaintOd:(v.nextMaintenanceOdometer||0),
+      description: desc,
+      laborCost: labor,
+      partsCost,
+      totalCost: total,
+      parts: used,
+      accountId,
+      txnId: total>0?txnId:''
+    });
+
     v.odometer=Math.max(Number(v.odometer||0),od);
     localStorage.setItem('pro_stock',JSON.stringify(window.stockData));
     save();
 
-    if(typeof window.logAutomaticExpense==='function'&&total>0) window.logAutomaticExpense(`Maintenance — ${v.make} ${v.model} (${v.plate}): ${desc}`,total,'Transportation');
     e.target.reset();
     document.getElementById('vehicle-maint-date').value=today();
+    const nextMaintInput=document.getElementById('vehicle-maint-next-odometer');
+    if(nextMaintInput) nextMaintInput.value='';
     document.getElementById('vehicle-maint-parts').innerHTML='';
     window.addVehiclePartRow();
     window.renderVehicleManagement();
+    if(typeof window.renderSparePartsLedger==='function') window.renderSparePartsLedger();
     if(typeof window.renderAllViews==='function') window.renderAllViews();
-    if (typeof window.triggerToast === 'function') window.triggerToast(`Maintenance saved. ${money(partsCost)} parts consumed.`,'success');
+    if(typeof window.triggerToast === 'function') window.triggerToast(`Maintenance saved. Transaction synced and spare parts updated.`,'success');
   };
 
   window.deleteVehicleMaintenance=function(id){
     const m=maint.find(x=>x.id===id);if(!m)return;
-    if(!confirm('Delete this maintenance record and restore spare parts?'))return;
+    if(!confirm('Delete this maintenance record, restore spare parts, and remove the synced transaction?'))return;
+
+    // Restore spare parts in stock
     (m.parts||[]).forEach(d=>{
       const p=pget(d.partId);
-      if(p)p.quantity=Number(p.quantity||0)+Number(d.quantity||0);
+      if(p){
+        p.quantity=Number(p.quantity||0)+Number(d.quantity||0);
+        if(Array.isArray(p.consumptionLogs)){
+          p.consumptionLogs.push({
+            date: new Date().toISOString().slice(0,10),
+            amount: d.quantity,
+            type: 'restored',
+            reason: `Restored: Deleted maintenance record for vehicle ${m.vehicleId}`
+          });
+        }
+      }
     });
+
+    // Remove synced transaction from transactions ledger
+    if(Array.isArray(window.transactions)){
+      window.transactions=window.transactions.filter(t=>t.refId!==id&&t.id!==m.txnId&&t.id!==('exp_mnt_'+id));
+      if(typeof window.saveTransactionsDatabase==='function') window.saveTransactionsDatabase();
+    }
+
     maint=maint.filter(x=>x.id!==id);
     localStorage.setItem('pro_stock',JSON.stringify(window.stockData));
     save();
     window.renderVehicleManagement();
+    if(typeof window.renderSparePartsLedger==='function') window.renderSparePartsLedger();
     if(typeof window.renderAllViews==='function') window.renderAllViews();
-    if (typeof window.triggerToast === 'function') window.triggerToast('Maintenance deleted and spare parts restored.','success');
+    if(typeof window.triggerToast === 'function') window.triggerToast('Maintenance deleted, spare parts restored, and transaction removed.','success');
   };
 
   window.renderVehicleManagement=function(){
     populateVehicles();
     refreshParts();
+    window.syncMaintenanceHistoryToLedgerAndStock();
 
     const search=(document.getElementById('vehicle-search')?.value||'').toLowerCase();
     const vb=document.getElementById('vehicle-register-body');
     if(vb){
       const rows=vehicles.filter(v=>`${v.make} ${v.model} ${v.plate} ${v.year}`.toLowerCase().includes(search));
-      vb.innerHTML=rows.length?rows.map(v=>`<tr class="vehicle-register-row"><td class="py-3 px-2"><div class="font-bold text-slate-900 dark:text-white">${esc(v.make)} ${esc(v.model)}</div><div class="text-[10px] text-slate-404">${esc(v.id)}</div></td><td class="py-3 px-2 font-semibold">${esc(v.plate)}</td><td class="py-3 px-2 font-bold">${Number(v.odometer||0).toFixed(1)} km</td><td class="py-3 px-2">${esc(v.year)}</td><td class="py-3 px-2 text-center"><button onclick="editVehicle('${esc(v.id)}')" class="text-[10px] text-blue-600 font-bold">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicle('${esc(v.id)}')" class="text-[10px] text-rose-600 font-bold">Delete</button></td></tr>`).join(''):'<tr><td colspan="5" class="py-8 text-center text-xs text-slate-404">No vehicles registered yet.</td></tr>';
+      vb.innerHTML=rows.length?rows.map(v=>{
+        const nextOdoVal=Number(v.nextMaintenanceOdometer||0);
+        let nextOdoBadge='';
+        if(nextOdoVal>0){
+          const remaining=nextOdoVal-Number(v.odometer||0);
+          if(remaining<=0){
+            nextOdoBadge=`<div class="font-bold text-rose-600 dark:text-rose-400">${nextOdoVal.toFixed(1)} km</div><span class="inline-block mt-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">Overdue by ${Math.abs(remaining).toFixed(0)} km</span>`;
+          }else if(remaining<=500){
+            nextOdoBadge=`<div class="font-bold text-amber-600 dark:text-amber-400">${nextOdoVal.toFixed(1)} km</div><span class="inline-block mt-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Due in ${remaining.toFixed(0)} km</span>`;
+          }else{
+            nextOdoBadge=`<div class="font-bold text-slate-800 dark:text-slate-200">${nextOdoVal.toFixed(1)} km</div><span class="inline-block mt-0.5 text-[9px] font-semibold text-slate-404">in ${remaining.toFixed(0)} km</span>`;
+          }
+        }else{
+          nextOdoBadge=`<span class="text-slate-404 text-[11px] italic">Not set</span>`;
+        }
+        return `<tr class="vehicle-register-row"><td class="py-3 px-2"><div class="font-bold text-slate-900 dark:text-white">${esc(v.make)} ${esc(v.model)}</div><div class="text-[10px] text-slate-404">${esc(v.id)}</div></td><td class="py-3 px-2 font-semibold">${esc(v.plate)}</td><td class="py-3 px-2 font-bold">${Number(v.odometer||0).toFixed(1)} km</td><td class="py-3 px-2">${nextOdoBadge}</td><td class="py-3 px-2">${esc(v.year)}</td><td class="py-3 px-2 text-center"><button onclick="editVehicle('${esc(v.id)}')" class="text-[10px] text-blue-600 font-bold">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicle('${esc(v.id)}')" class="text-[10px] text-rose-600 font-bold">Delete</button></td></tr>`;
+      }).join(''):'<tr><td colspan="6" class="py-8 text-center text-xs text-slate-404">No vehicles registered yet.</td></tr>';
     }
 
     const mb=document.getElementById('vehicle-maint-body');
     if(mb){
       mb.innerHTML=maint.slice(0,100).map(x=>{
         const v=vget(x.vehicleId),plist=(x.parts||[]).map(p=>`${esc(p.name)} × ${p.quantity}`).join(', ')||'None';
-        return `<tr><td class="py-3 px-2">${esc(x.date)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2"><div class="font-semibold">${esc(x.description)}</div><div class="text-[9px] text-slate-404 mt-1">Labor ${money(x.laborCost)} • ${plist}</div></td><td class="py-3 px-2">${Number(x.odometer).toFixed(1)} km</td><td class="py-3 px-2 text-right">${money(x.laborCost)}</td><td class="py-3 px-2 text-right">${money(x.partsCost)}</td><td class="py-3 px-2 text-right font-black">${money(x.totalCost)}</td><td class="py-3 px-2 text-center"><button onclick="deleteVehicleMaintenance('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold">Delete</button></td></tr>`;
+        return `<tr><td class="py-3 px-2">${esc(x.date)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2"><div class="font-semibold">${esc(x.description)}</div><div class="text-[9px] text-slate-404 mt-1">Labor ${money(x.laborCost)} • ${plist}</div></td><td class="py-3 px-2">${Number(x.odometer).toFixed(1)} km</td><td class="py-3 px-2 text-right">${money(x.laborCost)}</td><td class="py-3 px-2 text-right">${money(x.partsCost)}</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(x.totalCost)}</td><td class="py-3 px-2 text-center"><button onclick="deleteVehicleMaintenance('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold">Delete</button></td></tr>`;
       }).join('')||'<tr><td colspan="8" class="py-8 text-center text-xs text-slate-404">No maintenance records yet.</td></tr>';
     }
 
