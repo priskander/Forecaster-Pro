@@ -120,14 +120,30 @@
     const menu = document.getElementById('settings-dropdown-menu');
     if (menu) menu.classList.add('hidden');
 
-    const hiddenStock = (window.stockData || []).filter(s => s.isHidden);
+    const hiddenSpareParts = (window.stockData || []).filter(s => s.isHidden && (s.itemType === 'vehicle-spare-part' || s.itemType === 'residential-spare-part' || s.category === 'Spare Parts'));
+    const hiddenStock = (window.stockData || []).filter(s => s.isHidden && s.itemType !== 'vehicle-spare-part' && s.itemType !== 'residential-spare-part' && s.category !== 'Spare Parts');
     const hiddenPharmacy = (window.pharmacyData || []).filter(p => p.isHidden);
     const list = document.getElementById('unhide-items-list');
     if (list) {
       let html = '';
 
+      if (hiddenSpareParts.length) {
+        html += `<p class="text-[10px] font-black uppercase text-blue-600 dark:text-blue-400 pt-1">🧰 Hidden Spare Parts</p>`;
+        hiddenSpareParts.forEach(sp => {
+          html += `
+            <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800 p-3 rounded-xl">
+              <div>
+                <p class="text-xs font-bold text-slate-900 dark:text-white">${sp.name}</p>
+                <p class="text-[10px] text-slate-404 font-semibold uppercase mt-0.5">${sp.quantity} ${sp.unit || 'pcs'} • SKU: ${sp.sku || 'N/A'}</p>
+              </div>
+              <button onclick="unhideStockBatch('${sp.id}')" class="text-[10px] text-blue-600 font-bold hover:underline">Unhide</button>
+            </div>
+          `;
+        });
+      }
+
       if (hiddenStock.length) {
-        html += `<p class="text-[10px] font-black uppercase text-slate-404 pt-1">📦 Hidden Inventory Batches</p>`;
+        html += `<p class="text-[10px] font-black uppercase text-slate-404 pt-2">📦 Hidden Inventory Batches</p>`;
         hiddenStock.forEach(s => {
           html += `
             <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800 p-3 rounded-xl">
@@ -156,7 +172,7 @@
         });
       }
 
-      if (!hiddenStock.length && !hiddenPharmacy.length) {
+      if (!hiddenSpareParts.length && !hiddenStock.length && !hiddenPharmacy.length) {
         html = `<div class="text-center py-8 text-slate-404 font-semibold text-xs">No hidden items — everything you've registered is currently visible.</div>`;
       }
 

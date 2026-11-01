@@ -1222,6 +1222,7 @@
     const oldLbl = document.getElementById('sparepart-origin-label-old');
     const disclaimer = document.getElementById('sparepart-origin-disclaimer');
     const accWrap = document.getElementById('sparepart-account-wrapper');
+    const accLbl = document.getElementById('sparepart-account-label');
 
     if (newLbl) {
       newLbl.className = isNew
@@ -1234,7 +1235,11 @@
         : 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
     }
     if (disclaimer) disclaimer.classList.toggle('hidden', isNew);
-    if (accWrap) accWrap.classList.toggle('hidden', !isNew);
+    // Never hide payment account field; keep it visible and accessible
+    if (accWrap) accWrap.classList.remove('hidden');
+    if (accLbl) {
+      accLbl.textContent = isNew ? 'Payment Account' : 'Acquisition / Payment Account (Optional for Old Stock)';
+    }
   };
 
   window.populateSparePartTargets = function() {
@@ -1265,14 +1270,26 @@
     const name = document.getElementById('sparepart-name').value.trim();
     const type = document.getElementById('sparepart-type').value;
     const target = document.getElementById('sparepart-target')?.value || '';
+    const style = document.getElementById('sparepart-buy-style')?.value || 'single';
     const rawQty = parseFloat(document.getElementById('sparepart-quantity').value) || 0;
     const unit = document.getElementById('sparepart-unit').value || 'pcs';
     const rawPrice = parseFloat(document.getElementById('sparepart-price').value) || 0;
     const threshold = parseFloat(document.getElementById('sparepart-threshold').value) || 1;
+    const alertMethod = document.getElementById('sparepart-alert-method')?.value || 'loose';
     const sku = document.getElementById('sparepart-sku')?.value.trim() || '';
+    const prodDate = document.getElementById('sparepart-prod-date')?.value || new Date().toISOString().split('T')[0];
     const expDate = document.getElementById('sparepart-exp-date')?.value || '';
     const isNew = document.querySelector('input[name="sparepart-origin"]:checked')?.value === 'new';
     const accountId = document.getElementById('sparepart-account')?.value;
+
+    let quantity = rawQty;
+    let price = rawPrice;
+    let packSize = 1;
+    if (style === 'pack') {
+      packSize = parseFloat(document.getElementById('sparepart-pack-size')?.value) || 1;
+      quantity = rawQty * packSize;
+      price = rawPrice / packSize;
+    }
 
     if (!name || rawQty <= 0) {
       if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a valid part name and quantity.', 'error');
@@ -1285,15 +1302,16 @@
       itemType: type, // 'vehicle-spare-part' or 'residential-spare-part'
       category: 'Spare Parts',
       targetVehicleOrUnit: target,
-      quantity: rawQty,
+      quantity,
       unit,
-      price: rawPrice,
+      price,
       threshold,
       sku,
       expDate,
-      prodDate: new Date().toISOString().split('T')[0],
-      buyStyle: 'single',
-      packSize: 1,
+      prodDate,
+      alertMethod,
+      buyStyle: style,
+      packSize,
       consumptionLogs: []
     };
 
@@ -1303,7 +1321,7 @@
 
     if (isNew && rawPrice > 0) {
       const expenseCat = type === 'vehicle-spare-part' ? 'Vehicle Maintenance' : 'Home Repairs & Maintenance';
-      const totalCost = rawQty * rawPrice;
+      const totalCost = rawQty * (style === 'pack' ? rawPrice : price);
       window.logAutomaticExpense(`${name} (Spare Part)`, totalCost, expenseCat, accountId);
     }
 
@@ -1315,6 +1333,7 @@
     document.getElementById('sparepart-type').value = type;
     window.toggleSparePartOrigin();
     window.populateSparePartTargets();
+    if (typeof window.togglePackagingMath === 'function') window.togglePackagingMath('sparepart');
     if (typeof window.renderSparePartsLedger === 'function') window.renderSparePartsLedger();
     if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
     if (typeof window.ForecasterCloudSync !== 'undefined' && window.ForecasterCloudSync.queueSync) {
@@ -2371,6 +2390,9 @@
             <input type="number" id="consume-sparepart-${p.id}" placeholder="Qty" class="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold" min="0.1" step="0.1" value="1">
             <button type="button" onclick="window.executeSparePartConsumption('${p.id}', event)" class="flex-grow py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition">
               Disburse / Use Part
+            </button>
+            <button type="button" onclick="window.hideStockBatch('${p.id}')" class="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-xs font-bold transition" title="Hide part from view">
+              👁️
             </button>
             <button type="button" onclick="window.deleteStockItem('${p.id}', event)" class="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg text-xs font-bold transition" title="Discard Part">
               🗑️

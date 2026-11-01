@@ -574,6 +574,7 @@
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('rentals', this)"><span>🏠</span> Rentals</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('vehicles', this)"><span>🚗</span> Vehicles</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('stock', this); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
+    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('stock', this); setStockPharmacyModule('spareparts')"><span>🧰</span> Spare Parts</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('accounts', this)"><span>💳</span> Accounts</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('reports', this)"><span>📄</span> Reports &amp; Backups</a>
   </nav>
@@ -1440,6 +1441,15 @@
                 </select>
               </div>
               <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Purchase Style</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-buy-style" onchange="window.togglePackagingMath('sparepart')">
+                  <option value="single">Single Pieces / Units</option>
+                  <option value="pack">Pack / Box / Set / Kit</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
                 <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Unit of Measure</label>
                 <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-unit">
                   <option value="pcs">pcs</option>
@@ -1451,21 +1461,32 @@
                   <option value="box">box</option>
                 </select>
               </div>
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Target Application / Asset</label>
-              <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-target">
-                <option value="">General Stock / Any Compatible</option>
-              </select>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Target Application / Asset</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-target">
+                  <option value="">General Stock / Any Compatible</option>
+                </select>
+              </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Quantity Bought</label>
-                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-quantity" min="0.1" placeholder="2" required="" step="0.1" type="number"/>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="lbl-sparepart-qty">Quantity Bought</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-quantity" min="0.1" oninput="window.updateFormRealtimePreview('sparepart')" placeholder="2" required="" step="0.1" type="number"/>
+              </div>
+              <div class="hidden" id="sparepart-pack-size-container">
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Items per Pack / Set</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-pack-size" min="1" oninput="window.updateFormRealtimePreview('sparepart')" step="1" type="number" value="1"/>
+              </div>
+            </div>
+            <div class="hidden bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800 p-3 rounded-xl text-xs text-indigo-700 dark:text-indigo-300 font-mono" id="sparepart-calc-preview"></div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="lbl-sparepart-price">Price per Unit (EGP)</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-price" min="0" oninput="window.updateFormRealtimePreview('sparepart')" placeholder="450.00" required="" step="0.01" type="number"/>
               </div>
               <div>
-                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Price per Unit (EGP)</label>
-                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-price" min="0" placeholder="450.00" required="" step="0.01" type="number"/>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Min Buffer Alert</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-threshold" min="0" placeholder="1" required="" step="0.1" type="number" value="1"/>
               </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
@@ -1474,16 +1495,26 @@
                 <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-sku" placeholder="E.g., BOSCH-0986" type="text"/>
               </div>
               <div>
-                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Min Buffer Alert</label>
-                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-threshold" min="0" placeholder="1" required="" step="0.1" type="number" value="1"/>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Alert Replenishment Method</label>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-alert-method">
+                  <option value="loose">By Remaining Units / Pieces</option>
+                  <option value="pack">By Whole Pack / Set Quantities</option>
+                  <option value="smart">Intelligent Curve (Alert if buffer &lt; Min)</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Acquisition / Purchase Date</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-medium" id="sparepart-prod-date" type="date"/>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Warranty / Expiry Date (Optional)</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-medium" id="sparepart-exp-date" type="date"/>
               </div>
             </div>
             <div>
-              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Warranty / Expiry Date (Optional)</label>
-              <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-medium" id="sparepart-exp-date" type="date"/>
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Is this Old Stock or a New Purchase?</label>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Stock Origin Classification</label>
               <div class="grid grid-cols-2 gap-2">
                 <label class="cursor-pointer border-2 border-blue-600 bg-blue-50 text-blue-700 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs" id="sparepart-origin-label-new">
                   <input checked="" class="sr-only" name="sparepart-origin" onchange="toggleSparePartOrigin()" type="radio" value="new"/>
@@ -1499,7 +1530,7 @@
               </p>
             </div>
             <div id="sparepart-account-wrapper">
-              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label>
+              <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="sparepart-account-label">Payment Account</label>
               <select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-account"></select>
             </div>
             <button class="w-full bg-blue-600 text-white font-bold p-3 rounded-xl hover:bg-blue-700 transition" type="submit">Register Spare Part</button>
@@ -2316,6 +2347,20 @@
           </button>
         </div>
       </form>
+    </div>
+
+    <!-- UNHIDE ITEMS MODAL -->
+    <div class="hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl relative text-slate-900 dark:text-white" id="unhide-items-modal">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+        <h4 class="text-base font-black flex items-center gap-2">
+          <span>📦</span> Hidden Items Manager
+        </h4>
+        <button class="text-slate-404 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none" onclick="window.closeModal()" type="button">&times;</button>
+      </div>
+      <p class="text-xs text-slate-404 mt-2">Restore hidden inventory batches, medicines, or spare parts back to active registers.</p>
+      <div class="space-y-3 pt-3 max-h-96 overflow-y-auto custom-scrollbar" id="unhide-items-list">
+        <!-- Rendered by window.openUnhideItemsModal() -->
+      </div>
     </div>
   </div>
 
