@@ -403,20 +403,25 @@
     }
   };
 
-  window.logAutomaticExpense = function(name, totalCost, category) {
+  window.logAutomaticExpense = function(name, totalCost, category, accountId = '', subcategory = '') {
     const today = new Date().toISOString().split('T')[0];
+    const icon = window.getCategoryIcon ? window.getCategoryIcon(category) : '🏷️';
     const autoExpense = {
       id: 'exp_auto_' + Date.now() + Math.random().toString(36).substr(2, 4),
       date: today,
       category: category,
+      subcategory: subcategory || (category === 'Transportation' ? 'Vehicle Maintenance' : ''),
+      icon: icon,
       amount: parseFloat(totalCost),
       description: `Purchase: ${name}`,
-      type: 'expense'
+      type: 'expense',
+      accountId: accountId || ''
     };
     window._lastAddedTxnId = autoExpense.id;
+    if (!Array.isArray(window.transactions)) window.transactions = [];
     window.transactions.push(autoExpense);
     window.saveTransactionsDatabase();
-    window.triggerToast(`Auto-Expense compiled: EGP ${totalCost.toFixed(2)} successfully logged to ${category}!`, "info");
+    window.triggerToast(`Auto-Expense compiled: EGP ${Number(totalCost).toFixed(2)} successfully logged to ${category}!`, "info");
   };
 
   const RENT_EXPENSE_ALLOCATION = { pct: 35, color: "#8b5cf6" };
@@ -564,7 +569,7 @@
     "Tobacco": ["Cigarettes", "Vape / Pods", "Tobacco Supplies"],
     "Pet Supplies": ["Pet Food", "Veterinary Care", "Medications & Grooming", "Pet Toys & Gear"],
     "Medical": ["Prescription Drugs", "Doctor Consultation", "Lab & Diagnostics", "Dental Care", "Health Insurance"],
-    "Transportation": ["Fuel & Petrol", "Public Transit / Metro", "Ride Hailing (Uber/Careem)", "Parking & Tolls", "Vehicle Repairs & Wash"],
+    "Transportation": ["Vehicle Maintenance", "Fuel & Petrol", "Vehicle Repairs & Wash", "Public Transit / Metro", "Ride Hailing (Uber/Careem)", "Parking & Tolls"],
     "Subscriptions": ["Software / SaaS", "Cloud Storage", "Gym & Fitness", "News & Subscriptions"],
     "Education": ["Tuition Fees", "Books & Study Supplies", "Courses & Certifications"],
     "Savings / Investments": ["Emergency Reserve", "Stocks & Index Funds", "Gold & Metals", "Retirement Pool"],
@@ -1320,9 +1325,11 @@
     localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
 
     if (isNew && rawPrice > 0) {
-      const expenseCat = type === 'vehicle-spare-part' ? 'Vehicle Maintenance' : 'Home Repairs & Maintenance';
+      const isVehiclePart = (type === 'vehicle-spare-part');
+      const expenseCat = isVehiclePart ? 'Transportation' : 'Others';
+      const expenseSubcat = isVehiclePart ? 'Vehicle Maintenance' : 'Residential Maintenance';
       const totalCost = rawQty * (style === 'pack' ? rawPrice : price);
-      window.logAutomaticExpense(`${name} (Spare Part)`, totalCost, expenseCat, accountId);
+      window.logAutomaticExpense(`${name} (Spare Part)`, totalCost, expenseCat, accountId, expenseSubcat);
     }
 
     if (typeof window.triggerToast === 'function') {

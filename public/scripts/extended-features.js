@@ -735,34 +735,52 @@
   };
 
   window.syncMaintenanceHistoryToLedgerAndStock = function() {
-    if (!Array.isArray(maint) || maint.length === 0) return;
     if (!Array.isArray(window.transactions)) window.transactions = [];
     let changed = false;
-    maint.forEach(m => {
-      const total = Number(m.totalCost || 0);
-      if (total <= 0) return;
-      const expectedTxnId = m.txnId || ('exp_mnt_' + m.id);
-      const exists = window.transactions.some(t => t.id === expectedTxnId || t.refId === m.id);
-      if (!exists) {
-        const v = vget(m.vehicleId);
-        const vTitle = v ? `${v.make} ${v.model} (${v.plate})` : 'Fleet Vehicle';
-        window.transactions.unshift({
-          id: expectedTxnId,
-          date: m.date || new Date().toISOString().slice(0, 10),
-          category: 'Vehicle Maintenance',
-          subcategory: 'Repairs & Spare Parts',
-          icon: '🔧',
-          amount: parseFloat(total.toFixed(2)),
-          description: `Vehicle Maintenance: ${vTitle} — ${m.description || 'Service'}`,
-          type: 'expense',
-          accountId: m.accountId || 'acc_general',
-          refType: 'maintenance',
-          refId: m.id
-        });
-        m.txnId = expectedTxnId;
+
+    // Migrate any existing maintenance transactions to Transportation / Vehicle Maintenance
+    window.transactions.forEach(t => {
+      if (t.refType === 'maintenance' || t.category === 'Vehicle Maintenance') {
+        t.category = 'Transportation';
+        t.subcategory = 'Vehicle Maintenance';
+        t.icon = '🚗';
         changed = true;
       }
     });
+
+    if (Array.isArray(maint)) {
+      maint.forEach(m => {
+        const total = Number(m.totalCost || 0);
+        if (total <= 0) return;
+        const expectedTxnId = m.txnId || ('exp_mnt_' + m.id);
+        const existingTxn = window.transactions.find(t => t.id === expectedTxnId || t.refId === m.id);
+        if (!existingTxn) {
+          const v = vget(m.vehicleId);
+          const vTitle = v ? `${v.make} ${v.model} (${v.plate})` : 'Fleet Vehicle';
+          window.transactions.unshift({
+            id: expectedTxnId,
+            date: m.date || new Date().toISOString().slice(0, 10),
+            category: 'Transportation',
+            subcategory: 'Vehicle Maintenance',
+            icon: '🚗',
+            amount: parseFloat(total.toFixed(2)),
+            description: `Vehicle Maintenance: ${vTitle} — ${m.description || 'Service'}`,
+            type: 'expense',
+            accountId: m.accountId || 'acc_general',
+            refType: 'maintenance',
+            refId: m.id
+          });
+          m.txnId = expectedTxnId;
+          changed = true;
+        } else if (existingTxn.category !== 'Transportation' || existingTxn.subcategory !== 'Vehicle Maintenance') {
+          existingTxn.category = 'Transportation';
+          existingTxn.subcategory = 'Vehicle Maintenance';
+          existingTxn.icon = '🚗';
+          changed = true;
+        }
+      });
+    }
+
     if (changed) {
       save();
       if (typeof window.saveTransactionsDatabase === 'function') window.saveTransactionsDatabase();
@@ -812,15 +830,15 @@
       v.nextMaintenanceOdometer=nextMaintOd;
     }
 
-    // Direct synchronization to window.transactions
+    // Direct synchronization to window.transactions under Transportation / Vehicle Maintenance
     if(total>0){
       if(!Array.isArray(window.transactions)) window.transactions=[];
       window.transactions.unshift({
         id: txnId,
         date: date,
-        category: 'Vehicle Maintenance',
-        subcategory: 'Repairs & Spare Parts',
-        icon: '🔧',
+        category: 'Transportation',
+        subcategory: 'Vehicle Maintenance',
+        icon: '🚗',
         amount: parseFloat(total.toFixed(2)),
         description: `Vehicle Maintenance: ${v.make} ${v.model} (${v.plate}) — ${desc}`,
         type: 'expense',
@@ -939,6 +957,82 @@
     if(fml)fml.textContent=money(maint.reduce((s,x)=>s+Number(x.laborCost||0),0));
     if(fmp)fmp.textContent=money(maint.reduce((s,x)=>s+Number(x.partsCost||0),0));
     if(fp)fp.textContent=money(parts().reduce((s,p)=>s+Number(p.quantity||0)*Number(p.price||0),0));
+
+    // Vehicle Maintenance Health Widget Rendering
+    const healthContainer = document.getElementById('vehicle-health-cards-container');
+    const healthSummaryCount = document.getElementById('vehicle-health-summary-count');
+    if (healthContainer) {
+      if (healthSummaryCount) healthSummaryCount.textContent = `${vehicles.length} vehicle${vehicles.length === 1 ? '' : 's'} tracked`;
+      if (!vehicles.length) {
+        healthContainer.innerHTML = '<div class="col-span-full py-6 text-center text-xs text-slate-404">No vehicles registered yet. Register a vehicle to monitor maintenance health.</div>';
+      } else {
+        healthContainer.innerHTML = vehicles.map(v => {
+          const currentOdo = Number(v.odometer || 0);
+          const nextOdo = Number(v.nextMaintenanceOdometer || 0);
+          const vehicleHistory = maint.filter(m => m.vehicleId === v.id).sort((a,b) => new Date(b.date) - new Date(a.date) || Number(b.odometer || 0) - Number(a.odometer || 0));
+          const lastRecord = vehicleHistory[0];
+          const lastOdo = lastRecord ? Number(lastRecord.odometer || 0) : Math.max(0, nextOdo > 0 ? (nextOdo - 10000) : 0);
+
+          let pct = 0;
+          let barColor = 'bg-blue-600';
+          let statusBadge = '';
+          let statusDesc = '';
+
+          if (nextOdo > 0) {
+            const span = Math.max(1, nextOdo - lastOdo);
+            const elapsed = Math.max(0, currentOdo - lastOdo);
+            const remaining = nextOdo - currentOdo;
+            pct = Math.min(100, Math.max(0, (elapsed / span) * 100));
+
+            if (remaining <= 0) {
+              pct = 100;
+              barColor = 'bg-rose-500';
+              statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">Overdue</span>`;
+              statusDesc = `<span class="text-rose-600 dark:text-rose-400 font-extrabold text-[11px]">${Math.abs(remaining).toFixed(1)} km overdue</span>`;
+            } else if (remaining <= 500) {
+              barColor = 'bg-amber-500';
+              statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Due Soon</span>`;
+              statusDesc = `<span class="text-amber-600 dark:text-amber-400 font-extrabold text-[11px]">${remaining.toFixed(1)} km left</span>`;
+            } else {
+              barColor = pct > 75 ? 'bg-amber-500' : 'bg-emerald-500';
+              statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Healthy</span>`;
+              statusDesc = `<span class="text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">${remaining.toFixed(1)} km remaining</span>`;
+            }
+          } else {
+            statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">Unscheduled</span>`;
+            statusDesc = `<button type="button" onclick="editVehicle('${esc(v.id)}')" class="text-blue-600 hover:underline font-bold text-xs">Set next odometer</button>`;
+          }
+
+          return `
+            <div class="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-3">
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <div class="font-extrabold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>🚗</span> ${esc(v.make)} ${esc(v.model)}
+                  </div>
+                  <div class="text-[10px] text-slate-404 font-semibold mt-0.5">${esc(v.plate)} • ${esc(v.year)}</div>
+                </div>
+                ${statusBadge}
+              </div>
+
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between text-[11px] font-semibold">
+                  <span class="text-slate-500 dark:text-slate-400">Current: <strong class="text-slate-800 dark:text-slate-200">${currentOdo.toFixed(1)} km</strong></span>
+                  <span class="text-slate-500 dark:text-slate-400">Next: <strong class="text-slate-800 dark:text-slate-200">${nextOdo > 0 ? nextOdo.toFixed(1) + ' km' : 'None'}</strong></span>
+                </div>
+                <div class="w-full bg-slate-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                  <div class="${barColor} h-full rounded-full transition-all duration-300" style="width: ${pct.toFixed(1)}%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px]">
+                  <span class="text-slate-404 font-medium">${nextOdo > 0 ? `${pct.toFixed(0)}% of interval reached` : 'No interval target'}</span>
+                  <div>${statusDesc}</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
 
     window.updateVehiclePartsTotal();
   };
