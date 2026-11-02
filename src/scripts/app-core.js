@@ -1282,6 +1282,7 @@
     const threshold = parseFloat(document.getElementById('sparepart-threshold').value) || 1;
     const alertMethod = document.getElementById('sparepart-alert-method')?.value || 'loose';
     const sku = document.getElementById('sparepart-sku')?.value.trim() || '';
+    const lifespan = parseFloat(document.getElementById('sparepart-lifespan')?.value) || 0;
     const prodDate = document.getElementById('sparepart-prod-date')?.value || new Date().toISOString().split('T')[0];
     const expDate = document.getElementById('sparepart-exp-date')?.value || '';
     const isNew = document.querySelector('input[name="sparepart-origin"]:checked')?.value === 'new';
@@ -1312,6 +1313,7 @@
       price,
       threshold,
       sku,
+      lifespan,
       expDate,
       prodDate,
       alertMethod,
@@ -2370,6 +2372,7 @@
               <div class="flex flex-wrap items-center gap-2 mt-1">
                 <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${typLabel}</span>
                 ${p.sku ? `<span class="text-[9px] font-mono text-slate-400">SKU: ${p.sku}</span>` : ''}
+                ${p.lifespan ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300">⏱️ Lifespan: ${Number(p.lifespan).toLocaleString()} km</span>` : ''}
                 ${p.targetVehicleOrUnit ? `<span class="text-[9px] text-blue-600 dark:text-blue-400 truncate max-w-[140px]">${p.targetVehicleOrUnit}</span>` : ''}
               </div>
             </div>

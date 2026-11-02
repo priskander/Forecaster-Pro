@@ -1494,6 +1494,12 @@
                 <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-sku" placeholder="E.g., BOSCH-0986" type="text"/>
               </div>
               <div>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Expected Lifespan (km)</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-lifespan" placeholder="E.g., 10000" min="0" step="100" type="number"/>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
                 <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Alert Replenishment Method</label>
                 <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="sparepart-alert-method">
                   <option value="loose">By Remaining Units / Pieces</option>
@@ -1501,7 +1507,6 @@
                   <option value="smart">Intelligent Curve (Alert if buffer &lt; Min)</option>
                 </select>
               </div>
-            </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Acquisition / Purchase Date</label>
@@ -1790,11 +1795,15 @@
               <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Vehicle</label><select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-vehicle" required=""></select></div>
               <div class="grid grid-cols-2 gap-3">
                 <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Date</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="vehicle-maint-date" required="" type="date"/></div>
-                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Current Odometer (km)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-odometer" min="0" required="" step="0.1" type="number"/></div>
+                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Current Odometer (km)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-odometer" min="0" oninput="window.updateCalculatedNextMaintenanceOdo()" required="" step="0.1" type="number"/></div>
               </div>
               <div class="grid grid-cols-2 gap-3">
                 <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Labor Cost (EGP)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-labor" min="0" required="" step="0.01" type="number" value="0"/></div>
-                <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Next Maintenance Odo (km)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-next-odometer" min="0" placeholder="e.g. 55000" step="0.1" type="number"/></div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Next Maintenance Odo (km)</label>
+                  <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-next-odometer" min="0" placeholder="e.g. 55000" step="0.1" type="number"/>
+                  <span id="vehicle-maint-next-odo-hint" class="text-[10px] text-blue-600 dark:text-blue-400 font-semibold block mt-1 hidden"></span>
+                </div>
               </div>
               <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label><select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-maint-account"></select></div>
               <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Service Details</label><textarea class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-medium" id="vehicle-maint-description" placeholder="Work done..." required="" rows="2"></textarea></div>

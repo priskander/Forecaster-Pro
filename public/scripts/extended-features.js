@@ -664,11 +664,56 @@
       partsCost: 850,
       totalCost: 1300,
       parts: [
-        { partId: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', quantity: 1, unit: 'bottle', unitCost: 650 },
-        { partId: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', quantity: 1, unit: 'pcs', unitCost: 200 }
+        { partId: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', quantity: 1, unit: 'bottle', unitCost: 650, lifespan: 10000 },
+        { partId: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', quantity: 1, unit: 'pcs', unitCost: 200, lifespan: 10000 }
       ],
       accountId: 'acc_general',
       txnId: 'exp_mnt_mnt_toyota_40k'
+    }
+  ];
+
+  const SEED_PARTS = [
+    {
+      id: 'part_engine_oil',
+      name: 'Synthetic Motor Oil 5W-30',
+      itemType: 'vehicle-spare-part',
+      category: 'Spare Parts',
+      targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)',
+      quantity: 5,
+      unit: 'bottle',
+      price: 650,
+      threshold: 2,
+      lifespan: 10000,
+      sku: 'OIL-SYN-5W30',
+      consumptionLogs: []
+    },
+    {
+      id: 'part_oil_filter',
+      name: 'OEM Oil Filter Cartridge',
+      itemType: 'vehicle-spare-part',
+      category: 'Spare Parts',
+      targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)',
+      quantity: 4,
+      unit: 'pcs',
+      price: 200,
+      threshold: 1,
+      lifespan: 10000,
+      sku: 'FLT-OEM-123',
+      consumptionLogs: []
+    },
+    {
+      id: 'part_brake_pads',
+      name: 'Front Ceramic Brake Pads',
+      itemType: 'vehicle-spare-part',
+      category: 'Spare Parts',
+      targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)',
+      quantity: 2,
+      unit: 'set',
+      price: 850,
+      threshold: 1,
+      lifespan: 40000,
+      sku: 'BRK-CER-F',
+      consumptionLogs: []
     }
   ];
 
@@ -703,6 +748,18 @@
         if (!maint.some(m => m.id === sm.id)) maint.push(JSON.parse(JSON.stringify(sm)));
       });
     }
+
+    // Ensure spare parts with lifespans are populated in stockData
+    if (!Array.isArray(window.stockData)) window.stockData = [];
+    SEED_PARTS.forEach(sp => {
+      const existing = window.stockData.find(p => p.id === sp.id || (p.name && p.name.toLowerCase() === sp.name.toLowerCase()));
+      if (!existing) {
+        window.stockData.push(JSON.parse(JSON.stringify(sp)));
+      } else if (!existing.lifespan) {
+        existing.lifespan = sp.lifespan;
+      }
+    });
+    localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
 
     save();
 
@@ -767,6 +824,13 @@
     try{maint=JSON.parse(localStorage.getItem(VMN)||'[]')}catch(e){maint=[]}
     if (vehicles.length === 0) {
       window.restoreRegisteredVehicles(false);
+    } else if (Array.isArray(window.stockData)) {
+      SEED_PARTS.forEach(sp => {
+        const existing = window.stockData.find(p => p.id === sp.id || (p.name && p.name.toLowerCase() === sp.name.toLowerCase()));
+        if (existing && !existing.lifespan) {
+          existing.lifespan = sp.lifespan;
+        }
+      });
     }
   };
   window.loadVehicleDatabase = load;
@@ -775,18 +839,108 @@
   const nowInput=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};
   const today=()=>new Date().toISOString().slice(0,10);
 
-  function populateVehicles(){['vehicle-fuel-vehicle','vehicle-maint-vehicle'].forEach(id=>{const el=document.getElementById(id);if(!el)return;const old=el.value;el.innerHTML='<option value="">Select vehicle...</option>'+vehicles.map(v=>`<option value="${esc(v.id)}">${esc(v.make)} ${esc(v.model)} • ${esc(v.plate)}</option>`).join('');if(old&&vget(old))el.value=old})}
-  function populatePartSelect(el){if(!el)return;const old=el.value;el.innerHTML='<option value="">Select spare part...</option>'+parts().map(p=>`<option value="${esc(p.id)}">${esc(p.name)} • ${Number(p.quantity||0)} ${esc(p.unit||'units')} @ ${money(p.price)}</option>`).join('');if(old&&pget(old))el.value=old}
+  function populateVehicles(){
+    ['vehicle-fuel-vehicle','vehicle-maint-vehicle'].forEach(id=>{
+      const el=document.getElementById(id);if(!el)return;
+      const old=el.value;
+      el.innerHTML='<option value="">Select vehicle...</option>'+vehicles.map(v=>`<option value="${esc(v.id)}">${esc(v.make)} ${esc(v.model)} • ${esc(v.plate)}</option>`).join('');
+      if(old&&vget(old))el.value=old;
+    });
+    const mv=document.getElementById('vehicle-maint-vehicle');
+    if(mv&&!mv._hasAutoOdo){
+      mv._hasAutoOdo=true;
+      mv.addEventListener('change',function(){
+        const v=vget(this.value);
+        if(v){
+          const odEl=document.getElementById('vehicle-maint-odometer');
+          if(odEl && (!odEl.value || parseFloat(odEl.value) <= 0)) odEl.value=v.odometer||0;
+          window.updateCalculatedNextMaintenanceOdo();
+        }
+      });
+    }
+  }
+
+  function populatePartSelect(el){
+    if(!el)return;
+    const old=el.value;
+    el.innerHTML='<option value="">Select spare part...</option>'+parts().map(p=>{
+      const ls=Number(p.lifespan||0)>0?` • Lifespan: ${Number(p.lifespan).toLocaleString()} km`:'';
+      return `<option value="${esc(p.id)}">${esc(p.name)} • ${Number(p.quantity||0)} ${esc(p.unit||'units')} @ ${money(p.price)}${ls}</option>`;
+    }).join('');
+    if(old&&pget(old))el.value=old;
+  }
+
   function refreshParts(){document.querySelectorAll('.vehicle-part-select').forEach(populatePartSelect);}
+
+  window.updateVehiclePartRowLifespan = function(row) {
+    if(!row) return;
+    const select = row.querySelector('.vehicle-part-select');
+    const badge = row.querySelector('.part-lifespan-badge');
+    if(!select || !badge) return;
+    const p = pget(select.value);
+    const ls = Number(p?.lifespan || 0);
+    if(p && ls > 0){
+      badge.textContent = `⏱️ Lifespan: +${ls.toLocaleString()} km`;
+      badge.classList.remove('hidden');
+    } else {
+      badge.textContent = '';
+      badge.classList.add('hidden');
+    }
+  };
+
+  window.updateCalculatedNextMaintenanceOdo = function() {
+    const curOdoInput = document.getElementById('vehicle-maint-odometer');
+    const nextOdoInput = document.getElementById('vehicle-maint-next-odometer');
+    const hintEl = document.getElementById('vehicle-maint-next-odo-hint');
+    if (!curOdoInput || !nextOdoInput) return;
+
+    let curOdo = parseFloat(curOdoInput.value);
+    if (!Number.isFinite(curOdo) || curOdo <= 0) {
+      const vId = document.getElementById('vehicle-maint-vehicle')?.value;
+      const v = vget(vId);
+      if (v && Number(v.odometer || 0) > 0) {
+        curOdo = Number(v.odometer);
+      }
+    }
+
+    const rows = document.querySelectorAll('#vehicle-maint-parts .vehicle-part-row');
+    const lifespans = [];
+    rows.forEach(r => {
+      const select = r.querySelector('.vehicle-part-select');
+      const p = pget(select?.value);
+      if (p && Number(p.lifespan || 0) > 0) {
+        lifespans.push(Number(p.lifespan));
+      }
+    });
+
+    if (lifespans.length > 0 && Number.isFinite(curOdo) && curOdo >= 0) {
+      const minLifespan = Math.min(...lifespans);
+      const calculated = curOdo + minLifespan;
+      nextOdoInput.value = calculated;
+      if (hintEl) {
+        hintEl.textContent = `⚡ Next service auto-calculated: ${curOdo.toLocaleString()} km (Current) + ${minLifespan.toLocaleString()} km (Lifespan) = ${calculated.toLocaleString()} km`;
+        hintEl.classList.remove('hidden');
+      }
+    } else if (hintEl) {
+      hintEl.classList.add('hidden');
+    }
+  };
 
   window.addVehiclePartRow=function(){
     const box=document.getElementById('vehicle-maint-parts');if(!box)return;
-    const row=document.createElement('div');row.className='vehicle-part-row';
-    row.innerHTML='<div><label class="block text-[9px] font-bold text-slate-404 mb-1">Part</label><select class="vehicle-part-select w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-semibold"></select></div><div><label class="block text-[9px] font-bold text-slate-404 mb-1">Qty</label><input type="number" min="0.01" step="0.01" value="1" class="vehicle-part-qty w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-semibold"></div><button type="button" class="h-[34px] bg-slate-100 text-slate-600 rounded-xl font-black" onclick="this.closest(\'.vehicle-part-row\').remove();updateVehiclePartsTotal()">×</button>';
+    const row=document.createElement('div');row.className='vehicle-part-row flex items-start gap-2';
+    row.innerHTML='<div class="flex-1 min-w-0"><div class="flex items-center justify-between mb-1"><label class="block text-[9px] font-bold text-slate-404">Part</label><span class="part-lifespan-badge text-[10px] text-blue-600 dark:text-blue-400 font-bold hidden"></span></div><select class="vehicle-part-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-semibold"></select></div><div class="w-20"><label class="block text-[9px] font-bold text-slate-404 mb-1">Qty</label><input type="number" min="0.01" step="0.01" value="1" class="vehicle-part-qty w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-semibold"></div><button type="button" class="h-[34px] self-end bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-black px-2.5" onclick="this.closest(\'.vehicle-part-row\').remove();updateVehiclePartsTotal();updateCalculatedNextMaintenanceOdo();">×</button>';
     box.appendChild(row);
-    populatePartSelect(row.querySelector('select'));
-    row.querySelector('select').addEventListener('change',window.updateVehiclePartsTotal);
-    row.querySelector('input').addEventListener('input',window.updateVehiclePartsTotal);
+    const sel=row.querySelector('select');
+    populatePartSelect(sel);
+    sel.addEventListener('change',()=>{
+      window.updateVehiclePartsTotal();
+      window.updateVehiclePartRowLifespan(row);
+      window.updateCalculatedNextMaintenanceOdo();
+    });
+    row.querySelector('input').addEventListener('input',()=>{
+      window.updateVehiclePartsTotal();
+    });
     window.updateVehiclePartsTotal();
   };
 
@@ -1017,7 +1171,7 @@
       const p=pget(id),q=aggregate[id];
       if(!p){if (typeof window.triggerToast === 'function') window.triggerToast('Spare part missing.','error');return}
       if(q>Number(p.quantity||0)){if (typeof window.triggerToast === 'function') window.triggerToast(`Insufficient stock for ${p.name}.`,'error');return}
-      used.push({partId:id,name:p.name,quantity:q,unit:p.unit||'units',unitCost:Number(p.price||0)});
+      used.push({partId:id,name:p.name,quantity:q,unit:p.unit||'units',unitCost:Number(p.price||0),lifespan:Number(p.lifespan||0)});
       partsCost+=q*Number(p.price||0);
     }
 
@@ -1160,7 +1314,12 @@
 
     if(mb){
       mb.innerHTML=filteredMaint.slice(0,100).map(x=>{
-        const v=vget(x.vehicleId),plist=(x.parts||[]).map(p=>`${esc(p.name)} × ${p.quantity}`).join(', ')||'None';
+        const v=vget(x.vehicleId);
+        const plist=(x.parts||[]).map(p=>{
+          const pRecord = pget(p.partId);
+          const ls = Number(p.lifespan || (pRecord && pRecord.lifespan) || 0);
+          return `${esc(p.name)} × ${p.quantity}${ls > 0 ? ` <span class="text-blue-600 dark:text-blue-400 font-bold">(Lifespan: +${ls.toLocaleString()} km)</span>` : ''}`;
+        }).join(', ')||'None';
         return `<tr><td class="py-3 px-2">${esc(x.date)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2"><div class="font-semibold">${esc(x.description)}</div><div class="text-[9px] text-slate-404 mt-1">Labor ${money(x.laborCost)} • ${plist}</div></td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2 text-right">${money(x.laborCost)}</td><td class="py-3 px-2 text-right">${money(x.partsCost)}</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(x.totalCost)}</td><td class="py-3 px-2 text-center"><button onclick="deleteVehicleMaintenance('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button></td></tr>`;
       }).join('')||'<tr><td colspan="8" class="py-8 text-center text-xs text-slate-404">No maintenance records found.</td></tr>';
     }
