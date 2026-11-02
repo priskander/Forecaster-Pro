@@ -594,12 +594,17 @@
   window.renderRentalManagement = renderRentalManagement;
   window.loadRentalDatabase = loadRentalDatabase;
 
-  window.addEventListener('DOMContentLoaded', function () {
+  function initRentals() {
     loadRentalDatabase();
     renderRentalManagement();
     updateRentalAutomationStatus();
     runRentalAutomation(false);
-  });
+  }
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', initRentals);
+  } else {
+    initRentals();
+  }
 })();
 
 /* ----------------------------------------------------------------------------
@@ -720,7 +725,7 @@
   const save=()=>{localStorage.setItem(VDB,JSON.stringify(vehicles));localStorage.setItem(VFU,JSON.stringify(fuels));localStorage.setItem(VMN,JSON.stringify(maint))};
   const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const money=v=>`EGP ${Number(v||0).toFixed(2)}`;
-  const vget=id=>vehicles.find(v=>v.id===id);
+  const vget=id=>Array.isArray(vehicles)?vehicles.find(v=>v&&v.id===id):null;
 
   window.restoreRegisteredVehicles = function(force = false) {
     if (!force && vehicles && vehicles.length > 0) return false;
@@ -1278,198 +1283,203 @@
   };
 
   window.renderVehicleManagement=function(){
-    if (!vehicles || vehicles.length === 0) {
-      load();
-    }
-    populateVehicles();
-    refreshParts();
-    window.syncMaintenanceHistoryToLedgerAndStock();
-
-    const search=(document.getElementById('vehicle-search')?.value||'').toLowerCase();
-    const vb=document.getElementById('vehicle-register-body');
-    if(vb){
-      const rows=(vehicles||[]).filter(v=>v && `${v.make||''} ${v.model||''} ${v.plate||''} ${v.year||''}`.toLowerCase().includes(search));
-      vb.innerHTML=rows.length?rows.map(v=>{
-        const nextOdoVal=Number(v.nextMaintenanceOdometer||0);
-        let nextOdoBadge='';
-        if(nextOdoVal>0){
-          const remaining=nextOdoVal-Number(v.odometer||0);
-          if(remaining<=0){
-            nextOdoBadge=`<div class="font-bold text-rose-600 dark:text-rose-400">${nextOdoVal.toFixed(1)} km</div><span class="inline-block mt-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">Overdue by ${Math.abs(remaining).toFixed(0)} km</span>`;
-          }else if(remaining<=500){
-            nextOdoBadge=`<div class="font-bold text-amber-600 dark:text-amber-400">${nextOdoVal.toFixed(1)} km</div><span class="inline-block mt-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Due in ${remaining.toFixed(0)} km</span>`;
-          }else{
-            nextOdoBadge=`<div class="font-bold text-slate-800 dark:text-slate-200">${nextOdoVal.toFixed(1)} km</div><span class="inline-block mt-0.5 text-[9px] font-semibold text-slate-404">in ${remaining.toFixed(0)} km</span>`;
-          }
-        }else{
-          nextOdoBadge=`<span class="text-slate-404 text-[11px] italic">Not set</span>`;
-        }
-        return `<tr class="vehicle-register-row"><td class="py-3 px-2"><div class="font-bold text-slate-900 dark:text-white">${esc(v.make)} ${esc(v.model)}</div><div class="text-[10px] text-slate-404">${esc(v.id)}</div></td><td class="py-3 px-2 font-semibold">${esc(v.plate)}</td><td class="py-3 px-2 font-bold">${Number(v.odometer||0).toFixed(1)} km</td><td class="py-3 px-2">${nextOdoBadge}</td><td class="py-3 px-2">${esc(v.year)}</td><td class="py-3 px-2 text-center"><button onclick="editVehicle('${esc(v.id)}')" class="text-[10px] text-blue-600 font-bold">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicle('${esc(v.id)}')" class="text-[10px] text-rose-600 font-bold">Delete</button></td></tr>`;
-      }).join(''):'<tr><td colspan="6" class="py-8 text-center text-xs text-slate-404">No vehicles registered yet.</td></tr>';
-    }
-
-    // 1. Maintenance History Table
-    const mb=document.getElementById('vehicle-maint-body');
-    const filteredMaint = search ? (maint||[]).filter(x => {
-      if (!x) return false;
-      const v = vget(x.vehicleId);
-      return `${x.date||''} ${x.description||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`.toLowerCase().includes(search);
-    }) : (maint||[]).filter(Boolean);
-
-    if(mb){
-      mb.innerHTML=filteredMaint.slice(0,100).map(x=>{
-        const v=vget(x.vehicleId);
-        const plist=(x.parts||[]).filter(Boolean).map(p=>{
-          const pRecord = pget(p.partId);
-          const ls = Number(p.lifespan || (pRecord && pRecord.lifespan) || 0);
-          return `${esc(p.name)} × ${p.quantity}${ls > 0 ? ` <span class="text-blue-600 dark:text-blue-400 font-bold">(Lifespan: +${ls.toLocaleString()} km)</span>` : ''}`;
-        }).join(', ')||'None';
-        return `<tr><td class="py-3 px-2">${esc(x.date)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2"><div class="font-semibold">${esc(x.description)}</div><div class="text-[9px] text-slate-404 mt-1">Labor ${money(x.laborCost)} • ${plist}</div></td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2 text-right">${money(x.laborCost)}</td><td class="py-3 px-2 text-right">${money(x.partsCost)}</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(x.totalCost)}</td><td class="py-3 px-2 text-center"><button onclick="deleteVehicleMaintenance('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button></td></tr>`;
-      }).join('')||'<tr><td colspan="8" class="py-8 text-center text-xs text-slate-404">No maintenance records found.</td></tr>';
-    }
-
-    // 2. Fueling History Table
-    const fb=document.getElementById('vehicle-fuel-body');
-    const filteredFuels = search ? (fuels||[]).filter(x => {
-      if (!x) return false;
-      const v = vget(x.vehicleId);
-      return `${x.dateTime||''} ${x.notes||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`.toLowerCase().includes(search);
-    }) : (fuels||[]).filter(Boolean);
-
-    if(fb){
-      fb.innerHTML=filteredFuels.slice(0,100).map(x=>{
-        const v=vget(x.vehicleId);
-        const dtStr = x.dateTime ? String(x.dateTime).replace('T', ' ') : 'N/A';
-        const acc = (window.accounts || []).find(a => a && a.id === x.accountId);
-        const accLabel = acc ? acc.label : (x.accountId || 'General');
-        return `<tr><td class="py-3 px-2 font-semibold text-slate-600 dark:text-slate-300">${esc(dtStr)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2 text-right font-bold text-blue-600">${Number(x.liters||0).toFixed(2)} L</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(x.cost)}</td><td class="py-3 px-2 text-slate-500">${esc(accLabel)}</td><td class="py-3 px-2 text-slate-500 italic">${esc(x.notes||'—')}</td><td class="py-3 px-2 text-center whitespace-nowrap"><button onclick="editVehicleFuel('${esc(x.id)}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicleFuel('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button></td></tr>`;
-      }).join('')||'<tr><td colspan="8" class="py-8 text-center text-xs text-slate-404">No fueling records found.</td></tr>';
-    }
-
-    // 3. Combined Activity Timeline Table
-    const ab=document.getElementById('vehicle-all-history-body');
-    if(ab){
-      const combined = [
-        ...(maint||[]).filter(Boolean).map(m => ({ ...m, _type: 'maintenance', _sortDate: m.date || '' })),
-        ...(fuels||[]).filter(Boolean).map(f => ({ ...f, _type: 'fuel', _sortDate: (f.dateTime ? String(f.dateTime).slice(0,10) : '') }))
-      ].sort((a,b) => (b._sortDate || '').localeCompare(a._sortDate || '') || (Number(b.odometer||0) - Number(a.odometer||0)));
-
-      const filteredCombined = search ? combined.filter(x => {
-        const v = vget(x.vehicleId);
-        const txt = `${x._sortDate||''} ${x.description||''} ${x.notes||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`;
-        return txt.toLowerCase().includes(search);
-      }) : combined;
-
-      ab.innerHTML=filteredCombined.slice(0,100).map(x=>{
-        const v=vget(x.vehicleId);
-        const isMaint = x._type === 'maintenance';
-        const typeBadge = isMaint
-          ? '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">🔧 Maintenance</span>'
-          : '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">⛽ Fueling</span>';
-        const details = isMaint
-          ? esc(x.description || 'Service')
-          : `${Number(x.liters||0).toFixed(2)} Liters ${x.notes ? `• ${esc(x.notes)}` : ''}`;
-        const amt = isMaint ? Number(x.totalCost || 0) : Number(x.cost || 0);
-        const actionBtn = isMaint
-          ? `<button onclick="deleteVehicleMaintenance('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button>`
-          : `<button onclick="editVehicleFuel('${esc(x.id)}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicleFuel('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button>`;
-
-        return `<tr><td class="py-3 px-2">${esc(x._sortDate)}</td><td class="py-3 px-2">${typeBadge}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2">${details}</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(amt)}</td><td class="py-3 px-2 text-center whitespace-nowrap">${actionBtn}</td></tr>`;
-      }).join('')||'<tr><td colspan="7" class="py-8 text-center text-xs text-slate-404">No vehicle activity records found.</td></tr>';
-    }
-
-    // Counts
-    const cm = document.getElementById('vh-count-maint');
-    const cf = document.getElementById('vh-count-fuel');
-    const ca = document.getElementById('vh-count-all');
-    if (cm) cm.textContent = maint.length;
-    if (cf) cf.textContent = fuels.length;
-    if (ca) ca.textContent = maint.length + fuels.length;
-
-    const fc=document.getElementById('vehicle-kpi-count'),ff=document.getElementById('vehicle-kpi-fuel'),fml=document.getElementById('vehicle-kpi-maint-labor'),fmp=document.getElementById('vehicle-kpi-maint-parts'),fp=document.getElementById('vehicle-kpi-parts');
-    if(fc)fc.textContent=vehicles.length;
-    if(ff)ff.textContent=money(fuels.reduce((s,x)=>s+Number(x.cost||0),0));
-    if(fml)fml.textContent=money(maint.reduce((s,x)=>s+Number(x.laborCost||0),0));
-    if(fmp)fmp.textContent=money(maint.reduce((s,x)=>s+Number(x.partsCost||0),0));
-    if(fp)fp.textContent=money(parts().reduce((s,p)=>s+Number(p.quantity||0)*Number(p.price||0),0));
-
-    // Vehicle Maintenance Health Widget Rendering
-    const healthContainer = document.getElementById('vehicle-health-cards-container');
-    const healthSummaryCount = document.getElementById('vehicle-health-summary-count');
-    if (healthContainer) {
-      if (healthSummaryCount) healthSummaryCount.textContent = `${vehicles.length} vehicle${vehicles.length === 1 ? '' : 's'} tracked`;
-      if (!vehicles.length) {
-        healthContainer.innerHTML = '<div class="col-span-full py-6 text-center text-xs text-slate-404">No vehicles registered yet. Register a vehicle to monitor maintenance health.</div>';
-      } else {
-        healthContainer.innerHTML = vehicles.map(v => {
-          const currentOdo = Number(v.odometer || 0);
-          const nextOdo = Number(v.nextMaintenanceOdometer || 0);
-          const vehicleHistory = maint.filter(m => m.vehicleId === v.id).sort((a,b) => new Date(b.date) - new Date(a.date) || Number(b.odometer || 0) - Number(a.odometer || 0));
-          const lastRecord = vehicleHistory[0];
-          const lastOdo = lastRecord ? Number(lastRecord.odometer || 0) : Math.max(0, nextOdo > 0 ? (nextOdo - 10000) : 0);
-
-          let pct = 0;
-          let barColor = 'bg-blue-600';
-          let statusBadge = '';
-          let statusDesc = '';
-
-          if (nextOdo > 0) {
-            const span = Math.max(1, nextOdo - lastOdo);
-            const elapsed = Math.max(0, currentOdo - lastOdo);
-            const remaining = nextOdo - currentOdo;
-            pct = Math.min(100, Math.max(0, (elapsed / span) * 100));
-
-            if (remaining <= 0) {
-              pct = 100;
-              barColor = 'bg-rose-500';
-              statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">Overdue</span>`;
-              statusDesc = `<span class="text-rose-600 dark:text-rose-400 font-extrabold text-[11px]">${Math.abs(remaining).toFixed(1)} km overdue</span>`;
-            } else if (remaining <= 500) {
-              barColor = 'bg-amber-500';
-              statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Due Soon</span>`;
-              statusDesc = `<span class="text-amber-600 dark:text-amber-400 font-extrabold text-[11px]">${remaining.toFixed(1)} km left</span>`;
-            } else {
-              barColor = pct > 75 ? 'bg-amber-500' : 'bg-emerald-500';
-              statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Healthy</span>`;
-              statusDesc = `<span class="text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">${remaining.toFixed(1)} km remaining</span>`;
-            }
-          } else {
-            statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">Unscheduled</span>`;
-            statusDesc = `<button type="button" onclick="editVehicle('${esc(v.id)}')" class="text-blue-600 hover:underline font-bold text-xs">Set next odometer</button>`;
-          }
-
-          return `
-            <div class="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-3">
-              <div class="flex items-start justify-between gap-2">
-                <div>
-                  <div class="font-extrabold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
-                    <span>🚗</span> ${esc(v.make)} ${esc(v.model)}
-                  </div>
-                  <div class="text-[10px] text-slate-404 font-semibold mt-0.5">${esc(v.plate)} • ${esc(v.year)}</div>
-                </div>
-                ${statusBadge}
-              </div>
-
-              <div class="space-y-1.5">
-                <div class="flex items-center justify-between text-[11px] font-semibold">
-                  <span class="text-slate-500 dark:text-slate-400">Current: <strong class="text-slate-800 dark:text-slate-200">${currentOdo.toFixed(1)} km</strong></span>
-                  <span class="text-slate-500 dark:text-slate-400">Next: <strong class="text-slate-800 dark:text-slate-200">${nextOdo > 0 ? nextOdo.toFixed(1) + ' km' : 'None'}</strong></span>
-                </div>
-                <div class="w-full bg-slate-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
-                  <div class="${barColor} h-full rounded-full transition-all duration-300" style="width: ${pct.toFixed(1)}%"></div>
-                </div>
-                <div class="flex items-center justify-between text-[10px]">
-                  <span class="text-slate-404 font-medium">${nextOdo > 0 ? `${pct.toFixed(0)}% of interval reached` : 'No interval target'}</span>
-                  <div>${statusDesc}</div>
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('');
+    try {
+      if (!vehicles || vehicles.length === 0) {
+        load();
       }
-    }
+      populateVehicles();
+      refreshParts();
+      window.syncMaintenanceHistoryToLedgerAndStock();
 
-    window.updateVehiclePartsTotal();
+      const search=(document.getElementById('vehicle-search')?.value||'').toLowerCase();
+      const vb=document.getElementById('vehicle-register-body');
+      if(vb){
+        const rows=(vehicles||[]).filter(v=>v && `${v.make||''} ${v.model||''} ${v.plate||''} ${v.year||''}`.toLowerCase().includes(search));
+        vb.innerHTML=rows.length?rows.map(v=>{
+          const nextOdoVal=Number(v.nextMaintenanceOdometer||0);
+          let nextOdoBadge='';
+          if(nextOdoVal>0){
+            const remaining=nextOdoVal-Number(v.odometer||0);
+            if(remaining<=0){
+              nextOdoBadge=`<div class="font-bold text-rose-600 dark:text-rose-400">${nextOdoVal.toFixed(1)} km</div><span class="inline-block mt-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">Overdue by ${Math.abs(remaining).toFixed(0)} km</span>`;
+            }else if(remaining<=500){
+              nextOdoBadge=`<div class="font-bold text-amber-600 dark:text-amber-400">${nextOdoVal.toFixed(1)} km</div><span class="inline-block mt-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Due in ${remaining.toFixed(0)} km</span>`;
+            }else{
+              nextOdoBadge=`<div class="font-bold text-slate-800 dark:text-slate-200">${nextOdoVal.toFixed(1)} km</div><span class="inline-block mt-0.5 text-[9px] font-semibold text-slate-404">in ${remaining.toFixed(0)} km</span>`;
+            }
+          }else{
+            nextOdoBadge=`<span class="text-slate-404 text-[11px] italic">Not set</span>`;
+          }
+          return `<tr class="vehicle-register-row"><td class="py-3 px-2"><div class="font-bold text-slate-900 dark:text-white">${esc(v.make)} ${esc(v.model)}</div><div class="text-[10px] text-slate-404">${esc(v.id)}</div></td><td class="py-3 px-2 font-semibold">${esc(v.plate)}</td><td class="py-3 px-2 font-bold">${Number(v.odometer||0).toFixed(1)} km</td><td class="py-3 px-2">${nextOdoBadge}</td><td class="py-3 px-2">${esc(v.year)}</td><td class="py-3 px-2 text-center"><button onclick="editVehicle('${esc(v.id)}')" class="text-[10px] text-blue-600 font-bold">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicle('${esc(v.id)}')" class="text-[10px] text-rose-600 font-bold">Delete</button></td></tr>`;
+        }).join(''):'<tr><td colspan="6" class="py-8 text-center text-xs text-slate-404">No vehicles registered yet.</td></tr>';
+      }
+
+      // 1. Maintenance History Table
+      const mb=document.getElementById('vehicle-maint-body');
+      const filteredMaint = search ? (maint||[]).filter(x => {
+        if (!x) return false;
+        const v = vget(x.vehicleId);
+        return `${x.date||''} ${x.description||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`.toLowerCase().includes(search);
+      }) : (maint||[]).filter(Boolean);
+
+      if(mb){
+        mb.innerHTML=filteredMaint.slice(0,100).map(x=>{
+          const v=vget(x.vehicleId);
+          const plist=(x.parts||[]).filter(Boolean).map(p=>{
+            const pRecord = pget(p.partId);
+            const ls = Number(p.lifespan || (pRecord && pRecord.lifespan) || 0);
+            return `${esc(p.name)} × ${p.quantity}${ls > 0 ? ` <span class="text-blue-600 dark:text-blue-400 font-bold">(Lifespan: +${ls.toLocaleString()} km)</span>` : ''}`;
+          }).join(', ')||'None';
+          return `<tr><td class="py-3 px-2">${esc(x.date)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2"><div class="font-semibold">${esc(x.description)}</div><div class="text-[9px] text-slate-404 mt-1">Labor ${money(x.laborCost)} • ${plist}</div></td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2 text-right">${money(x.laborCost)}</td><td class="py-3 px-2 text-right">${money(x.partsCost)}</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(x.totalCost)}</td><td class="py-3 px-2 text-center"><button onclick="deleteVehicleMaintenance('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button></td></tr>`;
+        }).join('')||'<tr><td colspan="8" class="py-8 text-center text-xs text-slate-404">No maintenance records found.</td></tr>';
+      }
+
+      // 2. Fueling History Table
+      const fb=document.getElementById('vehicle-fuel-body');
+      const filteredFuels = search ? (fuels||[]).filter(x => {
+        if (!x) return false;
+        const v = vget(x.vehicleId);
+        return `${x.dateTime||''} ${x.notes||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`.toLowerCase().includes(search);
+      }) : (fuels||[]).filter(Boolean);
+
+      if(fb){
+        fb.innerHTML=filteredFuels.slice(0,100).map(x=>{
+          const v=vget(x.vehicleId);
+          const dtStr = x.dateTime ? String(x.dateTime).replace('T', ' ') : 'N/A';
+          const acc = (window.accounts || []).find(a => a && a.id === x.accountId);
+          const accLabel = acc ? acc.label : (x.accountId || 'General');
+          return `<tr><td class="py-3 px-2 font-semibold text-slate-600 dark:text-slate-300">${esc(dtStr)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2 text-right font-bold text-blue-600">${Number(x.liters||0).toFixed(2)} L</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(x.cost)}</td><td class="py-3 px-2 text-slate-500">${esc(accLabel)}</td><td class="py-3 px-2 text-slate-500 italic">${esc(x.notes||'—')}</td><td class="py-3 px-2 text-center whitespace-nowrap"><button onclick="editVehicleFuel('${esc(x.id)}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicleFuel('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button></td></tr>`;
+        }).join('')||'<tr><td colspan="8" class="py-8 text-center text-xs text-slate-404">No fueling records found.</td></tr>';
+      }
+
+      // 3. Combined Activity Timeline Table
+      const ab=document.getElementById('vehicle-all-history-body');
+      if(ab){
+        const combined = [
+          ...(maint||[]).filter(Boolean).map(m => ({ ...m, _type: 'maintenance', _sortDate: m.date || '' })),
+          ...(fuels||[]).filter(Boolean).map(f => ({ ...f, _type: 'fuel', _sortDate: (f.dateTime ? String(f.dateTime).slice(0,10) : '') }))
+        ].sort((a,b) => (b._sortDate || '').localeCompare(a._sortDate || '') || (Number(b.odometer||0) - Number(a.odometer||0)));
+
+        const filteredCombined = search ? combined.filter(x => {
+          const v = vget(x.vehicleId);
+          const txt = `${x._sortDate||''} ${x.description||''} ${x.notes||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`;
+          return txt.toLowerCase().includes(search);
+        }) : combined;
+
+        ab.innerHTML=filteredCombined.slice(0,100).map(x=>{
+          const v=vget(x.vehicleId);
+          const isMaint = x._type === 'maintenance';
+          const typeBadge = isMaint
+            ? '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">🔧 Maintenance</span>'
+            : '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">⛽ Fueling</span>';
+          const details = isMaint
+            ? esc(x.description || 'Service')
+            : `${Number(x.liters||0).toFixed(2)} Liters ${x.notes ? `• ${esc(x.notes)}` : ''}`;
+          const amt = isMaint ? Number(x.totalCost || 0) : Number(x.cost || 0);
+          const actionBtn = isMaint
+            ? `<button onclick="deleteVehicleMaintenance('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button>`
+            : `<button onclick="editVehicleFuel('${esc(x.id)}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicleFuel('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button>`;
+
+          return `<tr><td class="py-3 px-2">${esc(x._sortDate)}</td><td class="py-3 px-2">${typeBadge}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2">${details}</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(amt)}</td><td class="py-3 px-2 text-center whitespace-nowrap">${actionBtn}</td></tr>`;
+        }).join('')||'<tr><td colspan="7" class="py-8 text-center text-xs text-slate-404">No vehicle activity records found.</td></tr>';
+      }
+
+      // Counts
+      const cm = document.getElementById('vh-count-maint');
+      const cf = document.getElementById('vh-count-fuel');
+      const ca = document.getElementById('vh-count-all');
+      if (cm) cm.textContent = (maint||[]).length;
+      if (cf) cf.textContent = (fuels||[]).length;
+      if (ca) ca.textContent = (maint||[]).length + (fuels||[]).length;
+
+      const fc=document.getElementById('vehicle-kpi-count'),ff=document.getElementById('vehicle-kpi-fuel'),fml=document.getElementById('vehicle-kpi-maint-labor'),fmp=document.getElementById('vehicle-kpi-maint-parts'),fp=document.getElementById('vehicle-kpi-parts');
+      if(fc)fc.textContent=(vehicles||[]).length;
+      if(ff)ff.textContent=money((fuels||[]).reduce((s,x)=>s+Number(x?.cost||0),0));
+      if(fml)fml.textContent=money((maint||[]).reduce((s,x)=>s+Number(x?.laborCost||0),0));
+      if(fmp)fmp.textContent=money((maint||[]).reduce((s,x)=>s+Number(x?.partsCost||0),0));
+      if(fp)fp.textContent=money(parts().reduce((s,p)=>s+Number(p?.quantity||0)*Number(p?.price||0),0));
+
+      // Vehicle Maintenance Health Widget Rendering
+      const healthContainer = document.getElementById('vehicle-health-cards-container');
+      const healthSummaryCount = document.getElementById('vehicle-health-summary-count');
+      if (healthContainer) {
+        if (healthSummaryCount) healthSummaryCount.textContent = `${(vehicles||[]).length} vehicle${(vehicles||[]).length === 1 ? '' : 's'} tracked`;
+        if (!(vehicles||[]).length) {
+          healthContainer.innerHTML = '<div class="col-span-full py-6 text-center text-xs text-slate-404">No vehicles registered yet. Register a vehicle to monitor maintenance health.</div>';
+        } else {
+          healthContainer.innerHTML = (vehicles||[]).map(v => {
+            if (!v) return '';
+            const currentOdo = Number(v.odometer || 0);
+            const nextOdo = Number(v.nextMaintenanceOdometer || 0);
+            const vehicleHistory = (maint||[]).filter(m => m && m.vehicleId === v.id).sort((a,b) => new Date(b.date) - new Date(a.date) || Number(b.odometer || 0) - Number(a.odometer || 0));
+            const lastRecord = vehicleHistory[0];
+            const lastOdo = lastRecord ? Number(lastRecord.odometer || 0) : Math.max(0, nextOdo > 0 ? (nextOdo - 10000) : 0);
+
+            let pct = 0;
+            let barColor = 'bg-blue-600';
+            let statusBadge = '';
+            let statusDesc = '';
+
+            if (nextOdo > 0) {
+              const span = Math.max(1, nextOdo - lastOdo);
+              const elapsed = Math.max(0, currentOdo - lastOdo);
+              const remaining = nextOdo - currentOdo;
+              pct = Math.min(100, Math.max(0, (elapsed / span) * 100));
+
+              if (remaining <= 0) {
+                pct = 100;
+                barColor = 'bg-rose-500';
+                statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">Overdue</span>`;
+                statusDesc = `<span class="text-rose-600 dark:text-rose-400 font-extrabold text-[11px]">${Math.abs(remaining).toFixed(1)} km overdue</span>`;
+              } else if (remaining <= 500) {
+                barColor = 'bg-amber-500';
+                statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Due Soon</span>`;
+                statusDesc = `<span class="text-amber-600 dark:text-amber-400 font-extrabold text-[11px]">${remaining.toFixed(1)} km left</span>`;
+              } else {
+                barColor = pct > 75 ? 'bg-amber-500' : 'bg-emerald-500';
+                statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Healthy</span>`;
+                statusDesc = `<span class="text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">${remaining.toFixed(1)} km remaining</span>`;
+              }
+            } else {
+              statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">Unscheduled</span>`;
+              statusDesc = `<button type="button" onclick="editVehicle('${esc(v.id)}')" class="text-blue-600 hover:underline font-bold text-xs">Set next odometer</button>`;
+            }
+
+            return `
+              <div class="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-3">
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <div class="font-extrabold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>🚗</span> ${esc(v.make)} ${esc(v.model)}
+                    </div>
+                    <div class="text-[10px] text-slate-404 font-semibold mt-0.5">${esc(v.plate)} • ${esc(v.year)}</div>
+                  </div>
+                  ${statusBadge}
+                </div>
+
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between text-[11px] font-semibold">
+                    <span class="text-slate-500 dark:text-slate-400">Current: <strong class="text-slate-800 dark:text-slate-200">${currentOdo.toFixed(1)} km</strong></span>
+                    <span class="text-slate-500 dark:text-slate-400">Next: <strong class="text-slate-800 dark:text-slate-200">${nextOdo > 0 ? nextOdo.toFixed(1) + ' km' : 'None'}</strong></span>
+                  </div>
+                  <div class="w-full bg-slate-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                    <div class="${barColor} h-full rounded-full transition-all duration-300" style="width: ${pct.toFixed(1)}%"></div>
+                  </div>
+                  <div class="flex items-center justify-between text-[10px]">
+                    <span class="text-slate-404 font-medium">${nextOdo > 0 ? `${pct.toFixed(0)}% of interval reached` : 'No interval target'}</span>
+                    <div>${statusDesc}</div>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+
+      window.updateVehiclePartsTotal();
+    } catch(err) {
+      console.error('[Forecaster] renderVehicleManagement error:', err);
+    }
   };
 
   function initVehicles(){
