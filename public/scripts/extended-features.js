@@ -610,9 +610,9 @@
   const VDB='pro_vehicles', VFU='pro_vehicle_fuel', VMN='pro_vehicle_maintenance', PART='vehicle-spare-part';
   let vehicles=[], fuels=[], maint=[];
 
-  Object.defineProperty(window,'vehicles',{get:()=>vehicles,configurable:true});
-  Object.defineProperty(window,'fuels',{get:()=>fuels,configurable:true});
-  Object.defineProperty(window,'maint',{get:()=>maint,configurable:true});
+  Object.defineProperty(window,'vehicles',{get:()=>vehicles,set:(v)=>{vehicles=Array.isArray(v)?v:[];},configurable:true});
+  Object.defineProperty(window,'fuels',{get:()=>fuels,set:(f)=>{fuels=Array.isArray(f)?f:[];},configurable:true});
+  Object.defineProperty(window,'maint',{get:()=>maint,set:(m)=>{maint=Array.isArray(m)?m:[];},configurable:true});
 
   const SEED_VEHICLES = [
     {
@@ -1278,6 +1278,9 @@
   };
 
   window.renderVehicleManagement=function(){
+    if (!vehicles || vehicles.length === 0) {
+      load();
+    }
     populateVehicles();
     refreshParts();
     window.syncMaintenanceHistoryToLedgerAndStock();
@@ -1285,7 +1288,7 @@
     const search=(document.getElementById('vehicle-search')?.value||'').toLowerCase();
     const vb=document.getElementById('vehicle-register-body');
     if(vb){
-      const rows=vehicles.filter(v=>`${v.make} ${v.model} ${v.plate} ${v.year}`.toLowerCase().includes(search));
+      const rows=(vehicles||[]).filter(v=>v && `${v.make||''} ${v.model||''} ${v.plate||''} ${v.year||''}`.toLowerCase().includes(search));
       vb.innerHTML=rows.length?rows.map(v=>{
         const nextOdoVal=Number(v.nextMaintenanceOdometer||0);
         let nextOdoBadge='';
@@ -1307,15 +1310,16 @@
 
     // 1. Maintenance History Table
     const mb=document.getElementById('vehicle-maint-body');
-    const filteredMaint = search ? maint.filter(x => {
+    const filteredMaint = search ? (maint||[]).filter(x => {
+      if (!x) return false;
       const v = vget(x.vehicleId);
-      return `${x.date} ${x.description} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`.toLowerCase().includes(search);
-    }) : maint;
+      return `${x.date||''} ${x.description||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`.toLowerCase().includes(search);
+    }) : (maint||[]).filter(Boolean);
 
     if(mb){
       mb.innerHTML=filteredMaint.slice(0,100).map(x=>{
         const v=vget(x.vehicleId);
-        const plist=(x.parts||[]).map(p=>{
+        const plist=(x.parts||[]).filter(Boolean).map(p=>{
           const pRecord = pget(p.partId);
           const ls = Number(p.lifespan || (pRecord && pRecord.lifespan) || 0);
           return `${esc(p.name)} × ${p.quantity}${ls > 0 ? ` <span class="text-blue-600 dark:text-blue-400 font-bold">(Lifespan: +${ls.toLocaleString()} km)</span>` : ''}`;
@@ -1326,16 +1330,17 @@
 
     // 2. Fueling History Table
     const fb=document.getElementById('vehicle-fuel-body');
-    const filteredFuels = search ? fuels.filter(x => {
+    const filteredFuels = search ? (fuels||[]).filter(x => {
+      if (!x) return false;
       const v = vget(x.vehicleId);
-      return `${x.dateTime} ${x.notes||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`.toLowerCase().includes(search);
-    }) : fuels;
+      return `${x.dateTime||''} ${x.notes||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`.toLowerCase().includes(search);
+    }) : (fuels||[]).filter(Boolean);
 
     if(fb){
       fb.innerHTML=filteredFuels.slice(0,100).map(x=>{
         const v=vget(x.vehicleId);
-        const dtStr = x.dateTime ? x.dateTime.replace('T', ' ') : 'N/A';
-        const acc = (window.accounts || []).find(a => a.id === x.accountId);
+        const dtStr = x.dateTime ? String(x.dateTime).replace('T', ' ') : 'N/A';
+        const acc = (window.accounts || []).find(a => a && a.id === x.accountId);
         const accLabel = acc ? acc.label : (x.accountId || 'General');
         return `<tr><td class="py-3 px-2 font-semibold text-slate-600 dark:text-slate-300">${esc(dtStr)}</td><td class="py-3 px-2 font-bold">${v?esc(v.make+' '+v.model):'Unknown'}</td><td class="py-3 px-2 font-semibold">${Number(x.odometer||0).toFixed(1)} km</td><td class="py-3 px-2 text-right font-bold text-blue-600">${Number(x.liters||0).toFixed(2)} L</td><td class="py-3 px-2 text-right font-black text-rose-600">${money(x.cost)}</td><td class="py-3 px-2 text-slate-500">${esc(accLabel)}</td><td class="py-3 px-2 text-slate-500 italic">${esc(x.notes||'—')}</td><td class="py-3 px-2 text-center whitespace-nowrap"><button onclick="editVehicleFuel('${esc(x.id)}')" class="text-[10px] text-blue-600 font-bold hover:underline">Edit</button><span class="text-slate-300 mx-1">|</span><button onclick="deleteVehicleFuel('${esc(x.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline">Delete</button></td></tr>`;
       }).join('')||'<tr><td colspan="8" class="py-8 text-center text-xs text-slate-404">No fueling records found.</td></tr>';
@@ -1345,13 +1350,13 @@
     const ab=document.getElementById('vehicle-all-history-body');
     if(ab){
       const combined = [
-        ...maint.map(m => ({ ...m, _type: 'maintenance', _sortDate: m.date || '' })),
-        ...fuels.map(f => ({ ...f, _type: 'fuel', _sortDate: (f.dateTime ? f.dateTime.slice(0,10) : '') }))
+        ...(maint||[]).filter(Boolean).map(m => ({ ...m, _type: 'maintenance', _sortDate: m.date || '' })),
+        ...(fuels||[]).filter(Boolean).map(f => ({ ...f, _type: 'fuel', _sortDate: (f.dateTime ? String(f.dateTime).slice(0,10) : '') }))
       ].sort((a,b) => (b._sortDate || '').localeCompare(a._sortDate || '') || (Number(b.odometer||0) - Number(a.odometer||0)));
 
       const filteredCombined = search ? combined.filter(x => {
         const v = vget(x.vehicleId);
-        const txt = `${x._sortDate} ${x.description||''} ${x.notes||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`;
+        const txt = `${x._sortDate||''} ${x.description||''} ${x.notes||''} ${v ? `${v.make} ${v.model} ${v.plate}` : ''}`;
         return txt.toLowerCase().includes(search);
       }) : combined;
 
@@ -1467,14 +1472,20 @@
     window.updateVehiclePartsTotal();
   };
 
-  window.addEventListener('DOMContentLoaded',function(){
+  function initVehicles(){
     load();
     const f=document.getElementById('vehicle-fuel-datetime'),m=document.getElementById('vehicle-maint-date');
     if(f&&!f.value)f.value=nowInput();
     if(m&&!m.value)m.value=today();
     if(!document.querySelector('#vehicle-maint-parts .vehicle-part-row'))window.addVehiclePartRow();
     window.renderVehicleManagement();
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', initVehicles);
+  } else {
+    initVehicles();
+  }
 })();
 
 /* ----------------------------------------------------------------------------

@@ -265,6 +265,10 @@
       console.error('[Forecaster] renderAllViews error during switchView:', err);
     }
 
+    if (cleanId === 'vehicles' && typeof window.renderVehicleManagement === 'function') {
+      try { window.renderVehicleManagement(); } catch(err) {}
+    }
+
     if (requestedStockModule && typeof window.setStockPharmacyModule === 'function') {
       try {
         window.setStockPharmacyModule(requestedStockModule);
@@ -281,6 +285,7 @@
       } catch(e) {}
     }, 30);
   };
+  window.switchTab = window.switchView;
 
   /* STOCK, PHARMACY & SPARE PARTS SWITCHER */
   window.setStockPharmacyModule = function(module) {

@@ -103,6 +103,10 @@
         console.warn('[Forecaster] renderAllViews during switchView:', err);
       }
 
+      if (cleanId === 'vehicles' && typeof window.renderVehicleManagement === 'function') {
+        try { window.renderVehicleManagement(); } catch(err) {}
+      }
+
       if (requestedStockModule && typeof window.setStockPharmacyModule === 'function') {
         try {
           window.setStockPharmacyModule(requestedStockModule);
@@ -115,6 +119,7 @@
         } catch(e) {}
       }, 20);
     };
+    window.switchTab = window.switchView;
 
     // Mobile "More" Drawer Controller
     window.toggleMobileDrawer = function(forceOpen) {
@@ -153,12 +158,21 @@
 
     // Capture-phase event delegator for bulletproof link clicking
     document.addEventListener('click', function(e) {
-      const trigger = e.target.closest('[onclick*="switchView"]');
+      const trigger = e.target.closest('[onclick*="switchView"], [onclick*="switchTab"], [data-view], [data-tab]');
       if (trigger) {
-        const match = (trigger.getAttribute('onclick') || '').match(/switchView\(['"]([^'"]+)['"]/);
+        let viewName = '';
+        const oc = trigger.getAttribute('onclick') || '';
+        const match = oc.match(/(?:switchView|switchTab)\(['"]([^'"]+)['"]/);
         if (match && match[1]) {
+          viewName = match[1];
+        } else if (trigger.getAttribute('data-view')) {
+          viewName = trigger.getAttribute('data-view');
+        } else if (trigger.getAttribute('data-tab')) {
+          viewName = trigger.getAttribute('data-tab');
+        }
+        if (viewName) {
           try { e.preventDefault(); } catch(err) {}
-          window.switchView(match[1], trigger);
+          window.switchView(viewName, trigger);
         }
       }
     }, true);
@@ -572,7 +586,7 @@
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('insights', this)"><span>👁️</span> Insights &amp; Alerts</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('transactions', this)"><span>📝</span> Transactions</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('rentals', this)"><span>🏠</span> Rentals</a>
-    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('vehicles', this)"><span>🚗</span> Vehicles</a>
+    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0 cursor-pointer" href="javascript:void(0)" onclick="switchView('vehicles', this)" data-view="vehicles" data-tab="vehicles" id="nav-tab-vehicles"><span>🚗</span> Vehicles</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('stock', this); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('accounts', this)"><span>💳</span> Accounts</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('reports', this)"><span>📄</span> Reports &amp; Backups</a>
