@@ -3,41 +3,8 @@
   "vaults": {
     "shared-main-vault": {
       "vaultId": "shared-main-vault",
-      "updatedAt": "2026-10-31T01:53:52.147Z",
-      "transactions": [
-        {
-          "id": "tx_init_1",
-          "date": "2026-07-01",
-          "description": "Direct Deposit Monthly Salary",
-          "category": "Salary",
-          "type": "income",
-          "amount": 3100
-        },
-        {
-          "id": "tx_init_2",
-          "date": "2026-07-02",
-          "description": "Apartment Premium Rental Rent",
-          "category": "Rent",
-          "type": "expense",
-          "amount": 800
-        },
-        {
-          "id": "tx_init_3",
-          "date": "2026-07-04",
-          "description": "UI/UX Freelance App Project",
-          "category": "Freelance",
-          "type": "income",
-          "amount": 400
-        },
-        {
-          "id": "tx_init_4",
-          "date": "2026-07-05",
-          "description": "Monthly Power Utility Bills",
-          "category": "Utilities",
-          "type": "expense",
-          "amount": 150
-        }
-      ],
+      "updatedAt": "2026-11-03T12:21:39.734Z",
+      "transactions": [],
       "accounts": [
         {
           "id": "acc_cash_main",
@@ -69,10 +36,13 @@
       "accountTransfers": [],
       "budgetLimits": {
         "income": 3500,
-        "expense": 3500
+        "expense": 2427
       },
       "stockData": [],
-      "pharmacyData": []
+      "pharmacyData": [],
+      "vehicles": [],
+      "fuels": [],
+      "maint": []
     },
     "vault_usr_1792343003698": {
       "vaultId": "vault_usr_1792343003698",
@@ -125,6 +95,291 @@
       },
       "stockData": [],
       "pharmacyData": []
+    },
+    "demo-showcase-vault": {
+      "vaultId": "demo-showcase-vault",
+      "updatedAt": "2026-11-03T12:21:43.467Z",
+      "transactions": [
+        {
+          "id": "tx_demo_1",
+          "date": "2026-10-01",
+          "description": "Direct Deposit Monthly Salary (Demo)",
+          "category": "Salary",
+          "type": "income",
+          "amount": 3100,
+          "accountId": "acc_demo_cib"
+        },
+        {
+          "id": "tx_demo_2",
+          "date": "2026-10-02",
+          "description": "Apartment Premium Rental Rent (Demo)",
+          "category": "Rent",
+          "type": "expense",
+          "amount": 800,
+          "accountId": "acc_demo_cib"
+        },
+        {
+          "id": "tx_demo_3",
+          "date": "2026-10-04",
+          "description": "UI/UX Freelance App Project (Demo)",
+          "category": "Freelance",
+          "type": "income",
+          "amount": 400,
+          "accountId": "acc_demo_wallet"
+        },
+        {
+          "id": "tx_demo_4",
+          "date": "2026-10-05",
+          "description": "Monthly Power Utility Bills (Demo)",
+          "category": "Utilities",
+          "type": "expense",
+          "amount": 150,
+          "accountId": "acc_demo_cash"
+        },
+        {
+          "id": "exp_mnt_mnt_toyota_40k",
+          "date": "2026-10-15",
+          "category": "Transportation",
+          "subcategory": "Vehicle Maintenance",
+          "icon": "🚗",
+          "amount": 1300,
+          "description": "Vehicle Maintenance: Toyota Corolla (ABC 1234) — 40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs",
+          "type": "expense",
+          "accountId": "acc_demo_cib",
+          "refType": "maintenance",
+          "refId": "mnt_toyota_40k"
+        },
+        {
+          "id": "exp_fuel_fuel_toyota_1",
+          "date": "2026-10-22",
+          "category": "Transportation",
+          "subcategory": "Fuel & Petrol",
+          "icon": "🚗",
+          "amount": 595,
+          "description": "Vehicle Fuel: Toyota Corolla (ABC 1234) — 42.5L (Full tank - Octane 95)",
+          "type": "expense",
+          "accountId": "acc_demo_cib",
+          "refType": "fuel",
+          "refId": "fuel_toyota_1"
+        },
+        {
+          "id": "exp_fuel_fuel_elantra_1",
+          "date": "2026-10-25",
+          "category": "Transportation",
+          "subcategory": "Fuel & Petrol",
+          "icon": "🚗",
+          "amount": 560,
+          "description": "Vehicle Fuel: Hyundai Elantra (XYZ 9876) — 40L (Weekly commute refill)",
+          "type": "expense",
+          "accountId": "acc_demo_cib",
+          "refType": "fuel",
+          "refId": "fuel_elantra_1"
+        },
+        {
+          "id": "exp_fuel_fuel_toyota_2",
+          "date": "2026-10-30",
+          "category": "Transportation",
+          "subcategory": "Fuel & Petrol",
+          "icon": "🚗",
+          "amount": 532,
+          "description": "Vehicle Fuel: Toyota Corolla (ABC 1234) — 38L (Highway & City driving fill-up)",
+          "type": "expense",
+          "accountId": "acc_demo_cash",
+          "refType": "fuel",
+          "refId": "fuel_toyota_2"
+        }
+      ],
+      "accounts": [
+        {
+          "id": "acc_demo_cash",
+          "type": "cash",
+          "label": "💵 Cash Wallet (Demo)",
+          "initialBalance": 1500,
+          "createdAt": "2026-11-03T12:21:43.468Z"
+        },
+        {
+          "id": "acc_demo_cib",
+          "type": "card",
+          "label": "💳 CIB Debit Card (Demo)",
+          "network": "Visa",
+          "mode": "Debit",
+          "bank": "Commercial International Bank (CIB)",
+          "initialBalance": 12000,
+          "createdAt": "2026-11-03T12:21:43.468Z"
+        },
+        {
+          "id": "acc_demo_wallet",
+          "type": "wallet",
+          "label": "📱 Vodafone Cash (Demo)",
+          "kind": "Telecom",
+          "provider": "Vodafone Cash",
+          "initialBalance": 2500,
+          "createdAt": "2026-11-03T12:21:43.468Z"
+        }
+      ],
+      "accountTransfers": [],
+      "stockData": [
+        {
+          "id": "stk_demo_1",
+          "name": "Olive Oil Extra Virgin",
+          "category": "Groceries",
+          "currentStock": 2,
+          "minStock": 3,
+          "unit": "Bottle",
+          "unitPrice": 180,
+          "dailyDepletion": 0.1,
+          "expiryDate": "2027-01-01"
+        },
+        {
+          "id": "part_engine_oil",
+          "name": "Synthetic Motor Oil 5W-30",
+          "itemType": "vehicle-spare-part",
+          "category": "Spare Parts",
+          "targetVehicleOrUnit": "Toyota Corolla (ABC 1234)",
+          "quantity": 5,
+          "unit": "bottle",
+          "price": 650,
+          "threshold": 2,
+          "lifespan": 10000,
+          "sku": "OIL-SYN-5W30",
+          "consumptionLogs": []
+        },
+        {
+          "id": "part_oil_filter",
+          "name": "OEM Oil Filter Cartridge",
+          "itemType": "vehicle-spare-part",
+          "category": "Spare Parts",
+          "targetVehicleOrUnit": "Toyota Corolla (ABC 1234)",
+          "quantity": 4,
+          "unit": "pcs",
+          "price": 200,
+          "threshold": 1,
+          "lifespan": 10000,
+          "sku": "FLT-OEM-123",
+          "consumptionLogs": []
+        },
+        {
+          "id": "part_brake_pads",
+          "name": "Front Ceramic Brake Pads",
+          "itemType": "vehicle-spare-part",
+          "category": "Spare Parts",
+          "targetVehicleOrUnit": "Toyota Corolla (ABC 1234)",
+          "quantity": 2,
+          "unit": "set",
+          "price": 850,
+          "threshold": 1,
+          "lifespan": 40000,
+          "sku": "BRK-CER-F",
+          "consumptionLogs": []
+        }
+      ],
+      "pharmacyData": [
+        {
+          "id": "phm_demo_1",
+          "name": "Panadol Extra 500mg",
+          "category": "Analgesics",
+          "currentStock": 5,
+          "minStock": 10,
+          "unit": "Strip",
+          "unitPrice": 45,
+          "dailyDepletion": 0.2,
+          "expiryDate": "2027-06-30"
+        }
+      ],
+      "vehicles": [
+        {
+          "id": "veh_toyota_corolla",
+          "make": "Toyota",
+          "model": "Corolla",
+          "year": 2024,
+          "plate": "ABC 1234",
+          "odometer": 45250,
+          "nextMaintenanceOdometer": 50000,
+          "createdAt": "2026-08-01T10:00:00.000Z"
+        },
+        {
+          "id": "veh_hyundai_elantra",
+          "make": "Hyundai",
+          "model": "Elantra",
+          "year": 2023,
+          "plate": "XYZ 9876",
+          "odometer": 28400,
+          "nextMaintenanceOdometer": 30000,
+          "createdAt": "2026-08-05T12:00:00.000Z"
+        }
+      ],
+      "fuels": [
+        {
+          "id": "fuel_toyota_1",
+          "vehicleId": "veh_toyota_corolla",
+          "dateTime": "2026-10-22T15:30",
+          "odometer": 44600,
+          "liters": 42.5,
+          "cost": 595,
+          "accountId": "acc_demo_cib",
+          "notes": "Full tank - Octane 95",
+          "transportationType": "Fuel"
+        },
+        {
+          "id": "fuel_elantra_1",
+          "vehicleId": "veh_hyundai_elantra",
+          "dateTime": "2026-10-25T09:15",
+          "odometer": 28400,
+          "liters": 40,
+          "cost": 560,
+          "accountId": "acc_demo_cib",
+          "notes": "Weekly commute refill",
+          "transportationType": "Fuel"
+        },
+        {
+          "id": "fuel_toyota_2",
+          "vehicleId": "veh_toyota_corolla",
+          "dateTime": "2026-10-30T11:45",
+          "odometer": 45250,
+          "liters": 38,
+          "cost": 532,
+          "accountId": "acc_demo_cash",
+          "notes": "Highway & City driving fill-up",
+          "transportationType": "Fuel"
+        }
+      ],
+      "maint": [
+        {
+          "id": "mnt_toyota_40k",
+          "vehicleId": "veh_toyota_corolla",
+          "date": "2026-10-15",
+          "odometer": 40000,
+          "nextMaintenanceOdometer": 50000,
+          "description": "40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs",
+          "laborCost": 450,
+          "partsCost": 850,
+          "totalCost": 1300,
+          "parts": [
+            {
+              "partId": "part_engine_oil",
+              "name": "Synthetic Motor Oil 5W-30",
+              "quantity": 1,
+              "unit": "bottle",
+              "unitCost": 650,
+              "lifespan": 10000
+            },
+            {
+              "partId": "part_oil_filter",
+              "name": "OEM Oil Filter Cartridge",
+              "quantity": 1,
+              "unit": "pcs",
+              "unitCost": 200,
+              "lifespan": 10000
+            }
+          ],
+          "accountId": "acc_demo_cib",
+          "txnId": "exp_mnt_mnt_toyota_40k"
+        }
+      ],
+      "budgetLimits": {
+        "income": 3500,
+        "expense": 2000
+      }
     }
   },
   "users": {
@@ -136,7 +391,7 @@
       "salt": "f931a8924f18227d949cbb3eafa27e02",
       "tier": "Master Admin Suite",
       "createdAt": "2026-10-18T17:03:16.856Z",
-      "lastLogin": "2026-10-31T01:54:01.992Z",
+      "lastLogin": "2026-11-03T12:21:47.767Z",
       "role": "main_admin",
       "isPrimary": true,
       "vaultId": "shared-main-vault",
@@ -262,6 +517,22 @@
       "mustChangePassword": false,
       "createdAt": "2026-10-31T01:54:09.916Z",
       "lastLogin": "2026-10-31T01:54:09.916Z"
+    },
+    "usr_demo_showcase": {
+      "id": "usr_demo_showcase",
+      "name": "Demo Showcase Explorer",
+      "email": "demo@forecasterpro.com",
+      "passwordHash": "77c8ecdad559ab7ca53dcf057db9deed9f50a402b3e1d919aa821e5925ec2af6f39d7bd3edb8b95f242d94827fb7aba5c6ecdcdb4c5bbf8edb66409cda84b1a1",
+      "salt": "adf461ba8e765ced79814204f94a3f52",
+      "tier": "Interactive Demo Suite",
+      "role": "manager",
+      "isPrimary": true,
+      "isDemo": true,
+      "status": "active",
+      "vaultId": "demo-showcase-vault",
+      "mustChangePassword": false,
+      "createdAt": "2026-11-03T12:18:48.633Z",
+      "lastLogin": "2026-11-03T12:21:47.678Z"
     }
   },
   "tokens": {
@@ -324,7 +595,35 @@
       "userId": "usr_peter_badir",
       "expiresAt": 1794016441992
     },
-    "tok_3712b0f82f1be2b525e1aac3c8361e64548f71af4d4cd488": "usr_1793411649916"
+    "tok_3712b0f82f1be2b525e1aac3c8361e64548f71af4d4cd488": "usr_1793411649916",
+    "tok_demo_eabd0cfcabeb92e2fc12da64a8168dd7a6a6f56727c0ddb3": {
+      "userId": "usr_demo_showcase",
+      "expiresAt": 1796300337598
+    },
+    "tok_demo_833c587d3534068c00e424b3b6eb39d55848df6a51efd07f": {
+      "userId": "usr_demo_showcase",
+      "expiresAt": 1796300435286
+    },
+    "tok_f36d72b15e105533164e8c65967e4c7d6f5a7e4fe0c52571": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1794313242012
+    },
+    "tok_55339ae9c856d8a1e12a7595b4faa8eb4011ffd29cea290b": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1794313262133
+    },
+    "tok_02f37df7484b432e2c7379544631a4b28f417d784fbbdd40": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1794313274111
+    },
+    "tok_demo_ca5d553d5776da063df6fc6702027464b2c665f71b68d7b4": {
+      "userId": "usr_demo_showcase",
+      "expiresAt": 1796300507678
+    },
+    "tok_e5a91b331883c323ccdf732216adba0260066389e1a427bd": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1794313307767
+    }
   },
   "outbox": [
     {
@@ -521,7 +820,7 @@
     },
     "telemetry": {
       "serverStartedAt": "2026-10-20T12:36:39.995Z",
-      "totalApiRequests": 35
+      "totalApiRequests": 41
     }
   }
 }

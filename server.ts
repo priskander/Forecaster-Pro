@@ -48,6 +48,7 @@ interface UserRecord {
   role: UserRole;
   isPrimary: boolean;
   isMainAdmin?: boolean; // Master system administrator of the entire app ecosystem
+  isDemo?: boolean; // Dedicated interactive demo user for landing page showcase
   status?: 'active' | 'suspended';
   parentId?: string; // ID of the primary user who created this sub-user
   vaultId?: string; // ID of the isolated vault/database
@@ -362,6 +363,34 @@ if (!defaultUser) {
   }
 }
 
+// Seed dedicated Demo Showcase User for Landing Page visitors
+const demoEmail = 'demo@forecasterpro.com';
+let demoUser = Object.values(db.users).find(u => u.email.toLowerCase() === demoEmail.toLowerCase());
+if (!demoUser) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const user: UserRecord = {
+    id: 'usr_demo_showcase',
+    name: 'Demo Showcase Explorer',
+    email: demoEmail,
+    passwordHash: hashPassword('DemoPassword123!', salt),
+    salt,
+    tier: 'Interactive Demo Suite',
+    role: 'manager',
+    isPrimary: true,
+    isDemo: true,
+    status: 'active',
+    vaultId: 'demo-showcase-vault',
+    mustChangePassword: false,
+    createdAt: new Date().toISOString(),
+    lastLogin: new Date().toISOString()
+  };
+  db.users[user.id] = user;
+} else {
+  demoUser.isDemo = true;
+  demoUser.vaultId = 'demo-showcase-vault';
+  demoUser.name = 'Demo Showcase Explorer';
+}
+
 if (!db.auditLog) db.auditLog = [];
 
 if (!db.systemConfig) {
@@ -496,7 +525,68 @@ Object.values(db.users).forEach(u => {
   }
 });
 
-// Default vault initialization (100% clean and clear by default)
+// 1. Dedicated Demo Showcase Vault (Exclusively for Landing Page Demo Visitors)
+const DEMO_VAULT_ID = 'demo-showcase-vault';
+db.vaults[DEMO_VAULT_ID] = {
+  vaultId: DEMO_VAULT_ID,
+  updatedAt: new Date().toISOString(),
+  transactions: [
+    { id: 'tx_demo_1', date: '2026-10-01', description: 'Direct Deposit Monthly Salary (Demo)', category: 'Salary', type: 'income', amount: 3100.00, accountId: 'acc_demo_cib' },
+    { id: 'tx_demo_2', date: '2026-10-02', description: 'Apartment Premium Rental Rent (Demo)', category: 'Rent', type: 'expense', amount: 800.00, accountId: 'acc_demo_cib' },
+    { id: 'tx_demo_3', date: '2026-10-04', description: 'UI/UX Freelance App Project (Demo)', category: 'Freelance', type: 'income', amount: 400.00, accountId: 'acc_demo_wallet' },
+    { id: 'tx_demo_4', date: '2026-10-05', description: 'Monthly Power Utility Bills (Demo)', category: 'Utilities', type: 'expense', amount: 150.00, accountId: 'acc_demo_cash' },
+    { id: 'exp_mnt_mnt_toyota_40k', date: '2026-10-15', category: 'Transportation', subcategory: 'Vehicle Maintenance', icon: '🚗', amount: 1300.00, description: 'Vehicle Maintenance: Toyota Corolla (ABC 1234) — 40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs', type: 'expense', accountId: 'acc_demo_cib', refType: 'maintenance', refId: 'mnt_toyota_40k' },
+    { id: 'exp_fuel_fuel_toyota_1', date: '2026-10-22', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 595.00, description: 'Vehicle Fuel: Toyota Corolla (ABC 1234) — 42.5L (Full tank - Octane 95)', type: 'expense', accountId: 'acc_demo_cib', refType: 'fuel', refId: 'fuel_toyota_1' },
+    { id: 'exp_fuel_fuel_elantra_1', date: '2026-10-25', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 560.00, description: 'Vehicle Fuel: Hyundai Elantra (XYZ 9876) — 40L (Weekly commute refill)', type: 'expense', accountId: 'acc_demo_cib', refType: 'fuel', refId: 'fuel_elantra_1' },
+    { id: 'exp_fuel_fuel_toyota_2', date: '2026-10-30', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 532.00, description: 'Vehicle Fuel: Toyota Corolla (ABC 1234) — 38L (Highway & City driving fill-up)', type: 'expense', accountId: 'acc_demo_cash', refType: 'fuel', refId: 'fuel_toyota_2' }
+  ],
+  accounts: [
+    { id: 'acc_demo_cash', type: 'cash', label: '💵 Cash Wallet (Demo)', initialBalance: 1500, createdAt: new Date().toISOString() },
+    { id: 'acc_demo_cib', type: 'card', label: '💳 CIB Debit Card (Demo)', network: 'Visa', mode: 'Debit', bank: 'Commercial International Bank (CIB)', initialBalance: 12000, createdAt: new Date().toISOString() },
+    { id: 'acc_demo_wallet', type: 'wallet', label: '📱 Vodafone Cash (Demo)', kind: 'Telecom', provider: 'Vodafone Cash', initialBalance: 2500, createdAt: new Date().toISOString() }
+  ],
+  accountTransfers: [],
+  stockData: [
+    { id: 'stk_demo_1', name: 'Olive Oil Extra Virgin', category: 'Groceries', currentStock: 2, minStock: 3, unit: 'Bottle', unitPrice: 180, dailyDepletion: 0.1, expiryDate: '2027-01-01' },
+    { id: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 5, unit: 'bottle', price: 650, threshold: 2, lifespan: 10000, sku: 'OIL-SYN-5W30', consumptionLogs: [] },
+    { id: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 4, unit: 'pcs', price: 200, threshold: 1, lifespan: 10000, sku: 'FLT-OEM-123', consumptionLogs: [] },
+    { id: 'part_brake_pads', name: 'Front Ceramic Brake Pads', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 2, unit: 'set', price: 850, threshold: 1, lifespan: 40000, sku: 'BRK-CER-F', consumptionLogs: [] }
+  ],
+  pharmacyData: [
+    { id: 'phm_demo_1', name: 'Panadol Extra 500mg', category: 'Analgesics', currentStock: 5, minStock: 10, unit: 'Strip', unitPrice: 45, dailyDepletion: 0.2, expiryDate: '2027-06-30' }
+  ],
+  vehicles: [
+    { id: 'veh_toyota_corolla', make: 'Toyota', model: 'Corolla', year: 2024, plate: 'ABC 1234', odometer: 45250, nextMaintenanceOdometer: 50000, createdAt: '2026-08-01T10:00:00.000Z' },
+    { id: 'veh_hyundai_elantra', make: 'Hyundai', model: 'Elantra', year: 2023, plate: 'XYZ 9876', odometer: 28400, nextMaintenanceOdometer: 30000, createdAt: '2026-08-05T12:00:00.000Z' }
+  ],
+  fuels: [
+    { id: 'fuel_toyota_1', vehicleId: 'veh_toyota_corolla', dateTime: '2026-10-22T15:30', odometer: 44600, liters: 42.5, cost: 595, accountId: 'acc_demo_cib', notes: 'Full tank - Octane 95', transportationType: 'Fuel' },
+    { id: 'fuel_elantra_1', vehicleId: 'veh_hyundai_elantra', dateTime: '2026-10-25T09:15', odometer: 28400, liters: 40, cost: 560, accountId: 'acc_demo_cib', notes: 'Weekly commute refill', transportationType: 'Fuel' },
+    { id: 'fuel_toyota_2', vehicleId: 'veh_toyota_corolla', dateTime: '2026-10-30T11:45', odometer: 45250, liters: 38, cost: 532, accountId: 'acc_demo_cash', notes: 'Highway & City driving fill-up', transportationType: 'Fuel' }
+  ],
+  maint: [
+    {
+      id: 'mnt_toyota_40k',
+      vehicleId: 'veh_toyota_corolla',
+      date: '2026-10-15',
+      odometer: 40000,
+      nextMaintenanceOdometer: 50000,
+      description: '40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs',
+      laborCost: 450,
+      partsCost: 850,
+      totalCost: 1300,
+      parts: [
+        { partId: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', quantity: 1, unit: 'bottle', unitCost: 650, lifespan: 10000 },
+        { partId: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', quantity: 1, unit: 'pcs', unitCost: 200, lifespan: 10000 }
+      ],
+      accountId: 'acc_demo_cib',
+      txnId: 'exp_mnt_mnt_toyota_40k'
+    }
+  ],
+  budgetLimits: { income: 3500, expense: 2000 }
+};
+
+// 2. Default & User Vaults: REMOVE demo data from other accounts (including shared-main-vault / Peter W. Badir)
 const DEFAULT_VAULT_ID = 'shared-main-vault';
 if (!db.vaults[DEFAULT_VAULT_ID]) {
   db.vaults[DEFAULT_VAULT_ID] = {
@@ -507,9 +597,41 @@ if (!db.vaults[DEFAULT_VAULT_ID]) {
     accountTransfers: [],
     stockData: [],
     pharmacyData: [],
+    vehicles: [],
+    fuels: [],
+    maint: [],
     budgetLimits: { income: 0, expense: 0 }
   };
 }
+
+// Purge any demo seed items from non-demo vaults
+const demoTxnSet = new Set(['tx_init_1', 'tx_init_2', 'tx_init_3', 'tx_init_4', 'tx_demo_1', 'tx_demo_2', 'tx_demo_3', 'tx_demo_4', 'exp_mnt_mnt_toyota_40k', 'exp_fuel_fuel_toyota_1', 'exp_fuel_fuel_toyota_2', 'exp_fuel_fuel_elantra_1']);
+const demoStockSet = new Set(['stk_demo_1', 'part_engine_oil', 'part_oil_filter', 'part_brake_pads', 'phm_demo_1']);
+const demoVehicleSet = new Set(['veh_toyota_corolla', 'veh_hyundai_elantra']);
+const demoFuelSet = new Set(['fuel_toyota_1', 'fuel_toyota_2', 'fuel_elantra_1']);
+const demoMaintSet = new Set(['mnt_toyota_40k']);
+
+Object.entries(db.vaults).forEach(([vId, v]) => {
+  if (vId === DEMO_VAULT_ID) return; // Retain demo data in demo vault!
+  if (Array.isArray(v.transactions)) {
+    v.transactions = v.transactions.filter(t => t && !demoTxnSet.has(t.id) && t.refId !== 'mnt_toyota_40k' && t.refId !== 'fuel_toyota_1' && t.refId !== 'fuel_toyota_2' && t.refId !== 'fuel_elantra_1');
+  }
+  if (Array.isArray(v.stockData)) {
+    v.stockData = v.stockData.filter(s => s && !demoStockSet.has(s.id));
+  }
+  if (Array.isArray(v.pharmacyData)) {
+    v.pharmacyData = v.pharmacyData.filter(p => p && !demoStockSet.has(p.id));
+  }
+  if (Array.isArray(v.vehicles)) {
+    v.vehicles = v.vehicles.filter(veh => veh && !demoVehicleSet.has(veh.id));
+  }
+  if (Array.isArray(v.fuels)) {
+    v.fuels = v.fuels.filter(f => f && !demoFuelSet.has(f.id) && !demoVehicleSet.has(f.vehicleId));
+  }
+  if (Array.isArray(v.maint)) {
+    v.maint = v.maint.filter(m => m && !demoMaintSet.has(m.id) && !demoVehicleSet.has(m.vehicleId));
+  }
+});
 saveDatabase(db);
 
 // Rate Limiting Storage & Middleware
@@ -840,6 +962,61 @@ async function startServer() {
     } catch (err: any) {
       console.error('[Auth Login Error]', err);
       res.status(500).json({ ok: false, error: 'Login failed: ' + err.message });
+    }
+  });
+
+  // Dedicated 1-Click Interactive Demo Login for Landing Page Visitors
+  app.post('/api/auth/demo-login', (req, res) => {
+    try {
+      const users = db.users || {};
+      const demoUser = Object.values(users).find(u => u.email.toLowerCase() === 'demo@forecasterpro.com') || users['usr_demo_showcase'];
+      if (!demoUser) {
+        return res.status(500).json({ ok: false, error: 'Demo showcase user not configured.' });
+      }
+
+      if (!db.tokens) db.tokens = {};
+      const token = 'tok_demo_' + crypto.randomBytes(24).toString('hex');
+      db.tokens[token] = {
+        userId: demoUser.id,
+        expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000) // 30 days session
+      } as any;
+
+      demoUser.lastLogin = new Date().toISOString();
+      saveDatabase(db);
+
+      const rawDemoVault = db.vaults['demo-showcase-vault'] || null;
+      const demoVault = rawDemoVault ? {
+        ...rawDemoVault,
+        stock: rawDemoVault.stockData || (rawDemoVault as any).stock || [],
+        stockData: rawDemoVault.stockData || (rawDemoVault as any).stock || [],
+        pharmacy: rawDemoVault.pharmacyData || (rawDemoVault as any).pharmacy || [],
+        pharmacyData: rawDemoVault.pharmacyData || (rawDemoVault as any).pharmacy || []
+      } : null;
+
+      res.json({
+        ok: true,
+        message: 'Demo account activated! Welcome to the interactive demo showcase with preloaded fleet & ledger data.',
+        token,
+        mustChangePassword: false,
+        user: {
+          id: demoUser.id,
+          name: demoUser.name,
+          email: demoUser.email,
+          tier: demoUser.tier,
+          role: demoUser.role,
+          propertyRole: 'both',
+          isPrimary: true,
+          isMainAdmin: false,
+          isDemo: true,
+          vaultId: 'demo-showcase-vault',
+          mustChangePassword: false,
+          createdAt: demoUser.createdAt
+        },
+        demoVault
+      });
+    } catch (err: any) {
+      console.error('[Demo Login Error]', err);
+      res.status(500).json({ ok: false, error: 'Demo login failed: ' + err.message });
     }
   });
 

@@ -323,6 +323,12 @@
 
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
         localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+        localStorage.setItem('forecaster_is_demo', data.user.isDemo ? 'true' : 'false');
+        localStorage.removeItem('forecaster_explicit_logout');
+
+        if (!data.user.isDemo && typeof window.cleanDemoDataIfNonDemo === 'function') {
+          window.cleanDemoDataIfNonDemo();
+        }
 
         try {
           const prof = JSON.parse(localStorage.getItem('forecaster_profile_user') || '{}');
@@ -410,12 +416,19 @@
         window.budgetLimits = {};
         window.stockData = [];
         window.pharmacyData = [];
+        window.vehicles = [];
+        window.fuels = [];
+        window.maint = [];
         localStorage.setItem('pro_transactions', JSON.stringify([]));
         localStorage.setItem('pro_accounts', JSON.stringify([]));
         localStorage.setItem('pro_account_transfers', JSON.stringify([]));
         localStorage.setItem('pro_budget_limits', JSON.stringify({}));
         localStorage.setItem('pro_stock', JSON.stringify([]));
         localStorage.setItem('pro_pharmacy', JSON.stringify([]));
+        localStorage.setItem('pro_vehicles', JSON.stringify([]));
+        localStorage.setItem('pro_vehicle_fuel', JSON.stringify([]));
+        localStorage.setItem('pro_vehicle_maintenance', JSON.stringify([]));
+        localStorage.setItem('forecaster_is_demo', 'false');
 
         // Connect to the user's dedicated database vault (or parent's database if added as a sub-user)
         if (window.ForecasterCloudSync && data.user && data.user.vaultId) {
@@ -458,6 +471,80 @@
       await this.login('peter.w.badir@gmail.com', 'Password123!');
     },
 
+    loginDemoAccount: async function() {
+      try {
+        this.clearAuthErrors();
+        localStorage.removeItem('forecaster_explicit_logout');
+
+        const res = await fetch('/api/auth/demo-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to initialize demo account.');
+        }
+
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+        localStorage.setItem('forecaster_is_demo', 'true');
+
+        if (data.demoVault) {
+          if (Array.isArray(data.demoVault.transactions)) {
+            window.transactions = data.demoVault.transactions;
+            localStorage.setItem('pro_transactions', JSON.stringify(data.demoVault.transactions));
+          }
+          if (Array.isArray(data.demoVault.accounts)) {
+            window.accounts = data.demoVault.accounts;
+            localStorage.setItem('pro_accounts', JSON.stringify(data.demoVault.accounts));
+          }
+          const s = data.demoVault.stock || data.demoVault.stockData;
+          if (Array.isArray(s)) {
+            window.stockData = s;
+            localStorage.setItem('pro_stock', JSON.stringify(s));
+          }
+          const p = data.demoVault.pharmacy || data.demoVault.pharmacyData;
+          if (Array.isArray(p)) {
+            window.pharmacyData = p;
+            localStorage.setItem('pro_pharmacy', JSON.stringify(p));
+          }
+          if (Array.isArray(data.demoVault.vehicles)) {
+            window.vehicles = data.demoVault.vehicles;
+            localStorage.setItem('pro_vehicles', JSON.stringify(data.demoVault.vehicles));
+          }
+          if (Array.isArray(data.demoVault.fuels)) {
+            window.fuels = data.demoVault.fuels;
+            localStorage.setItem('pro_vehicle_fuel', JSON.stringify(data.demoVault.fuels));
+          }
+          if (Array.isArray(data.demoVault.maint)) {
+            window.maint = data.demoVault.maint;
+            localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(data.demoVault.maint));
+          }
+          if (data.demoVault.budgetLimits) {
+            window.budgetLimits = data.demoVault.budgetLimits;
+            localStorage.setItem('pro_budget_limits', JSON.stringify(data.demoVault.budgetLimits));
+          }
+        }
+
+        if (window.ForecasterCloudSync && data.user && data.user.vaultId) {
+          window.ForecasterCloudSync.setVaultId(data.user.vaultId, false);
+        }
+
+        this.closeAuthModal();
+        this.updateUI();
+
+        if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+        if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
+        if (typeof window.renderAllViews === 'function') window.renderAllViews();
+
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Welcome to the Live Demo Account! Preloaded with demo fleet, stock, and ledger.', 'success');
+        }
+      } catch (err) {
+        this.showAuthError(err.message);
+      }
+    },
+
     logout: async function() {
       try {
         const token = this.getToken();
@@ -473,6 +560,7 @@
       localStorage.removeItem(AUTH_USER_KEY);
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem('forecaster_cloud_vault_id');
+      localStorage.removeItem('forecaster_is_demo');
 
       // Clear memory and local cache so the next visitor/account doesn't see logged-out data
       window.transactions = [];
@@ -481,14 +569,21 @@
       window.budgetLimits = {};
       window.stockData = [];
       window.pharmacyData = [];
+      window.vehicles = [];
+      window.fuels = [];
+      window.maint = [];
       localStorage.setItem('pro_transactions', JSON.stringify([]));
       localStorage.setItem('pro_accounts', JSON.stringify([]));
       localStorage.setItem('pro_account_transfers', JSON.stringify([]));
       localStorage.setItem('pro_budget_limits', JSON.stringify({}));
       localStorage.setItem('pro_stock', JSON.stringify([]));
       localStorage.setItem('pro_pharmacy', JSON.stringify([]));
+      localStorage.setItem('pro_vehicles', JSON.stringify([]));
+      localStorage.setItem('pro_vehicle_fuel', JSON.stringify([]));
+      localStorage.setItem('pro_vehicle_maintenance', JSON.stringify([]));
 
       if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+      if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
       if (typeof window.renderAllViews === 'function') window.renderAllViews();
 
       this.closeProfileDropdown();
