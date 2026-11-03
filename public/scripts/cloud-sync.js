@@ -171,47 +171,71 @@
       if (!remoteVault || typeof remoteVault !== 'object') return false;
 
       let changed = false;
+      const isDiff = (a, b) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
 
-      // 1. Transactions - Authoritative sync preserves deletions
+      // 1. Transactions - Authoritative sync only if remote differs from current local
       if (Array.isArray(remoteVault.transactions)) {
-        window.transactions = remoteVault.transactions;
-        localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
-        changed = true;
+        if (isDiff(window.transactions, remoteVault.transactions)) {
+          window.transactions = remoteVault.transactions;
+          localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+          changed = true;
+        }
       }
 
       // 2. Payment Accounts
       if (Array.isArray(remoteVault.accounts)) {
-        window.accounts = remoteVault.accounts;
-        localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
-        changed = true;
+        if (isDiff(window.accounts, remoteVault.accounts)) {
+          window.accounts = remoteVault.accounts;
+          localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+          changed = true;
+        }
       }
 
       // 3. Account Transfers
       if (Array.isArray(remoteVault.accountTransfers)) {
-        window.accountTransfers = remoteVault.accountTransfers;
-        localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers));
-        changed = true;
+        if (isDiff(window.accountTransfers, remoteVault.accountTransfers)) {
+          window.accountTransfers = remoteVault.accountTransfers;
+          localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers));
+          changed = true;
+        }
       }
 
       // 4. Vehicles & Fleet
       if (Array.isArray(remoteVault.vehicles)) {
-        localStorage.setItem('pro_vehicles', JSON.stringify(remoteVault.vehicles));
-        changed = true;
+        let curVeh = [];
+        try { curVeh = JSON.parse(localStorage.getItem('pro_vehicles') || '[]'); } catch(e){}
+        if (isDiff(curVeh, remoteVault.vehicles)) {
+          localStorage.setItem('pro_vehicles', JSON.stringify(remoteVault.vehicles));
+          changed = true;
+        }
       }
       if (Array.isArray(remoteVault.fuels)) {
-        localStorage.setItem('pro_vehicle_fuel', JSON.stringify(remoteVault.fuels));
-        changed = true;
+        let curFuels = [];
+        try { curFuels = JSON.parse(localStorage.getItem('pro_vehicle_fuel') || '[]'); } catch(e){}
+        if (isDiff(curFuels, remoteVault.fuels)) {
+          localStorage.setItem('pro_vehicle_fuel', JSON.stringify(remoteVault.fuels));
+          changed = true;
+        }
       }
       if (Array.isArray(remoteVault.maint)) {
-        localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(remoteVault.maint));
-        changed = true;
+        let curMaint = [];
+        try { curMaint = JSON.parse(localStorage.getItem('pro_vehicle_maintenance') || '[]'); } catch(e){}
+        if (isDiff(curMaint, remoteVault.maint)) {
+          localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(remoteVault.maint));
+          changed = true;
+        }
       }
 
       if (changed) {
-        if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
-        if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
-        if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
-        if (typeof window.renderAllViews === 'function') window.renderAllViews();
+        this._isApplyingRemote = true;
+        try {
+          if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+          if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
+          if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
+          if (typeof window.renderAllViews === 'function') window.renderAllViews();
+        } finally {
+          this._isApplyingRemote = false;
+        }
       }
 
       return changed;
@@ -269,12 +293,13 @@
     },
 
     notifyDataChanged: function() {
-      // Debounce push when local user creates/updates data
+      // Prevent loopback cascade when remote data was just applied
+      if (this._isApplyingRemote) return;
       if (!this.isAutoSync()) return;
       if (this._debounceTimer) clearTimeout(this._debounceTimer);
       this._debounceTimer = setTimeout(() => {
         this.syncNow(false);
-      }, 1000);
+      }, 2000);
     },
 
     updateUI: function(syncing = false) {

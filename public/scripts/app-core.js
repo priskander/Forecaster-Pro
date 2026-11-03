@@ -1629,7 +1629,7 @@
 
   window.populateAllocationsMonthFilter = function() {
     const select = document.getElementById('allocations-month-filter');
-    if (!select) return;
+    if (!select || document.activeElement === select) return;
 
     const monthSet = new Set();
     (window.transactions || []).forEach(t => {
@@ -1651,7 +1651,9 @@
       html += `<option value="${m}"${selected}>${window.formatMonthLabel(m)}</option>`;
     });
 
-    select.innerHTML = html;
+    if (select.innerHTML !== html) {
+      select.innerHTML = html;
+    }
   };
 
   window.getAllocationsScopedData = function() {

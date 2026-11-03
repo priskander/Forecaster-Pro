@@ -469,17 +469,27 @@
     if (startEl) startEl.innerText = dayLabel(days[0]);
     if (endEl) endEl.innerText = dayLabel(days[days.length - 1]);
 
+    const dayLabels = days.map(dayLabel);
+
+    if (spend7dChartInstance) {
+      const curData = spend7dChartInstance.data.datasets[0].data;
+      const isUnchanged = curData && curData.length === dailyExpense.length && curData.every((v, i) => v === dailyExpense[i]);
+      if (isUnchanged) return;
+      spend7dChartInstance.data.labels = dayLabels;
+      spend7dChartInstance.data.datasets[0].data = dailyExpense;
+      spend7dChartInstance.update('none');
+      return;
+    }
+
     const ctx = canvas.getContext('2d');
     const gradient = ctx.createLinearGradient(0, 0, 0, 160);
     gradient.addColorStop(0, 'rgba(244, 63, 94, 0.35)');
     gradient.addColorStop(1, 'rgba(244, 63, 94, 0)');
 
-    if (spend7dChartInstance) spend7dChartInstance.destroy();
-
     spend7dChartInstance = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: days.map(dayLabel),
+        labels: dayLabels,
         datasets: [{
           data: dailyExpense,
           borderColor: '#f43f5e',
@@ -1241,34 +1251,35 @@
   window.populateAccountSelects = function() {
     const selects = document.querySelectorAll('.payment-account-select');
     const accounts = Array.isArray(window.accounts) ? window.accounts : [];
+    const baseOptionsHTML = accounts.map(a => `<option value="${a.id}">${window.accountIcon(a.type)} ${a.label}</option>`).join('') || `<option value="">No Accounts Registered</option>`;
 
     selects.forEach(sel => {
+      // Do not interrupt user while dropdown is active/focused
+      if (document.activeElement === sel) return;
+
       const currentVal = sel.value;
-      let optionsHTML = '';
-
-      if (sel.id === 'form-transfer-from' || sel.id === 'form-transfer-to') {
-        optionsHTML = accounts.map(a => `<option value="${a.id}">${window.accountIcon(a.type)} ${a.label}</option>`).join('');
-      } else {
-        optionsHTML = accounts.map(a => `<option value="${a.id}">${window.accountIcon(a.type)} ${a.label}</option>`).join('');
-      }
-
-      sel.innerHTML = optionsHTML || `<option value="">No Accounts Registered</option>`;
-      if (currentVal && accounts.some(a => a.id === currentVal)) {
-        sel.value = currentVal;
-      } else if (sel.id === 'form-transfer-to' && accounts.length > 1) {
-        sel.value = accounts[1].id;
+      if (sel.innerHTML !== baseOptionsHTML) {
+        sel.innerHTML = baseOptionsHTML;
+        if (currentVal && accounts.some(a => a.id === currentVal)) {
+          sel.value = currentVal;
+        } else if (sel.id === 'form-transfer-to' && accounts.length > 1) {
+          sel.value = accounts[1].id;
+        }
       }
     });
   };
 
   window.populateAccountFilterSelect = function() {
     const filterSel = document.getElementById('filter-account');
-    if (!filterSel) return;
+    if (!filterSel || document.activeElement === filterSel) return;
     const currentVal = filterSel.value;
     const accounts = Array.isArray(window.accounts) ? window.accounts : [];
-    filterSel.innerHTML = `<option value="">All Accounts</option>` +
+    const newHtml = `<option value="">All Accounts</option>` +
       accounts.map(a => `<option value="${a.id}">${window.accountIcon(a.type)} ${a.label}</option>`).join('');
-    if (currentVal) filterSel.value = currentVal;
+    if (filterSel.innerHTML !== newHtml) {
+      filterSel.innerHTML = newHtml;
+      if (currentVal) filterSel.value = currentVal;
+    }
   };
 
   window.addEventListener('DOMContentLoaded', () => {
@@ -1278,43 +1289,50 @@
   /* -------------------------------------------------------------------------
    * 7. MASTER RENDER HOOK - EXTENDS RENDER ALL VIEWS
    * ------------------------------------------------------------------------- */
+  let _isRenderingAllViews = false;
   const originalRenderAllViews = window.renderAllViews;
   window.renderAllViews = function() {
-    if (typeof originalRenderAllViews === 'function') {
-      try { originalRenderAllViews(); } catch(err) { console.error(err); }
-    }
-
+    if (_isRenderingAllViews) return;
+    _isRenderingAllViews = true;
     try {
-      if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
-      if (typeof window.populateAccountFilterSelect === 'function') window.populateAccountFilterSelect();
-      if (typeof window.renderAccountsView === 'function') window.renderAccountsView();
-      if (typeof window.renderDashboardAccountsAnalysis === 'function') window.renderDashboardAccountsAnalysis();
-      if (typeof window.renderSpend7DaysWidget === 'function') window.renderSpend7DaysWidget();
-      if (typeof window.renderRentalManagement === 'function') window.renderRentalManagement();
-      if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
-    } catch(err) {
-      console.error('[Forecaster Modules] render error:', err);
-    }
-
-    // Merge financial alerts, immediate reorders & predictive alerts into notification center
-    try {
-      let combinedAlerts = [];
-      const alertsSource = document.getElementById('alerts-container');
-      if (alertsSource && alertsSource.children) {
-        const financialAlerts = Array.from(alertsSource.children)
-          .filter(child => child && (child.querySelector('h5')?.innerText || '').trim() !== 'All calculations on track')
-          .map(child => child.outerHTML);
-        combinedAlerts = combinedAlerts.concat(financialAlerts);
+      if (typeof originalRenderAllViews === 'function') {
+        try { originalRenderAllViews(); } catch(err) { console.error(err); }
       }
 
-      if (typeof window.getImmediateReordersAndPredictiveAlerts === 'function') {
-        const reorderAlerts = window.getImmediateReordersAndPredictiveAlerts();
-        combinedAlerts = combinedAlerts.concat(reorderAlerts);
+      try {
+        if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+        if (typeof window.populateAccountFilterSelect === 'function') window.populateAccountFilterSelect();
+        if (typeof window.renderAccountsView === 'function') window.renderAccountsView();
+        if (typeof window.renderDashboardAccountsAnalysis === 'function') window.renderDashboardAccountsAnalysis();
+        if (typeof window.renderSpend7DaysWidget === 'function') window.renderSpend7DaysWidget();
+        if (typeof window.renderRentalManagement === 'function') window.renderRentalManagement();
+        if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
+      } catch(err) {
+        console.error('[Forecaster Modules] render error:', err);
       }
 
-      renderNotificationCenter(combinedAlerts);
-    } catch(err) {
-      console.warn('[Forecaster Modules] alerts extraction error:', err);
+      // Merge financial alerts, immediate reorders & predictive alerts into notification center
+      try {
+        let combinedAlerts = [];
+        const alertsSource = document.getElementById('alerts-container');
+        if (alertsSource && alertsSource.children) {
+          const financialAlerts = Array.from(alertsSource.children)
+            .filter(child => child && (child.querySelector('h5')?.innerText || '').trim() !== 'All calculations on track')
+            .map(child => child.outerHTML);
+          combinedAlerts = combinedAlerts.concat(financialAlerts);
+        }
+
+        if (typeof window.getImmediateReordersAndPredictiveAlerts === 'function') {
+          const reorderAlerts = window.getImmediateReordersAndPredictiveAlerts();
+          combinedAlerts = combinedAlerts.concat(reorderAlerts);
+        }
+
+        renderNotificationCenter(combinedAlerts);
+      } catch(err) {
+        console.warn('[Forecaster Modules] alerts extraction error:', err);
+      }
+    } finally {
+      _isRenderingAllViews = false;
     }
   };
 

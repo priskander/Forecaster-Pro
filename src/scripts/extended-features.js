@@ -813,10 +813,10 @@
       }
     });
 
-    if (typeof window.saveTransactionsDatabase === 'function') window.saveTransactionsDatabase();
+    if (force && typeof window.saveTransactionsDatabase === 'function') window.saveTransactionsDatabase();
 
     window.renderVehicleManagement();
-    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+    if (force && typeof window.renderAllViews === 'function') window.renderAllViews();
     if (force && typeof window.triggerToast === 'function') {
       window.triggerToast('Registered vehicle, maintenance, and fuel records restored successfully!', 'success');
     }
@@ -862,7 +862,6 @@
     if (Array.isArray(window.transactions) && window.transactions.some(t => t && (demoTxnIds.has(t.id) || t.refId === 'mnt_toyota_40k' || t.refId === 'fuel_toyota_1' || t.refId === 'fuel_toyota_2' || t.refId === 'fuel_elantra_1'))) {
       window.transactions = window.transactions.filter(t => t && !demoTxnIds.has(t.id) && t.refId !== 'mnt_toyota_40k' && t.refId !== 'fuel_toyota_1' && t.refId !== 'fuel_toyota_2' && t.refId !== 'fuel_elantra_1');
       localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
-      if (typeof window.saveTransactionsDatabase === 'function') window.saveTransactionsDatabase();
     }
     if (changed) {
       save();
@@ -897,10 +896,14 @@
 
   function populateVehicles(){
     ['vehicle-fuel-vehicle','vehicle-maint-vehicle'].forEach(id=>{
-      const el=document.getElementById(id);if(!el)return;
+      const el=document.getElementById(id);
+      if(!el || document.activeElement === el) return;
       const old=el.value;
-      el.innerHTML='<option value="">Select vehicle...</option>'+vehicles.map(v=>`<option value="${esc(v.id)}">${esc(v.make)} ${esc(v.model)} • ${esc(v.plate)}</option>`).join('');
-      if(old&&vget(old))el.value=old;
+      const newHtml = '<option value="">Select vehicle...</option>'+vehicles.map(v=>`<option value="${esc(v.id)}">${esc(v.make)} ${esc(v.model)} • ${esc(v.plate)}</option>`).join('');
+      if (el.innerHTML !== newHtml) {
+        el.innerHTML = newHtml;
+        if(old&&vget(old))el.value=old;
+      }
     });
     const mv=document.getElementById('vehicle-maint-vehicle');
     if(mv&&!mv._hasAutoOdo){
@@ -917,13 +920,16 @@
   }
 
   function populatePartSelect(el){
-    if(!el)return;
+    if(!el || document.activeElement === el) return;
     const old=el.value;
-    el.innerHTML='<option value="">Select spare part...</option>'+parts().map(p=>{
+    const newHtml = '<option value="">Select spare part...</option>'+parts().map(p=>{
       const ls=Number(p.lifespan||0)>0?` • Lifespan: ${Number(p.lifespan).toLocaleString()} km`:'';
       return `<option value="${esc(p.id)}">${esc(p.name)} • ${Number(p.quantity||0)} ${esc(p.unit||'units')} @ ${money(p.price)}${ls}</option>`;
     }).join('');
-    if(old&&pget(old))el.value=old;
+    if (el.innerHTML !== newHtml) {
+      el.innerHTML = newHtml;
+      if(old&&pget(old))el.value=old;
+    }
   }
 
   function refreshParts(){document.querySelectorAll('.vehicle-part-select').forEach(populatePartSelect);}
@@ -1605,7 +1611,7 @@
 
   window.rpmRenderDropdown = function() {
     const select = document.getElementById('rental-property');
-    if (!select || select.tagName !== 'SELECT') return;
+    if (!select || select.tagName !== 'SELECT' || document.activeElement === select) return;
     const currentValue = select.value;
     let html = '<option value="" disabled' + (currentValue ? '' : ' selected') + '>Select Property / Unit...</option>';
     rpmProperties.forEach(p => {
@@ -1614,8 +1620,10 @@
     if (currentValue && !rpmProperties.some(p => p.name === currentValue)) {
       html += `<option value="${currentValue}">${currentValue} (legacy)</option>`;
     }
-    select.innerHTML = html;
-    select.value = currentValue || '';
+    if (select.innerHTML !== html) {
+      select.innerHTML = html;
+      select.value = currentValue || '';
+    }
   };
 
   window.addEventListener('DOMContentLoaded', () => {
