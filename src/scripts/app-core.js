@@ -2063,7 +2063,7 @@
           </div>
           <div class="flex items-center gap-1.5">
             <div class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-              <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${data.color}"></div>
+              <div class="h-full rounded-full budget-progress-bar" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${data.color}"></div>
             </div>
             ${incTrend}
           </div>
@@ -2133,7 +2133,7 @@
           </div>
           <div class="flex items-center gap-1.5">
             <div class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-              <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${isOver ? '#f43f5e' : data.color}"></div>
+              <div class="h-full rounded-full budget-progress-bar" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: ${isOver ? '#f43f5e' : data.color}"></div>
             </div>
             ${expTrend}
           </div>
@@ -2221,7 +2221,7 @@
                 </div>
               </div>
               <div class="w-full h-2 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
-                <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(1)}%; background-color: ${color}"></div>
+                <div class="h-full rounded-full budget-progress-bar" style="width: ${Math.min(pct, 100).toFixed(1)}%; background-color: ${color}"></div>
               </div>
             </div>`;
         });
@@ -2256,7 +2256,7 @@
                 </div>
               </div>
               <div class="w-full h-2 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
-                <div class="h-full rounded-full transition-all duration-300" style="width: ${Math.min(pct, 100).toFixed(1)}%; background-color: ${color}"></div>
+                <div class="h-full rounded-full budget-progress-bar" style="width: ${Math.min(pct, 100).toFixed(1)}%; background-color: ${color}"></div>
               </div>
             </div>`;
         });
