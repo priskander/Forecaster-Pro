@@ -1609,6 +1609,57 @@
     }
   };
 
+  window.getHistoricalExpenseForecast = function(excludeMonth) {
+    const mostRecent = window.getActiveAllocationsMonth();
+    const targetExcludeMonth = (excludeMonth && excludeMonth !== 'all') ? excludeMonth : mostRecent;
+
+    // Group historical expenses by month (YYYY-MM) and category
+    const monthlyCategoryTotals = {};
+    const historicalMonthsSet = new Set();
+
+    (window.transactions || []).forEach(t => {
+      if (t.type !== 'expense' || !t.date || t.date.length < 7) return;
+      const m = t.date.slice(0, 7);
+      if (m === targetExcludeMonth) return; // Exclude current/recent month!
+
+      historicalMonthsSet.add(m);
+      if (!monthlyCategoryTotals[t.category || 'Others']) {
+        monthlyCategoryTotals[t.category || 'Others'] = {};
+      }
+      monthlyCategoryTotals[t.category || 'Others'][m] = (monthlyCategoryTotals[t.category || 'Others'][m] || 0) + (parseFloat(t.amount) || 0);
+    });
+
+    const numHistoricalMonths = historicalMonthsSet.size;
+    const categoryAverages = {};
+    let totalHistoricalAvgExpense = 0;
+
+    if (numHistoricalMonths > 0) {
+      Object.keys(window.expenseAllocationBlueprint || {}).forEach(cat => {
+        const catMap = monthlyCategoryTotals[cat] || {};
+        const sum = Object.values(catMap).reduce((s, a) => s + a, 0);
+        const avg = sum / numHistoricalMonths;
+        categoryAverages[cat] = avg;
+        totalHistoricalAvgExpense += avg;
+      });
+      // Also capture any other historical categories
+      Object.keys(monthlyCategoryTotals).forEach(cat => {
+        if (!(cat in categoryAverages)) {
+          const sum = Object.values(monthlyCategoryTotals[cat]).reduce((s, a) => s + a, 0);
+          const avg = sum / numHistoricalMonths;
+          categoryAverages[cat] = avg;
+          totalHistoricalAvgExpense += avg;
+        }
+      });
+    }
+
+    return {
+      numMonths: numHistoricalMonths,
+      historicalMonths: Array.from(historicalMonthsSet).sort(),
+      categoryAverages,
+      totalHistoricalAvgExpense
+    };
+  };
+
   window.getActiveAllocationsMonth = function() {
     const selected = window.allocationsSelectedMonth || localStorage.getItem('pro_allocations_month') || 'auto';
     if (selected !== 'auto') return selected;
@@ -1730,9 +1781,18 @@
     }
 
     if (!isManual || forceSync) {
-      // Auto-calculate budget limits: forecast expense quotas directly from registered income
+      // Auto-calculate budget limits: forecast expense quotas based on historical data excluding recent month
       const autoIncome = registeredIncome > 0 ? registeredIncome : (window.budgetLimits.income || 3500);
-      const autoExpense = registeredIncome > 0 ? registeredIncome : ((registeredExpenses + totalTransferFees) > 0 ? (registeredExpenses + totalTransferFees) : (window.budgetLimits.expense || 2000));
+      
+      const histData = (typeof window.getHistoricalExpenseForecast === 'function')
+        ? window.getHistoricalExpenseForecast(activeMonth)
+        : null;
+      let autoExpense = 0;
+      if (histData && histData.numMonths > 0 && histData.totalHistoricalAvgExpense > 0) {
+        autoExpense = histData.totalHistoricalAvgExpense;
+      } else {
+        autoExpense = registeredIncome > 0 ? registeredIncome : ((registeredExpenses + totalTransferFees) > 0 ? (registeredExpenses + totalTransferFees) : (window.budgetLimits.expense || 2000));
+      }
 
       window.budgetLimits.income = autoIncome;
       window.budgetLimits.expense = autoExpense;
@@ -1748,7 +1808,7 @@
         modeInc.className = 'text-[10px] font-bold text-emerald-600 dark:text-emerald-400';
       }
       if (modeExp) {
-        modeExp.textContent = 'Auto-Linked';
+        modeExp.textContent = (histData && histData.numMonths > 0) ? `Historical (${histData.numMonths}m)` : 'Auto-Linked';
         modeExp.className = 'text-[10px] font-bold text-rose-600 dark:text-rose-400';
       }
 
@@ -1920,7 +1980,12 @@
       `;
     }
 
-    // Base for expense categories forecast: derived directly from registered income
+    // Base for expense categories forecast: derived primarily from historical data (previous months/years excluding recent month)
+    const histForecast = (typeof window.getHistoricalExpenseForecast === 'function')
+      ? window.getHistoricalExpenseForecast(activeMonth)
+      : null;
+    const hasHistoricalExpenses = histForecast && histForecast.numMonths > 0 && histForecast.totalHistoricalAvgExpense > 0;
+
     const totalAllRegisteredIncome = (window.transactions || [])
       .filter(t => t.type === 'income')
       .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
@@ -1928,9 +1993,21 @@
       ? totalRegisteredIncome 
       : (window.budgetLimits.income > 0 ? window.budgetLimits.income : (totalAllRegisteredIncome > 0 ? totalAllRegisteredIncome : window.budgetLimits.expense));
 
-    // Monthly Expense Quotas Blueprint: Forecasted based on registered income
+    // Monthly Expense Quotas Blueprint: Forecasted based on historical data excluding recent month
     for (const [name, data] of Object.entries(window.expenseAllocationBlueprint)) {
-      const forecasted = incomeBaseForExpenseForecast * (data.pct / 100);
+      let forecasted = 0;
+      let forecastSource = '';
+      if (hasHistoricalExpenses && (name in histForecast.categoryAverages)) {
+        forecasted = histForecast.categoryAverages[name];
+        forecastSource = `Avg of prev ${histForecast.numMonths} mo`;
+      } else if (hasHistoricalExpenses && histForecast.totalHistoricalAvgExpense > 0) {
+        forecasted = histForecast.totalHistoricalAvgExpense * (data.pct / 100);
+        forecastSource = `Hist ${histForecast.numMonths}m (${data.pct}%)`;
+      } else {
+        forecasted = incomeBaseForExpenseForecast * (data.pct / 100);
+        forecastSource = `${data.pct}%`;
+      }
+
       totalForecastedExpense += forecasted;
       const registered = expenseByCategory[name] || 0;
       const pct = forecasted > 0 ? (registered / forecasted * 100) : 0;
@@ -1954,7 +2031,7 @@
             <div class="flex items-center gap-1.5 min-w-0">
               <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${data.color}"></span>
               <span class="font-bold text-slate-800 dark:text-slate-200 truncate">${name}</span>
-              <span class="text-[10px] text-slate-400 shrink-0 font-medium">(${data.pct}%)</span>
+              <span class="text-[10px] text-slate-400 shrink-0 font-medium" title="${forecastSource}">(${forecastSource})</span>
             </div>
             <span class="text-[11px] font-bold ${isOver ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'} font-mono shrink-0">
               ${pct.toFixed(0)}%
@@ -2909,8 +2986,21 @@
       }
     }
 
+    const insightsHistForecast = (typeof window.getHistoricalExpenseForecast === 'function')
+      ? window.getHistoricalExpenseForecast()
+      : null;
+    const hasInsightsHist = insightsHistForecast && insightsHistForecast.numMonths > 0 && insightsHistForecast.totalHistoricalAvgExpense > 0;
+
     for (const [category, config] of Object.entries(window.expenseAllocationBlueprint)) {
-      const calculatedBudgetLimit = window.budgetLimits.expense * (config.pct / 100);
+      let calculatedBudgetLimit = 0;
+      if (hasInsightsHist && (category in insightsHistForecast.categoryAverages)) {
+        calculatedBudgetLimit = insightsHistForecast.categoryAverages[category];
+      } else if (hasInsightsHist && insightsHistForecast.totalHistoricalAvgExpense > 0) {
+        calculatedBudgetLimit = insightsHistForecast.totalHistoricalAvgExpense * (config.pct / 100);
+      } else {
+        calculatedBudgetLimit = window.budgetLimits.expense * (config.pct / 100);
+      }
+
       const actualSpent = window.transactions
         .filter(t => t.type === 'expense' && t.category === category)
         .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
