@@ -1418,6 +1418,9 @@
       window.updateSubcategoryOptions(txn.category, txn.subcategory || '', 'edit-expense-subcategory');
       document.getElementById('edit-expense-amount').value = txn.amount;
       document.getElementById('edit-expense-desc').value = txn.description;
+      if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+      const expAccSel = document.getElementById('edit-expense-account');
+      if (expAccSel && txn.accountId) expAccSel.value = txn.accountId;
     } else {
       document.getElementById('edit-income-modal').classList.remove('hidden');
       document.getElementById('edit-expense-modal').classList.add('hidden');
@@ -1437,6 +1440,9 @@
       window.updateSubcategoryOptions(txn.category, txn.subcategory || '', 'edit-income-subcategory');
       document.getElementById('edit-income-amount').value = txn.amount;
       document.getElementById('edit-income-desc').value = txn.description;
+      if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+      const incAccSel = document.getElementById('edit-income-account');
+      if (incAccSel && txn.accountId) incAccSel.value = txn.accountId;
     }
   };
 
@@ -1448,6 +1454,7 @@
     const subcategory = document.getElementById('edit-expense-subcategory')?.value || '';
     const amount = parseFloat(document.getElementById('edit-expense-amount').value);
     const desc = document.getElementById('edit-expense-desc').value.trim();
+    const accountId = document.getElementById('edit-expense-account')?.value || '';
 
     const index = window.transactions.findIndex(t => t.id === id);
     if (index !== -1) {
@@ -1457,6 +1464,7 @@
       window.transactions[index].icon = window.getCategoryIcon ? window.getCategoryIcon(category, window.transactions[index].icon) : '🏷️';
       window.transactions[index].amount = amount;
       window.transactions[index].description = desc;
+      window.transactions[index].accountId = accountId;
       window.saveTransactionsDatabase();
       window.triggerToast("Expense modified successfully!", "success");
     }
@@ -1472,6 +1480,7 @@
     const subcategory = document.getElementById('edit-income-subcategory')?.value || '';
     const amount = parseFloat(document.getElementById('edit-income-amount').value);
     const desc = document.getElementById('edit-income-desc').value.trim();
+    const accountId = document.getElementById('edit-income-account')?.value || '';
 
     const index = window.transactions.findIndex(t => t.id === id);
     if (index !== -1) {
@@ -1481,6 +1490,7 @@
       window.transactions[index].icon = window.getCategoryIcon ? window.getCategoryIcon(category, window.transactions[index].icon) : '🏷️';
       window.transactions[index].amount = amount;
       window.transactions[index].description = desc;
+      window.transactions[index].accountId = accountId;
       window.saveTransactionsDatabase();
       window.triggerToast("Income modified successfully!", "success");
     }
