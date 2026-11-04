@@ -3,7 +3,7 @@
   "vaults": {
     "shared-main-vault": {
       "vaultId": "shared-main-vault",
-      "updatedAt": "2026-11-03T12:21:39.734Z",
+      "updatedAt": "2026-11-04T11:25:48.566Z",
       "transactions": [],
       "accounts": [
         {
@@ -98,7 +98,7 @@
     },
     "demo-showcase-vault": {
       "vaultId": "demo-showcase-vault",
-      "updatedAt": "2026-11-03T12:21:43.467Z",
+      "updatedAt": "2026-11-04T11:28:42.546Z",
       "transactions": [
         {
           "id": "tx_demo_1",
@@ -195,7 +195,7 @@
           "type": "cash",
           "label": "💵 Cash Wallet (Demo)",
           "initialBalance": 1500,
-          "createdAt": "2026-11-03T12:21:43.468Z"
+          "createdAt": "2026-11-04T11:28:42.546Z"
         },
         {
           "id": "acc_demo_cib",
@@ -205,7 +205,7 @@
           "mode": "Debit",
           "bank": "Commercial International Bank (CIB)",
           "initialBalance": 12000,
-          "createdAt": "2026-11-03T12:21:43.468Z"
+          "createdAt": "2026-11-04T11:28:42.546Z"
         },
         {
           "id": "acc_demo_wallet",
@@ -214,7 +214,7 @@
           "kind": "Telecom",
           "provider": "Vodafone Cash",
           "initialBalance": 2500,
-          "createdAt": "2026-11-03T12:21:43.468Z"
+          "createdAt": "2026-11-04T11:28:42.546Z"
         }
       ],
       "accountTransfers": [],
@@ -399,7 +399,8 @@
       "status": "active",
       "mustChangePassword": true,
       "temporaryPassword": "Password123!",
-      "propertyRole": "both"
+      "propertyRole": "both",
+      "avatarUrl": ""
     },
     "usr_1792343003698": {
       "id": "usr_1792343003698",
@@ -623,6 +624,10 @@
     "tok_e5a91b331883c323ccdf732216adba0260066389e1a427bd": {
       "userId": "usr_peter_badir",
       "expiresAt": 1794313307767
+    },
+    "tok_314acfa841811b7e83b45ff086bd3ca98fb890fa3dd1b556": {
+      "userId": "usr_peter_badir",
+      "expiresAt": 1796383723471
     }
   },
   "outbox": [
@@ -820,7 +825,7 @@
     },
     "telemetry": {
       "serverStartedAt": "2026-10-20T12:36:39.995Z",
-      "totalApiRequests": 41
+      "totalApiRequests": 44
     }
   }
 }

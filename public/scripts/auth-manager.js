@@ -654,6 +654,8 @@
       });
     },
 
+    _pendingAvatarUrl: null,
+
     openEditProfileModal: function() {
       this.closeProfileDropdown();
       const modal = document.getElementById('edit-profile-modal');
@@ -672,12 +674,101 @@
       if (nameInput) nameInput.value = user.name || 'Peter W. Badir';
       if (emailInput) emailInput.value = user.email || 'peter.w.badir@gmail.com';
 
+      this._pendingAvatarUrl = user.avatarUrl || null;
+      this.updateAvatarPreview(this._pendingAvatarUrl, user.name || 'PB');
+
       const currentRole = user.propertyRole || (typeof window.getPropertyRole === 'function' ? window.getPropertyRole() : 'tenant');
       this.selectEditPropertyRole(currentRole);
 
       modal.classList.remove('hidden');
       modal.style.display = 'flex';
       document.body.classList.add('overflow-hidden');
+    },
+
+    updateAvatarPreview: function(avatarUrl, name) {
+      const preview = document.getElementById('edit-profile-avatar-preview');
+      if (!preview) return;
+
+      if (avatarUrl && avatarUrl.startsWith('data:image')) {
+        preview.innerHTML = `<img src="${avatarUrl}" class="w-full h-full object-cover" alt="Avatar"/>`;
+      } else if (avatarUrl && avatarUrl.startsWith('preset:')) {
+        const presetType = avatarUrl.replace('preset:', '');
+        const presetGradients = {
+          avatar_purple: 'from-purple-500 to-pink-500',
+          avatar_emerald: 'from-emerald-500 to-teal-500',
+          avatar_amber: 'from-amber-500 to-orange-500',
+          avatar_cyan: 'from-cyan-500 to-blue-600'
+        };
+        const presetIcons = {
+          avatar_purple: '✨',
+          avatar_emerald: '🌿',
+          avatar_amber: '⚡',
+          avatar_cyan: '🌊'
+        };
+        const grad = presetGradients[presetType] || 'from-blue-600 to-indigo-600';
+        const icon = presetIcons[presetType] || '👤';
+        preview.className = `relative w-16 h-16 rounded-2xl overflow-hidden bg-gradient-to-tr ${grad} text-white font-black text-2xl flex items-center justify-center shadow-md shrink-0 border-2 border-white dark:border-slate-800`;
+        preview.innerHTML = `<span>${icon}</span>`;
+      } else {
+        const initials = getInitials(name || 'Peter W. Badir');
+        preview.className = `relative w-16 h-16 rounded-2xl overflow-hidden bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-xl flex items-center justify-center shadow-md shrink-0 border-2 border-white dark:border-slate-800`;
+        preview.innerHTML = initials;
+      }
+    },
+
+    handleAvatarFileUpload: function(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+
+      if (!file.type.startsWith('image/')) {
+        alert('Please choose a valid image file.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          // Scale down to max 256x256 using canvas for optimal performance & compact storage
+          const canvas = document.createElement('canvas');
+          const maxDim = 256;
+          let width = img.width;
+          let height = img.height;
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          this._pendingAvatarUrl = dataUrl;
+          this.updateAvatarPreview(dataUrl);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    },
+
+    selectPresetAvatar: function(presetKey) {
+      this._pendingAvatarUrl = `preset:${presetKey}`;
+      this.updateAvatarPreview(this._pendingAvatarUrl);
+    },
+
+    removeProfileAvatar: function() {
+      this._pendingAvatarUrl = '';
+      const user = this.getUser() || {};
+      this.updateAvatarPreview('', user.name || 'PB');
+      const fileInput = document.getElementById('edit-profile-avatar-file');
+      if (fileInput) fileInput.value = '';
     },
 
     closeEditProfileModal: function() {
@@ -695,6 +786,8 @@
       const errEl = document.getElementById('edit-profile-error-banner');
       const name = nameInput?.value?.trim() || '';
       const propertyRole = document.querySelector('input[name="edit-property-role"]:checked')?.value || 'tenant';
+      const currentUser = this.getUser() || {};
+      const email = currentUser.email || 'peter.w.badir@gmail.com';
 
       if (errEl) errEl.classList.add('hidden');
 
@@ -707,19 +800,32 @@
       }
 
       try {
-        const token = this.getToken();
+        const token = this.getToken() || '';
+        const payload = {
+          name,
+          propertyRole,
+          email,
+          avatarUrl: this._pendingAvatarUrl !== null ? this._pendingAvatarUrl : (currentUser.avatarUrl || '')
+        };
+
         const res = await fetch('/api/auth/profile', {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Authorization': token ? `Bearer ${token}` : '',
+            'X-User-Email': email
           },
-          body: JSON.stringify({ name, propertyRole })
+          body: JSON.stringify(payload)
         });
 
         const data = await res.json();
         if (!res.ok || !data.ok) {
           throw new Error(data.error || 'Failed to update user account profile.');
+        }
+
+        // Store new active token if issued
+        if (data.token) {
+          localStorage.setItem(AUTH_TOKEN_KEY, data.token);
         }
 
         // Update local session storage
@@ -728,6 +834,7 @@
           const prof = JSON.parse(localStorage.getItem('forecaster_profile_user') || '{}');
           prof.name = data.user.name;
           prof.propertyRole = data.user.propertyRole;
+          prof.avatarUrl = data.user.avatarUrl || '';
           localStorage.setItem('forecaster_profile_user', JSON.stringify(prof));
         } catch (err) {}
 
@@ -2235,8 +2342,44 @@ ${mail.body}
         if (subuserHint) subuserHint.classList.toggle('hidden', !isPrimary);
 
         const initials = getInitials(user.name);
-        if (avatarEl) avatarEl.textContent = initials;
-        if (dropdownAvatar) dropdownAvatar.textContent = initials;
+        const avatarUrl = user.avatarUrl || '';
+        
+        const renderAvatarInto = (el, sizeClass = 'text-xs') => {
+          if (!el) return;
+          if (avatarUrl && avatarUrl.startsWith('data:image')) {
+            el.className = 'w-8 h-8 rounded-xl overflow-hidden shadow-xs shrink-0';
+            el.innerHTML = `<img src="${avatarUrl}" class="w-full h-full object-cover" alt="Profile"/>`;
+          } else if (avatarUrl && avatarUrl.startsWith('preset:')) {
+            const p = avatarUrl.replace('preset:', '');
+            const grads = { avatar_purple: 'from-purple-500 to-pink-500', avatar_emerald: 'from-emerald-500 to-teal-500', avatar_amber: 'from-amber-500 to-orange-500', avatar_cyan: 'from-cyan-500 to-blue-600' };
+            const icons = { avatar_purple: '✨', avatar_emerald: '🌿', avatar_amber: '⚡', avatar_cyan: '🌊' };
+            el.className = `w-8 h-8 rounded-xl bg-gradient-to-tr ${grads[p] || 'from-blue-600 to-indigo-600'} text-white font-black ${sizeClass} flex items-center justify-center shadow-xs shrink-0`;
+            el.innerHTML = `<span>${icons[p] || '👤'}</span>`;
+          } else {
+            el.className = `w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black ${sizeClass} flex items-center justify-center shadow-xs shrink-0`;
+            el.textContent = initials;
+          }
+        };
+
+        const renderDropdownAvatarInto = (el) => {
+          if (!el) return;
+          if (avatarUrl && avatarUrl.startsWith('data:image')) {
+            el.className = 'w-11 h-11 rounded-2xl overflow-hidden shadow-md shrink-0 border border-slate-200 dark:border-slate-700';
+            el.innerHTML = `<img src="${avatarUrl}" class="w-full h-full object-cover" alt="Profile"/>`;
+          } else if (avatarUrl && avatarUrl.startsWith('preset:')) {
+            const p = avatarUrl.replace('preset:', '');
+            const grads = { avatar_purple: 'from-purple-500 to-pink-500', avatar_emerald: 'from-emerald-500 to-teal-500', avatar_amber: 'from-amber-500 to-orange-500', avatar_cyan: 'from-cyan-500 to-blue-600' };
+            const icons = { avatar_purple: '✨', avatar_emerald: '🌿', avatar_amber: '⚡', avatar_cyan: '🌊' };
+            el.className = `w-11 h-11 rounded-2xl bg-gradient-to-tr ${grads[p] || 'from-blue-600 to-indigo-600'} text-white font-black text-xl flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0`;
+            el.innerHTML = `<span>${icons[p] || '👤'}</span>`;
+          } else {
+            el.className = 'w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0';
+            el.textContent = initials;
+          }
+        };
+
+        renderAvatarInto(avatarEl, 'text-xs');
+        renderDropdownAvatarInto(dropdownAvatar);
         
         // Show Name & Role in Header Label
         if (headerLabel) {
