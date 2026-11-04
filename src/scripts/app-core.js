@@ -1609,56 +1609,125 @@
     }
   };
 
-  window.getHistoricalExpenseForecast = function(excludeMonth) {
+  window.getHistoricalFinancialForecast = function(excludeMonth) {
     const mostRecent = window.getActiveAllocationsMonth();
     const targetExcludeMonth = (excludeMonth && excludeMonth !== 'all') ? excludeMonth : mostRecent;
 
-    // Group historical expenses by month (YYYY-MM) and category
-    const monthlyCategoryTotals = {};
-    const historicalMonthsSet = new Set();
+    // Track monthly totals per category for both income and expense
+    const expMonthlyTotals = {};
+    const incMonthlyTotals = {};
+    const expMonthsSet = new Set();
+    const incMonthsSet = new Set();
 
     (window.transactions || []).forEach(t => {
-      if (t.type !== 'expense' || !t.date || t.date.length < 7) return;
+      if (!t.date || t.date.length < 7) return;
       const m = t.date.slice(0, 7);
       if (m === targetExcludeMonth) return; // Exclude current/recent month!
 
-      historicalMonthsSet.add(m);
-      if (!monthlyCategoryTotals[t.category || 'Others']) {
-        monthlyCategoryTotals[t.category || 'Others'] = {};
+      const cat = t.category || 'Others';
+      const amt = parseFloat(t.amount) || 0;
+
+      if (t.type === 'expense') {
+        expMonthsSet.add(m);
+        if (!expMonthlyTotals[cat]) expMonthlyTotals[cat] = {};
+        expMonthlyTotals[cat][m] = (expMonthlyTotals[cat][m] || 0) + amt;
+      } else if (t.type === 'income') {
+        incMonthsSet.add(m);
+        if (!incMonthlyTotals[cat]) incMonthlyTotals[cat] = {};
+        incMonthlyTotals[cat][m] = (incMonthlyTotals[cat][m] || 0) + amt;
       }
-      monthlyCategoryTotals[t.category || 'Others'][m] = (monthlyCategoryTotals[t.category || 'Others'][m] || 0) + (parseFloat(t.amount) || 0);
     });
 
-    const numHistoricalMonths = historicalMonthsSet.size;
-    const categoryAverages = {};
-    let totalHistoricalAvgExpense = 0;
+    const expNumMonths = expMonthsSet.size;
+    const incNumMonths = incMonthsSet.size;
 
-    if (numHistoricalMonths > 0) {
+    // 1. Calculate Expense Category Forecasts & Dynamic Percentages
+    const expCategoryForecasts = {};
+    const expCategoryPercentages = {};
+    let totalExpenseForecast = 0;
+
+    if (expNumMonths > 0) {
+      // Calculate for all categories in blueprint
       Object.keys(window.expenseAllocationBlueprint || {}).forEach(cat => {
-        const catMap = monthlyCategoryTotals[cat] || {};
-        const sum = Object.values(catMap).reduce((s, a) => s + a, 0);
-        const avg = sum / numHistoricalMonths;
-        categoryAverages[cat] = avg;
-        totalHistoricalAvgExpense += avg;
-      });
-      // Also capture any other historical categories
-      Object.keys(monthlyCategoryTotals).forEach(cat => {
-        if (!(cat in categoryAverages)) {
-          const sum = Object.values(monthlyCategoryTotals[cat]).reduce((s, a) => s + a, 0);
-          const avg = sum / numHistoricalMonths;
-          categoryAverages[cat] = avg;
-          totalHistoricalAvgExpense += avg;
+        const catMap = expMonthlyTotals[cat] || {};
+        const monthsWithCat = Object.keys(catMap).length;
+        if (monthsWithCat > 0) {
+          // If category was active in historical months, average across months it occurred or full historical period
+          const sum = Object.values(catMap).reduce((s, a) => s + a, 0);
+          const avg = sum / monthsWithCat; // Exact recurring amount (e.g., 9000 rent across 9 months -> 9000, groceries across varying months -> exact average)
+          expCategoryForecasts[cat] = avg;
+          totalExpenseForecast += avg;
+        } else {
+          expCategoryForecasts[cat] = 0;
         }
+      });
+      // Capture any extra categories in historical data
+      Object.keys(expMonthlyTotals).forEach(cat => {
+        if (!(cat in expCategoryForecasts)) {
+          const sum = Object.values(expMonthlyTotals[cat]).reduce((s, a) => s + a, 0);
+          const avg = sum / Object.keys(expMonthlyTotals[cat]).length;
+          expCategoryForecasts[cat] = avg;
+          totalExpenseForecast += avg;
+        }
+      });
+      // Derive dynamic percentage of each category relative to total forecasted expenses
+      Object.keys(expCategoryForecasts).forEach(cat => {
+        expCategoryPercentages[cat] = totalExpenseForecast > 0
+          ? Math.round((expCategoryForecasts[cat] / totalExpenseForecast) * 100)
+          : (window.expenseAllocationBlueprint[cat]?.pct || 0);
+      });
+    }
+
+    // 2. Calculate Income Category Forecasts & Dynamic Percentages
+    const incCategoryForecasts = {};
+    const incCategoryPercentages = {};
+    let totalIncomeForecast = 0;
+
+    if (incNumMonths > 0) {
+      Object.keys(window.incomeAllocationBlueprint || {}).forEach(cat => {
+        const catMap = incMonthlyTotals[cat] || {};
+        const monthsWithCat = Object.keys(catMap).length;
+        if (monthsWithCat > 0) {
+          const sum = Object.values(catMap).reduce((s, a) => s + a, 0);
+          const avg = sum / monthsWithCat;
+          incCategoryForecasts[cat] = avg;
+          totalIncomeForecast += avg;
+        } else {
+          incCategoryForecasts[cat] = 0;
+        }
+      });
+      Object.keys(incMonthlyTotals).forEach(cat => {
+        if (!(cat in incCategoryForecasts)) {
+          const sum = Object.values(incMonthlyTotals[cat]).reduce((s, a) => s + a, 0);
+          const avg = sum / Object.keys(incMonthlyTotals[cat]).length;
+          incCategoryForecasts[cat] = avg;
+          totalIncomeForecast += avg;
+        }
+      });
+      Object.keys(incCategoryForecasts).forEach(cat => {
+        incCategoryPercentages[cat] = totalIncomeForecast > 0
+          ? Math.round((incCategoryForecasts[cat] / totalIncomeForecast) * 100)
+          : (window.incomeAllocationBlueprint[cat]?.pct || 0);
       });
     }
 
     return {
-      numMonths: numHistoricalMonths,
-      historicalMonths: Array.from(historicalMonthsSet).sort(),
-      categoryAverages,
-      totalHistoricalAvgExpense
+      expNumMonths,
+      incNumMonths,
+      expCategoryForecasts,
+      expCategoryPercentages,
+      totalExpenseForecast,
+      incCategoryForecasts,
+      incCategoryPercentages,
+      totalIncomeForecast,
+      // Backward compatibility aliases
+      numMonths: expNumMonths,
+      categoryAverages: expCategoryForecasts,
+      totalHistoricalAvgExpense: totalExpenseForecast
     };
   };
+
+  window.getHistoricalExpenseForecast = window.getHistoricalFinancialForecast;
 
   window.getActiveAllocationsMonth = function() {
     const selected = window.allocationsSelectedMonth || localStorage.getItem('pro_allocations_month') || 'auto';
@@ -1781,15 +1850,21 @@
     }
 
     if (!isManual || forceSync) {
-      // Auto-calculate budget limits: forecast expense quotas based on historical data excluding recent month
-      const autoIncome = registeredIncome > 0 ? registeredIncome : (window.budgetLimits.income || 3500);
-      
-      const histData = (typeof window.getHistoricalExpenseForecast === 'function')
-        ? window.getHistoricalExpenseForecast(activeMonth)
+      // Auto-calculate budget limits: forecast income & expense quotas based on historical data excluding recent month
+      const histData = (typeof window.getHistoricalFinancialForecast === 'function')
+        ? window.getHistoricalFinancialForecast(activeMonth)
         : null;
+
+      let autoIncome = 0;
+      if (histData && histData.incNumMonths > 0 && histData.totalIncomeForecast > 0) {
+        autoIncome = histData.totalIncomeForecast;
+      } else {
+        autoIncome = registeredIncome > 0 ? registeredIncome : (window.budgetLimits.income || 3500);
+      }
+
       let autoExpense = 0;
-      if (histData && histData.numMonths > 0 && histData.totalHistoricalAvgExpense > 0) {
-        autoExpense = histData.totalHistoricalAvgExpense;
+      if (histData && histData.expNumMonths > 0 && histData.totalExpenseForecast > 0) {
+        autoExpense = histData.totalExpenseForecast;
       } else {
         autoExpense = registeredIncome > 0 ? registeredIncome : ((registeredExpenses + totalTransferFees) > 0 ? (registeredExpenses + totalTransferFees) : (window.budgetLimits.expense || 2000));
       }
@@ -1804,11 +1879,11 @@
       if (expInput && document.activeElement !== expInput) expInput.value = autoExpense.toFixed(2);
 
       if (modeInc) {
-        modeInc.textContent = 'Auto-Linked';
+        modeInc.textContent = (histData && histData.incNumMonths > 0) ? `Historical (${histData.incNumMonths}m)` : 'Auto-Linked';
         modeInc.className = 'text-[10px] font-bold text-emerald-600 dark:text-emerald-400';
       }
       if (modeExp) {
-        modeExp.textContent = (histData && histData.numMonths > 0) ? `Historical (${histData.numMonths}m)` : 'Auto-Linked';
+        modeExp.textContent = (histData && histData.expNumMonths > 0) ? `Historical (${histData.expNumMonths}m)` : 'Auto-Linked';
         modeExp.className = 'text-[10px] font-bold text-rose-600 dark:text-rose-400';
       }
 
@@ -1935,9 +2010,29 @@
     let totalForecastedIncome = 0;
     let totalForecastedExpense = 0;
 
-    // Monthly Income Target Proportions (Amount Registered / Amount Forecasted per Category)
+    // 1. Monthly Income Target Proportions: Forecasted from historical data (excluding recent month)
+    const histFinForecast = (typeof window.getHistoricalFinancialForecast === 'function')
+      ? window.getHistoricalFinancialForecast(activeMonth)
+      : null;
+    const hasHistIncome = histFinForecast && histFinForecast.incNumMonths > 0 && histFinForecast.totalIncomeForecast > 0;
+
     for (const [name, data] of Object.entries(window.incomeAllocationBlueprint)) {
-      const forecasted = window.budgetLimits.income * (data.pct / 100);
+      let forecasted = 0;
+      let displayPct = data.pct;
+      let forecastSource = '';
+
+      if (hasHistIncome && (name in histFinForecast.incCategoryForecasts) && histFinForecast.incCategoryForecasts[name] > 0) {
+        forecasted = histFinForecast.incCategoryForecasts[name];
+        displayPct = histFinForecast.incCategoryPercentages[name] || displayPct;
+        forecastSource = `Hist ${displayPct}% (${histFinForecast.incNumMonths}m)`;
+      } else if (hasHistIncome && histFinForecast.totalIncomeForecast > 0) {
+        forecasted = histFinForecast.totalIncomeForecast * (data.pct / 100);
+        forecastSource = `Hist ${data.pct}%`;
+      } else {
+        forecasted = window.budgetLimits.income * (data.pct / 100);
+        forecastSource = `${data.pct}%`;
+      }
+
       totalForecastedIncome += forecasted;
       const registered = incomeByCategory[name] || 0;
       const pct = forecasted > 0 ? (registered / forecasted * 100) : 0;
@@ -1960,7 +2055,7 @@
             <div class="flex items-center gap-1.5 min-w-0">
               <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${data.color}"></span>
               <span class="font-bold text-slate-800 dark:text-slate-200 truncate">${name}</span>
-              <span class="text-[10px] text-slate-400 shrink-0 font-medium">(${data.pct}%)</span>
+              <span class="text-[10px] text-slate-400 shrink-0 font-medium" title="${forecastSource}">(${forecastSource})</span>
             </div>
             <span class="text-[11px] font-bold ${pct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'} font-mono shrink-0">
               ${pct.toFixed(0)}%
@@ -1980,11 +2075,8 @@
       `;
     }
 
-    // Base for expense categories forecast: derived primarily from historical data (previous months/years excluding recent month)
-    const histForecast = (typeof window.getHistoricalExpenseForecast === 'function')
-      ? window.getHistoricalExpenseForecast(activeMonth)
-      : null;
-    const hasHistoricalExpenses = histForecast && histForecast.numMonths > 0 && histForecast.totalHistoricalAvgExpense > 0;
+    // 2. Monthly Expense Quotas Blueprint: Forecasted from historical data (excluding recent month)
+    const hasHistoricalExpenses = histFinForecast && histFinForecast.expNumMonths > 0 && histFinForecast.totalExpenseForecast > 0;
 
     const totalAllRegisteredIncome = (window.transactions || [])
       .filter(t => t.type === 'income')
@@ -1993,16 +2085,18 @@
       ? totalRegisteredIncome 
       : (window.budgetLimits.income > 0 ? window.budgetLimits.income : (totalAllRegisteredIncome > 0 ? totalAllRegisteredIncome : window.budgetLimits.expense));
 
-    // Monthly Expense Quotas Blueprint: Forecasted based on historical data excluding recent month
     for (const [name, data] of Object.entries(window.expenseAllocationBlueprint)) {
       let forecasted = 0;
+      let displayPct = data.pct;
       let forecastSource = '';
-      if (hasHistoricalExpenses && (name in histForecast.categoryAverages)) {
-        forecasted = histForecast.categoryAverages[name];
-        forecastSource = `Avg of prev ${histForecast.numMonths} mo`;
-      } else if (hasHistoricalExpenses && histForecast.totalHistoricalAvgExpense > 0) {
-        forecasted = histForecast.totalHistoricalAvgExpense * (data.pct / 100);
-        forecastSource = `Hist ${histForecast.numMonths}m (${data.pct}%)`;
+
+      if (hasHistoricalExpenses && (name in histFinForecast.expCategoryForecasts) && histFinForecast.expCategoryForecasts[name] > 0) {
+        forecasted = histFinForecast.expCategoryForecasts[name];
+        displayPct = histFinForecast.expCategoryPercentages[name] || displayPct;
+        forecastSource = `Hist ${displayPct}% (${histFinForecast.expNumMonths}m)`;
+      } else if (hasHistoricalExpenses && histFinForecast.totalExpenseForecast > 0) {
+        forecasted = histFinForecast.totalExpenseForecast * (data.pct / 100);
+        forecastSource = `Hist ${data.pct}%`;
       } else {
         forecasted = incomeBaseForExpenseForecast * (data.pct / 100);
         forecastSource = `${data.pct}%`;
