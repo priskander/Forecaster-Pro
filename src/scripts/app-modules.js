@@ -1270,16 +1270,22 @@
   };
 
   window.populateAccountFilterSelect = function() {
-    const filterSel = document.getElementById('filter-account');
-    if (!filterSel || document.activeElement === filterSel) return;
-    const currentVal = filterSel.value;
+    const filterSelectors = ['filter-account', 'filter-txn-account'];
     const accounts = Array.isArray(window.accounts) ? window.accounts : [];
     const newHtml = `<option value="">All Accounts</option>` +
       accounts.map(a => `<option value="${a.id}">${window.accountIcon(a.type)} ${a.label}</option>`).join('');
-    if (filterSel.innerHTML !== newHtml) {
-      filterSel.innerHTML = newHtml;
-      if (currentVal) filterSel.value = currentVal;
-    }
+
+    filterSelectors.forEach(id => {
+      const filterSel = document.getElementById(id);
+      if (!filterSel || document.activeElement === filterSel) return;
+      const currentVal = filterSel.value;
+      if (filterSel.innerHTML !== newHtml) {
+        filterSel.innerHTML = newHtml;
+        if (currentVal && accounts.some(a => a.id === currentVal)) {
+          filterSel.value = currentVal;
+        }
+      }
+    });
   };
 
   window.addEventListener('DOMContentLoaded', () => {

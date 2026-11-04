@@ -326,8 +326,15 @@
     window.drawers[type] = !window.drawers[type];
     const elem = document.getElementById(`${type}-filter-drawer`);
     if (elem) {
-      if (window.drawers[type]) elem.classList.remove('hidden');
-      else elem.classList.add('hidden');
+      if (window.drawers[type]) {
+        elem.classList.remove('hidden');
+        if (type === 'transaction') {
+          if (typeof window.populateCategoryFilters === 'function') window.populateCategoryFilters();
+          if (typeof window.populateAccountFilterSelect === 'function') window.populateAccountFilterSelect();
+        }
+      } else {
+        elem.classList.add('hidden');
+      }
     }
   };
 
@@ -2272,6 +2279,7 @@
 
     const filterType = document.getElementById('filter-txn-type')?.value || 'all';
     const filterCat = document.getElementById('filter-txn-cat')?.value || '';
+    const filterAccount = document.getElementById('filter-txn-account')?.value || '';
     const filterSort = document.getElementById('filter-txn-sort')?.value || 'date-desc';
     const searchVal = (document.getElementById('filter-txn-search')?.value || '').toLowerCase();
     const dateStart = document.getElementById('filter-txn-start')?.value || '';
@@ -2281,6 +2289,7 @@
 
     if (filterType !== 'all') records = records.filter(r => r.type === filterType);
     if (filterCat) records = records.filter(r => r.category === filterCat);
+    if (filterAccount) records = records.filter(r => r.accountId === filterAccount);
     if (searchVal) records = records.filter(r => (r.description || '').toLowerCase().includes(searchVal) || (r.category || '').toLowerCase().includes(searchVal));
     if (dateStart) records = records.filter(r => r.date >= dateStart);
     if (dateEnd) records = records.filter(r => r.date <= dateEnd);
@@ -2295,6 +2304,10 @@
       const colorTag = r.type === 'income' ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50';
       const icon = window.getCategoryIcon ? window.getCategoryIcon(r.category, r.icon) : '🏷️';
       const cleanCat = window.cleanCategoryLabel ? window.cleanCategoryLabel(r.category) : r.category;
+      
+      const acc = (window.accounts || []).find(a => a.id === r.accountId);
+      const accLabel = acc ? `${window.accountIcon ? window.accountIcon(acc.type) : '💳'} ${acc.label}` : (r.accountId ? `💳 ${r.accountId}` : '<span class="text-slate-400 font-normal">—</span>');
+
       tbody.innerHTML += `
         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition border-b border-slate-100 dark:border-slate-800 font-medium">
           <td class="py-3 px-2 whitespace-nowrap text-slate-500 font-bold">${r.date}</td>
@@ -2311,6 +2324,9 @@
             </span>
           </td>
           <td class="py-3 px-2 text-slate-900 dark:text-slate-100">${window.escapeHtml(r.description)}</td>
+          <td class="py-3 px-2 whitespace-nowrap text-xs font-semibold text-slate-700 dark:text-slate-300">
+            ${accLabel}
+          </td>
           <td class="py-3 px-2 text-right font-black ${r.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}">
             EGP ${r.amount.toFixed(2)}
           </td>
@@ -2323,7 +2339,7 @@
     });
 
     if (records.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-404 font-semibold">No transactions match active analytical filters.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-slate-404 font-semibold">No transactions match active analytical filters.</td></tr>`;
     }
 
     if (recentDashboardList) {
