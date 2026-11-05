@@ -1131,6 +1131,42 @@
 
     window.renderAccountsView();
     window.renderDashboardAccountsAnalysis();
+    if (typeof window.renderConsolidatedTableRegistry === 'function') window.renderConsolidatedTableRegistry();
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+  };
+
+  window.editAccountTransfer = function(id) {
+    const tr = (window.accountTransfers || []).find(t => t.id === id);
+    if (!tr) return;
+
+    if (typeof window.switchView === 'function') window.switchView('transactions');
+    if (typeof window.setFormType === 'function') window.setFormType('transfer');
+
+    const amountInput = document.getElementById('form-txn-amount');
+    const dateInput = document.getElementById('form-txn-date');
+    const fromSelect = document.getElementById('form-transfer-from');
+    const toSelect = document.getElementById('form-transfer-to');
+    const methodSelect = document.getElementById('form-transfer-method');
+    const feeInput = document.getElementById('form-transfer-instapay-fee');
+    const descInput = document.getElementById('form-txn-desc');
+
+    if (amountInput) amountInput.value = tr.amount || '';
+    if (dateInput) dateInput.value = tr.date || '';
+    if (fromSelect) fromSelect.value = tr.fromId || '';
+    if (toSelect) toSelect.value = tr.toId || '';
+    if (methodSelect && tr.method) methodSelect.value = tr.method;
+    if (feeInput) feeInput.value = tr.fee || 0;
+    if (descInput) descInput.value = tr.notes || '';
+
+    // Remove the previous record so when submitted, the updated entry replaces it
+    window.accountTransfers = (window.accountTransfers || []).filter(t => t.id !== id);
+    window.saveAccountsDatabase();
+
+    if (typeof window.triggerToast === 'function') {
+      window.triggerToast('Transfer loaded into form. Modify fields and click Save Log.', 'info');
+    }
+    const logSection = document.getElementById('form-unified-transaction');
+    if (logSection) logSection.scrollIntoView({ behavior: 'smooth' });
   };
 
   window.renderAccountsView = function() {

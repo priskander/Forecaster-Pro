@@ -2295,14 +2295,57 @@
     const dateStart = document.getElementById('filter-txn-start')?.value || '';
     const dateEnd = document.getElementById('filter-txn-end')?.value || '';
 
-    let records = [...window.transactions];
+    // Standard transactions normalized
+    const standardRecords = (window.transactions || []).map(t => ({
+      ...t,
+      isTransfer: false,
+      amount: parseFloat(t.amount) || 0
+    }));
+
+    // Transfer records normalized
+    const transferRecords = (window.accountTransfers || []).map(tr => ({
+      id: tr.id,
+      isTransfer: true,
+      date: tr.date || (tr.createdAt ? tr.createdAt.slice(0, 10) : ''),
+      type: 'transfer',
+      category: 'Transfer',
+      subcategory: tr.method || 'Transfer',
+      description: tr.notes || `${tr.fromLabel || tr.fromId} ➜ ${tr.toLabel || tr.toId}`,
+      amount: parseFloat(tr.amount) || 0,
+      fee: parseFloat(tr.fee) || 0,
+      accountId: tr.fromId,
+      fromId: tr.fromId,
+      toId: tr.toId,
+      fromLabel: tr.fromLabel || tr.fromId,
+      toLabel: tr.toLabel || tr.toId,
+      icon: '🔁'
+    }));
+
+    let records = [...standardRecords, ...transferRecords];
 
     if (filterType !== 'all') records = records.filter(r => r.type === filterType);
     if (filterCat) records = records.filter(r => r.category === filterCat);
-    if (filterAccount) records = records.filter(r => r.accountId === filterAccount);
-    if (searchVal) records = records.filter(r => (r.description || '').toLowerCase().includes(searchVal) || (r.category || '').toLowerCase().includes(searchVal));
-    if (dateStart) records = records.filter(r => r.date >= dateStart);
-    if (dateEnd) records = records.filter(r => r.date <= dateEnd);
+    if (filterAccount) {
+      records = records.filter(r => {
+        if (r.isTransfer) {
+          return r.fromId === filterAccount || r.toId === filterAccount;
+        }
+        return r.accountId === filterAccount;
+      });
+    }
+    if (searchVal) {
+      records = records.filter(r => 
+        (r.description || '').toLowerCase().includes(searchVal) || 
+        (r.category || '').toLowerCase().includes(searchVal) ||
+        (r.isTransfer && (
+          (r.fromLabel || '').toLowerCase().includes(searchVal) || 
+          (r.toLabel || '').toLowerCase().includes(searchVal) ||
+          (r.subcategory || '').toLowerCase().includes(searchVal)
+        ))
+      );
+    }
+    if (dateStart) records = records.filter(r => (r.date || '') >= dateStart);
+    if (dateEnd) records = records.filter(r => (r.date || '') <= dateEnd);
 
     if (filterSort === 'date-desc') records.sort((a,b) => new Date(b.date) - new Date(a.date));
     else if (filterSort === 'date-asc') records.sort((a,b) => new Date(a.date) - new Date(b.date));
@@ -2311,41 +2354,79 @@
 
     tbody.innerHTML = '';
     records.forEach(r => {
-      const colorTag = r.type === 'income' ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50';
-      const icon = window.getCategoryIcon ? window.getCategoryIcon(r.category, r.icon) : '🏷️';
-      const cleanCat = window.cleanCategoryLabel ? window.cleanCategoryLabel(r.category) : r.category;
-      
-      const acc = (window.accounts || []).find(a => a.id === r.accountId);
-      const accLabel = acc ? `${window.accountIcon ? window.accountIcon(acc.type) : '💳'} ${acc.label}` : (r.accountId ? `💳 ${r.accountId}` : '<span class="text-slate-400 font-normal">—</span>');
+      if (r.isTransfer) {
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition border-b border-slate-100 dark:border-slate-800 font-medium">
+            <td class="py-3 px-2 whitespace-nowrap text-slate-500 font-bold">${r.date}</td>
+            <td class="py-3 px-2">
+              <span class="inline-flex px-2 py-0.5 rounded-md text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 dark:text-indigo-300 dark:bg-indigo-950 border border-indigo-200/50 dark:border-indigo-800/50">
+                transfer
+              </span>
+            </td>
+            <td class="py-3 px-2 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 font-bold text-indigo-700 dark:text-indigo-300 text-xs shadow-xs">
+                <span class="text-sm select-none leading-none">🔁</span>
+                <span>Transfer</span>
+                ${r.subcategory ? `<span class="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/60 px-1.5 py-0.5 rounded-md">• ${window.escapeHtml(r.subcategory)}</span>` : ''}
+              </span>
+            </td>
+            <td class="py-3 px-2 text-slate-900 dark:text-slate-100">
+              ${window.escapeHtml(r.description)}
+              ${r.fee > 0 ? `<span class="ml-1.5 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-900">(Fee: EGP ${r.fee.toFixed(2)})</span>` : ''}
+            </td>
+            <td class="py-3 px-2 whitespace-nowrap text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <span class="inline-flex items-center gap-1 font-bold text-slate-800 dark:text-slate-200">
+                <span>${window.escapeHtml(r.fromLabel)}</span>
+                <span class="text-indigo-500">➜</span>
+                <span class="text-indigo-600 dark:text-indigo-400 font-extrabold">${window.escapeHtml(r.toLabel)}</span>
+              </span>
+            </td>
+            <td class="py-3 px-2 text-right font-black text-indigo-600 dark:text-indigo-400">
+              EGP ${r.amount.toFixed(2)}
+            </td>
+            <td class="py-3 px-2 text-center whitespace-nowrap space-x-1.5">
+              <button type="button" onclick="window.editAccountTransfer('${r.id}')" class="p-1 hover:text-blue-600 transition" title="Modify Transfer">✏️</button>
+              <button type="button" onclick="window.deleteAccountTransfer('${r.id}')" class="p-1 hover:text-rose-600 transition" title="Delete Transfer">🗑️</button>
+            </td>
+          </tr>
+        `;
+      } else {
+        const colorTag = r.type === 'income' ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50';
+        const icon = window.getCategoryIcon ? window.getCategoryIcon(r.category, r.icon) : '🏷️';
+        const cleanCat = window.cleanCategoryLabel ? window.cleanCategoryLabel(r.category) : r.category;
+        
+        const acc = (window.accounts || []).find(a => a.id === r.accountId);
+        const accLabel = acc ? `${window.accountIcon ? window.accountIcon(acc.type) : '💳'} ${acc.label}` : (r.accountId ? `💳 ${r.accountId}` : '<span class="text-slate-400 font-normal">—</span>');
 
-      tbody.innerHTML += `
-        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition border-b border-slate-100 dark:border-slate-800 font-medium">
-          <td class="py-3 px-2 whitespace-nowrap text-slate-500 font-bold">${r.date}</td>
-          <td class="py-3 px-2">
-            <span class="inline-flex px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${colorTag}">
-              ${r.type}
-            </span>
-          </td>
-          <td class="py-3 px-2 whitespace-nowrap">
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 font-bold text-slate-700 dark:text-slate-200 text-xs shadow-xs">
-              <span class="text-sm select-none leading-none">${icon}</span>
-              <span>${window.escapeHtml(cleanCat)}</span>
-              ${r.subcategory ? `<span class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-200/60 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md">• ${window.escapeHtml(r.subcategory)}</span>` : ''}
-            </span>
-          </td>
-          <td class="py-3 px-2 text-slate-900 dark:text-slate-100">${window.escapeHtml(r.description)}</td>
-          <td class="py-3 px-2 whitespace-nowrap text-xs font-semibold text-slate-700 dark:text-slate-300">
-            ${accLabel}
-          </td>
-          <td class="py-3 px-2 text-right font-black ${r.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}">
-            EGP ${r.amount.toFixed(2)}
-          </td>
-          <td class="py-3 px-2 text-center whitespace-nowrap space-x-1.5">
-            <button type="button" onclick="editTransaction('${r.id}', event)" class="p-1 hover:text-blue-600 transition" title="Modify Record">✏️</button>
-            <button type="button" onclick="deleteTransaction('${r.id}', event)" class="p-1 hover:text-rose-600 transition" title="Delete Record">🗑️</button>
-          </td>
-        </tr>
-      `;
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition border-b border-slate-100 dark:border-slate-800 font-medium">
+            <td class="py-3 px-2 whitespace-nowrap text-slate-500 font-bold">${r.date}</td>
+            <td class="py-3 px-2">
+              <span class="inline-flex px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${colorTag}">
+                ${r.type}
+              </span>
+            </td>
+            <td class="py-3 px-2 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 font-bold text-slate-700 dark:text-slate-200 text-xs shadow-xs">
+                <span class="text-sm select-none leading-none">${icon}</span>
+                <span>${window.escapeHtml(cleanCat)}</span>
+                ${r.subcategory ? `<span class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-200/60 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md">• ${window.escapeHtml(r.subcategory)}</span>` : ''}
+              </span>
+            </td>
+            <td class="py-3 px-2 text-slate-900 dark:text-slate-100">${window.escapeHtml(r.description)}</td>
+            <td class="py-3 px-2 whitespace-nowrap text-xs font-semibold text-slate-700 dark:text-slate-300">
+              ${accLabel}
+            </td>
+            <td class="py-3 px-2 text-right font-black ${r.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}">
+              EGP ${r.amount.toFixed(2)}
+            </td>
+            <td class="py-3 px-2 text-center whitespace-nowrap space-x-1.5">
+              <button type="button" onclick="editTransaction('${r.id}', event)" class="p-1 hover:text-blue-600 transition" title="Modify Record">✏️</button>
+              <button type="button" onclick="deleteTransaction('${r.id}', event)" class="p-1 hover:text-rose-600 transition" title="Delete Record">🗑️</button>
+            </td>
+          </tr>
+        `;
+      }
     });
 
     if (records.length === 0) {
@@ -2354,16 +2435,31 @@
 
     if (recentDashboardList) {
       recentDashboardList.innerHTML = '';
-      const topDash = [...window.transactions].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+      const allTxns = [
+        ...window.transactions,
+        ...(window.accountTransfers || []).map(tr => ({
+          id: tr.id,
+          date: tr.date || (tr.createdAt ? tr.createdAt.slice(0, 10) : ''),
+          type: 'transfer',
+          category: 'Transfer',
+          description: tr.notes || `${tr.fromLabel || tr.fromId} ➜ ${tr.toLabel || tr.toId}`,
+          amount: parseFloat(tr.amount) || 0,
+          icon: '🔁'
+        }))
+      ];
+      const topDash = allTxns.sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
       
       topDash.forEach(td => {
         const isInc = td.type === 'income';
+        const isTransfer = td.type === 'transfer';
         const isNew = td.id === window._lastAddedTxnId;
         const animClass = isNew ? 'animate-subtle-fade-in ring-1 ring-blue-500/40 bg-blue-50/50 dark:bg-blue-950/40' : '';
         const cleanCat = window.cleanCategoryLabel ? window.cleanCategoryLabel(td.category) : td.category;
-        const icon = window.getCategoryIcon ? window.getCategoryIcon(td.category, td.icon) : '🏷️';
+        const icon = isTransfer ? '🔁' : (window.getCategoryIcon ? window.getCategoryIcon(td.category, td.icon) : '🏷️');
         const blueprint = isInc ? window.incomeAllocationBlueprint[cleanCat] : window.expenseAllocationBlueprint[cleanCat];
-        const catColor = blueprint ? blueprint.color : (isInc ? '#10b981' : '#f43f5e');
+        const catColor = isTransfer ? '#6366f1' : (blueprint ? blueprint.color : (isInc ? '#10b981' : '#f43f5e'));
+        const amountColor = isTransfer ? 'text-indigo-600 dark:text-indigo-400' : (isInc ? 'text-emerald-600' : 'text-rose-600');
+        const prefix = isTransfer ? '⇄ ' : (isInc ? '+' : '-');
 
         recentDashboardList.innerHTML += `
           <div class="flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all duration-300 font-medium ${animClass}">
@@ -2382,8 +2478,8 @@
               </div>
             </div>
             <div class="text-right">
-              <p class="text-xs font-black ${isInc ? 'text-emerald-600' : 'text-rose-600'}">
-                ${isInc ? '+' : '-'}EGP ${td.amount.toFixed(2)}
+              <p class="text-xs font-black ${amountColor}">
+                ${prefix}EGP ${td.amount.toFixed(2)}
               </p>
               <span class="text-[9px] text-slate-404 font-semibold">${td.date}</span>
             </div>
