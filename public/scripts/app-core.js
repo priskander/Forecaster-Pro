@@ -1630,7 +1630,19 @@
     const mostRecent = window.getActiveAllocationsMonth();
     const targetExcludeMonth = (excludeMonth && excludeMonth !== 'all') ? excludeMonth : mostRecent;
 
-    // Track monthly totals per category for both income and expense
+    // Detect all recorded monthly periods
+    const allMonthsSet = new Set();
+    (window.transactions || []).forEach(t => {
+      if (t.date && t.date.length >= 7) allMonthsSet.add(t.date.slice(0, 7));
+    });
+    (window.accountTransfers || []).forEach(tr => {
+      if (tr.date && tr.date.length >= 7) allMonthsSet.add(tr.date.slice(0, 7));
+    });
+
+    const historicalMonths = Array.from(allMonthsSet).filter(m => m < targetExcludeMonth);
+    const hasPriorHistorical = historicalMonths.length > 0;
+
+    // Track monthly totals per category for income, expense and transfers
     const expMonthlyTotals = {};
     const incMonthlyTotals = {};
     const expMonthsSet = new Set();
@@ -1639,7 +1651,7 @@
     (window.transactions || []).forEach(t => {
       if (!t.date || t.date.length < 7) return;
       const m = t.date.slice(0, 7);
-      if (m === targetExcludeMonth) return; // Exclude current/recent month!
+      if (hasPriorHistorical && m >= targetExcludeMonth) return; // Exclude recent/target month
 
       const cat = t.category || 'Others';
       const amt = parseFloat(t.amount) || 0;
@@ -1655,8 +1667,41 @@
       }
     });
 
+    // Track monthly transfers & transfer fees (Instapay etc.)
+    const trMonthlyTotals = {};
+    const trMonthlyFees = {};
+    const trMonthlyCounts = {};
+    const trByMethodTotals = {};
+    const trByRouteTotals = {};
+    const trMonthsSet = new Set();
+
+    (window.accountTransfers || []).forEach(tr => {
+      if (!tr.date || tr.date.length < 7) return;
+      const m = tr.date.slice(0, 7);
+      if (hasPriorHistorical && m >= targetExcludeMonth) return; // Exclude recent/target month
+
+      const amt = parseFloat(tr.amount) || 0;
+      const fee = parseFloat(tr.fee) || 0;
+      const method = tr.method || 'Transfer';
+      const fromLbl = tr.fromLabel || tr.fromId || 'Source';
+      const toLbl = tr.toLabel || tr.toId || 'Target';
+      const route = `${fromLbl} ➜ ${toLbl}`;
+
+      trMonthsSet.add(m);
+      trMonthlyTotals[m] = (trMonthlyTotals[m] || 0) + amt;
+      trMonthlyFees[m] = (trMonthlyFees[m] || 0) + fee;
+      trMonthlyCounts[m] = (trMonthlyCounts[m] || 0) + 1;
+
+      if (!trByMethodTotals[method]) trByMethodTotals[method] = {};
+      trByMethodTotals[method][m] = (trByMethodTotals[method][m] || 0) + amt;
+
+      if (!trByRouteTotals[route]) trByRouteTotals[route] = {};
+      trByRouteTotals[route][m] = (trByRouteTotals[route][m] || 0) + amt;
+    });
+
     const expNumMonths = expMonthsSet.size;
     const incNumMonths = incMonthsSet.size;
+    const trNumMonths = trMonthsSet.size;
 
     // 1. Calculate Expense Category Forecasts & Dynamic Percentages
     const expCategoryForecasts = {};
@@ -1664,21 +1709,18 @@
     let totalExpenseForecast = 0;
 
     if (expNumMonths > 0) {
-      // Calculate for all categories in blueprint
       Object.keys(window.expenseAllocationBlueprint || {}).forEach(cat => {
         const catMap = expMonthlyTotals[cat] || {};
         const monthsWithCat = Object.keys(catMap).length;
         if (monthsWithCat > 0) {
-          // If category was active in historical months, average across months it occurred or full historical period
           const sum = Object.values(catMap).reduce((s, a) => s + a, 0);
-          const avg = sum / monthsWithCat; // Exact recurring amount (e.g., 9000 rent across 9 months -> 9000, groceries across varying months -> exact average)
+          const avg = sum / monthsWithCat; // Recurring historical average
           expCategoryForecasts[cat] = avg;
           totalExpenseForecast += avg;
         } else {
           expCategoryForecasts[cat] = 0;
         }
       });
-      // Capture any extra categories in historical data
       Object.keys(expMonthlyTotals).forEach(cat => {
         if (!(cat in expCategoryForecasts)) {
           const sum = Object.values(expMonthlyTotals[cat]).reduce((s, a) => s + a, 0);
@@ -1687,7 +1729,6 @@
           totalExpenseForecast += avg;
         }
       });
-      // Derive dynamic percentage of each category relative to total forecasted expenses
       Object.keys(expCategoryForecasts).forEach(cat => {
         expCategoryPercentages[cat] = totalExpenseForecast > 0
           ? Math.round((expCategoryForecasts[cat] / totalExpenseForecast) * 100)
@@ -1728,15 +1769,52 @@
       });
     }
 
+    // 3. Calculate Account Transfers Forecast
+    const transferMethodForecasts = {};
+    const transferRouteForecasts = {};
+    let totalTransferForecast = 0;
+    let totalTransferFeeForecast = 0;
+    let totalTransferCountForecast = 0;
+
+    if (trNumMonths > 0) {
+      const sumAmt = Object.values(trMonthlyTotals).reduce((s, a) => s + a, 0);
+      const sumFees = Object.values(trMonthlyFees).reduce((s, a) => s + a, 0);
+      const sumCount = Object.values(trMonthlyCounts).reduce((s, a) => s + a, 0);
+      totalTransferForecast = sumAmt / trNumMonths;
+      totalTransferFeeForecast = sumFees / trNumMonths;
+      totalTransferCountForecast = Math.round(sumCount / trNumMonths);
+
+      Object.keys(trByMethodTotals).forEach(method => {
+        const catMap = trByMethodTotals[method];
+        const mCount = Object.keys(catMap).length;
+        const sum = Object.values(catMap).reduce((s, a) => s + a, 0);
+        transferMethodForecasts[method] = sum / mCount;
+      });
+
+      Object.keys(trByRouteTotals).forEach(route => {
+        const catMap = trByRouteTotals[route];
+        const mCount = Object.keys(catMap).length;
+        const sum = Object.values(catMap).reduce((s, a) => s + a, 0);
+        transferRouteForecasts[route] = sum / mCount;
+      });
+    }
+
     return {
       expNumMonths,
       incNumMonths,
+      trNumMonths,
+      hasPriorHistorical,
       expCategoryForecasts,
       expCategoryPercentages,
       totalExpenseForecast,
       incCategoryForecasts,
       incCategoryPercentages,
       totalIncomeForecast,
+      totalTransferForecast,
+      totalTransferFeeForecast,
+      totalTransferCountForecast,
+      transferMethodForecasts,
+      transferRouteForecasts,
       // Backward compatibility aliases
       numMonths: expNumMonths,
       categoryAverages: expCategoryForecasts,
@@ -1853,9 +1931,16 @@
     const regTrEl = document.getElementById('alloc-registered-transfers');
     if (regIncEl) regIncEl.innerText = `EGP ${registeredIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     if (regExpEl) regExpEl.innerText = `EGP ${registeredExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const histData = (typeof window.getHistoricalFinancialForecast === 'function')
+      ? window.getHistoricalFinancialForecast(activeMonth)
+      : null;
+
     if (regTrEl) {
       const count = scopedTransfers.length;
-      regTrEl.innerText = `${count} (EGP ${totalTransfersAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${totalTransferFees > 0 ? ` + EGP ${totalTransferFees.toFixed(2)} fee` : ''})`;
+      const forecastInfo = (histData && histData.totalTransferForecast > 0)
+        ? ` • Forecast: EGP ${histData.totalTransferForecast.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : '';
+      regTrEl.innerText = `${count} (EGP ${totalTransfersAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${totalTransferFees > 0 ? ` + EGP ${totalTransferFees.toFixed(2)} fee` : ''})${forecastInfo}`;
     }
 
     const modeInc = document.getElementById('label-income-calc-mode');
@@ -1867,11 +1952,7 @@
     }
 
     if (!isManual || forceSync) {
-      // Auto-calculate budget limits: forecast income & expense quotas based on historical data excluding recent month
-      const histData = (typeof window.getHistoricalFinancialForecast === 'function')
-        ? window.getHistoricalFinancialForecast(activeMonth)
-        : null;
-
+      // Auto-calculate budget limits: forecast income & expense quotas based on historical data
       let autoIncome = 0;
       if (histData && histData.incNumMonths > 0 && histData.totalIncomeForecast > 0) {
         autoIncome = histData.totalIncomeForecast;
@@ -1881,7 +1962,7 @@
 
       let autoExpense = 0;
       if (histData && histData.expNumMonths > 0 && histData.totalExpenseForecast > 0) {
-        autoExpense = histData.totalExpenseForecast;
+        autoExpense = histData.totalExpenseForecast + (histData.totalTransferFeeForecast || 0);
       } else {
         autoExpense = registeredIncome > 0 ? registeredIncome : ((registeredExpenses + totalTransferFees) > 0 ? (registeredExpenses + totalTransferFees) : (window.budgetLimits.expense || 2000));
       }
@@ -1889,6 +1970,22 @@
       window.budgetLimits.income = autoIncome;
       window.budgetLimits.expense = autoExpense;
       localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
+
+      // Dynamically sync blueprint percentages with historical forecasts
+      if (histData && histData.expCategoryPercentages) {
+        Object.keys(histData.expCategoryPercentages).forEach(cat => {
+          if (window.expenseAllocationBlueprint[cat]) {
+            window.expenseAllocationBlueprint[cat].pct = histData.expCategoryPercentages[cat];
+          }
+        });
+      }
+      if (histData && histData.incCategoryPercentages) {
+        Object.keys(histData.incCategoryPercentages).forEach(cat => {
+          if (window.incomeAllocationBlueprint[cat]) {
+            window.incomeAllocationBlueprint[cat].pct = histData.incCategoryPercentages[cat];
+          }
+        });
+      }
 
       const incInput = document.getElementById('budget-income-input');
       const expInput = document.getElementById('budget-expense-input');
@@ -1905,7 +2002,7 @@
       }
 
       if (forceSync && typeof window.triggerToast === 'function') {
-        window.triggerToast(`Allocations auto-calculated for ${window.formatMonthLabel(activeMonth)}: Inflow EGP ${autoIncome.toFixed(2)}, Outflow EGP ${autoExpense.toFixed(2)}`, 'success');
+        window.triggerToast(`Allocations & transfers auto-forecasted for ${window.formatMonthLabel(activeMonth)}: Inflow EGP ${autoIncome.toFixed(2)}, Outflow EGP ${autoExpense.toFixed(2)}`, 'success');
       }
     } else {
       if (modeInc) {
@@ -2169,6 +2266,95 @@
     }
     if (expTotalsEl) {
       expTotalsEl.innerText = `EGP ${totalRegisteredExpense.toFixed(0)} / EGP ${totalForecastedExpense.toFixed(0)}`;
+    }
+
+    // 3. Account Transfers Forecast Blueprint
+    const trContainer = document.getElementById('blueprint-transfers-items');
+    const trTotalsEl = document.getElementById('blueprint-transfers-totals');
+    const trBadge = document.getElementById('blueprint-transfers-badge');
+
+    if (trContainer) {
+      trContainer.innerHTML = '';
+      const hasHistTransfers = histFinForecast && histFinForecast.trNumMonths > 0 && histFinForecast.totalTransferForecast > 0;
+      if (trBadge) {
+        trBadge.textContent = hasHistTransfers ? `Hist Forecast (${histFinForecast.trNumMonths}m)` : 'Real-time Linked';
+      }
+
+      const activeTransfersByRoute = {};
+      let totalRegisteredTransfers = 0;
+      let totalRegisteredTransferFees = 0;
+
+      (scopedTransfers || []).forEach(tr => {
+        const amt = parseFloat(tr.amount) || 0;
+        const fee = parseFloat(tr.fee) || 0;
+        const fromLbl = tr.fromLabel || tr.fromId || 'Source';
+        const toLbl = tr.toLabel || tr.toId || 'Target';
+        const route = `${fromLbl} ➜ ${toLbl}`;
+        if (!activeTransfersByRoute[route]) {
+          activeTransfersByRoute[route] = { amount: 0, fee: 0, count: 0, method: tr.method || 'Transfer' };
+        }
+        activeTransfersByRoute[route].amount += amt;
+        activeTransfersByRoute[route].fee += fee;
+        activeTransfersByRoute[route].count += 1;
+        totalRegisteredTransfers += amt;
+        totalRegisteredTransferFees += fee;
+      });
+
+      const allRoutes = new Set([
+        ...Object.keys(activeTransfersByRoute),
+        ...Object.keys((histFinForecast && histFinForecast.transferRouteForecasts) || {})
+      ]);
+
+      let totalForecastedTransfers = 0;
+
+      if (allRoutes.size === 0) {
+        trContainer.innerHTML = `
+          <div class="p-3 text-center text-xs text-slate-404 bg-slate-50 dark:bg-slate-900/40 rounded-xl font-medium">
+            No account transfers registered or forecasted for this period.
+          </div>
+        `;
+      } else {
+        allRoutes.forEach(route => {
+          const act = activeTransfersByRoute[route] || { amount: 0, fee: 0, count: 0, method: 'Transfer' };
+          const histAmt = (histFinForecast && histFinForecast.transferRouteForecasts && histFinForecast.transferRouteForecasts[route]) || 0;
+          const forecasted = histAmt > 0 ? histAmt : (act.amount > 0 ? act.amount : (histFinForecast?.totalTransferForecast || 0));
+          totalForecastedTransfers += forecasted;
+
+          const pct = forecasted > 0 ? ((act.amount / forecasted) * 100) : (act.amount > 0 ? 100 : 0);
+
+          trContainer.innerHTML += `
+            <div class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 space-y-2 transition">
+              <div class="flex items-center justify-between text-xs">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="w-2.5 h-2.5 rounded-full shrink-0 bg-indigo-500"></span>
+                  <span class="font-bold text-slate-800 dark:text-slate-200 truncate">${route}</span>
+                  <span class="text-[10px] text-slate-404 shrink-0 font-medium">(${act.method || 'Transfer'})</span>
+                </div>
+                <span class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 font-mono shrink-0">
+                  ${pct.toFixed(0)}%
+                </span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <div class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full budget-progress-bar" style="width: ${Math.min(pct, 100).toFixed(0)}%; background-color: #6366f1"></div>
+                </div>
+              </div>
+              <div class="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-404">
+                <span>Reg: <strong class="font-bold text-indigo-600 dark:text-indigo-400">EGP ${act.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>${act.fee > 0 ? ` <span class="text-[9px] text-amber-600 font-semibold">(Fee: ${act.fee.toFixed(2)})</span>` : ''}</span>
+                <span>Forecast: <strong class="font-semibold text-slate-700 dark:text-slate-300">EGP ${forecasted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+              </div>
+            </div>
+          `;
+        });
+      }
+
+      if (trTotalsEl) {
+        trTotalsEl.innerText = `EGP ${totalRegisteredTransfers.toFixed(0)} / EGP ${totalForecastedTransfers.toFixed(0)}`;
+      }
+    }
+
+    if (typeof lucide !== 'undefined' && lucide.createIcons) {
+      lucide.createIcons();
     }
   };
 
