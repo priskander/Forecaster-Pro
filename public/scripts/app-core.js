@@ -1886,133 +1886,144 @@
 
   /* MAIN ORCHESTRATOR */
   window.renderAllViews = function() {
-    window.populateAllocationsMonthFilter();
-    window.autoCalculateAllocations(false);
-    window.calculateOverallDashboardAggregates();
-    window.renderDashboardBlueprintItems();
-    window.renderHouseholdFinancialFootprint();
-    window.renderConsolidatedTableRegistry();
-    window.renderStockInventoryLedger();
-    window.renderPharmacyLedger();
-    if (typeof window.renderSparePartsLedger === 'function') window.renderSparePartsLedger();
-    window.renderShoppingPlannerDetails();
-    window.renderImmediateSystemAlerts();
-    window.renderMedicationSafetyDashboard();
-    window.renderChartsPerformanceTrend();
-    window.renderInsightsTab();
-    window.renderInteractiveReportsDashboard();
+    try { window.populateAllocationsMonthFilter(); } catch(e) { console.warn('populateAllocationsMonthFilter error:', e); }
+    try { window.autoCalculateAllocations(false); } catch(e) { console.warn('autoCalculateAllocations error:', e); }
+    try { window.calculateOverallDashboardAggregates(); } catch(e) { console.warn('calculateOverallDashboardAggregates error:', e); }
+    try { window.renderDashboardBlueprintItems(); } catch(e) { console.warn('renderDashboardBlueprintItems error:', e); }
+    try { window.renderHouseholdFinancialFootprint(); } catch(e) { console.warn('renderHouseholdFinancialFootprint error:', e); }
+    try { window.renderConsolidatedTableRegistry(); } catch(e) { console.warn('renderConsolidatedTableRegistry error:', e); }
+    try { window.renderStockInventoryLedger(); } catch(e) { console.warn('renderStockInventoryLedger error:', e); }
+    try { window.renderPharmacyLedger(); } catch(e) { console.warn('renderPharmacyLedger error:', e); }
+    if (typeof window.renderSparePartsLedger === 'function') {
+      try { window.renderSparePartsLedger(); } catch(e) { console.warn('renderSparePartsLedger error:', e); }
+    }
+    try { window.renderShoppingPlannerDetails(); } catch(e) { console.warn('renderShoppingPlannerDetails error:', e); }
+    try { window.renderImmediateSystemAlerts(); } catch(e) { console.warn('renderImmediateSystemAlerts error:', e); }
+    try { window.renderMedicationSafetyDashboard(); } catch(e) { console.warn('renderMedicationSafetyDashboard error:', e); }
+    try { window.renderChartsPerformanceTrend(); } catch(e) { console.warn('renderChartsPerformanceTrend error:', e); }
+    try { window.renderInsightsTab(); } catch(e) { console.warn('renderInsightsTab error:', e); }
+    try { window.renderInteractiveReportsDashboard(); } catch(e) { console.warn('renderInteractiveReportsDashboard error:', e); }
   };
 
   window.autoCalculateAllocations = function(forceSync = false) {
-    const { activeMonth, scopedTxns, scopedTransfers } = window.getAllocationsScopedData();
+    try {
+      const allocData = (typeof window.getAllocationsScopedData === 'function')
+        ? window.getAllocationsScopedData()
+        : {};
+      const activeMonth = allocData.activeMonth || (typeof window.getActiveAllocationsMonth === 'function' ? window.getActiveAllocationsMonth() : new Date().toISOString().slice(0, 7));
+      const scopedTxns = Array.isArray(allocData.scopedTxns) ? allocData.scopedTxns : (window.transactions || []);
+      const scopedTransfers = Array.isArray(allocData.scopedTransfers) ? allocData.scopedTransfers : (window.accountTransfers || []);
 
-    let registeredIncome = 0;
-    let registeredExpenses = 0;
+      let registeredIncome = 0;
+      let registeredExpenses = 0;
 
-    scopedTxns.forEach(t => {
-      const amt = parseFloat(t.amount) || 0;
-      if (t.type === 'income') registeredIncome += amt;
-      if (t.type === 'expense') registeredExpenses += amt;
-    });
+      scopedTxns.forEach(t => {
+        const amt = parseFloat(t.amount) || 0;
+        if (t.type === 'income') registeredIncome += amt;
+        if (t.type === 'expense') registeredExpenses += amt;
+      });
 
-    let totalTransfersAmount = 0;
-    let totalTransferFees = 0;
-    scopedTransfers.forEach(tr => {
-      totalTransfersAmount += parseFloat(tr.amount) || 0;
-      totalTransferFees += parseFloat(tr.fee) || 0;
-    });
+      let totalTransfersAmount = 0;
+      let totalTransferFees = 0;
+      scopedTransfers.forEach(tr => {
+        totalTransfersAmount += parseFloat(tr.amount) || 0;
+        totalTransferFees += parseFloat(tr.fee) || 0;
+      });
 
-    // Update Live Ledger Tracking in Define Allocations card
-    const monthBadge = document.getElementById('alloc-active-month-badge');
-    if (monthBadge) monthBadge.innerText = window.formatMonthLabel(activeMonth);
+      // Update Live Ledger Tracking in Define Allocations card
+      const monthBadge = document.getElementById('alloc-active-month-badge');
+      if (monthBadge) monthBadge.innerText = window.formatMonthLabel(activeMonth);
 
-    const regIncEl = document.getElementById('alloc-registered-income');
-    const regExpEl = document.getElementById('alloc-registered-expenses');
-    const regTrEl = document.getElementById('alloc-registered-transfers');
-    if (regIncEl) regIncEl.innerText = `EGP ${registeredIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    if (regExpEl) regExpEl.innerText = `EGP ${registeredExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const histData = (typeof window.getHistoricalFinancialForecast === 'function')
-      ? window.getHistoricalFinancialForecast(activeMonth)
-      : null;
+      const regIncEl = document.getElementById('alloc-registered-income');
+      const regExpEl = document.getElementById('alloc-registered-expenses');
+      const regTrEl = document.getElementById('alloc-registered-transfers');
+      if (regIncEl) regIncEl.innerText = `EGP ${registeredIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      if (regExpEl) regExpEl.innerText = `EGP ${registeredExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const histData = (typeof window.getHistoricalFinancialForecast === 'function')
+        ? window.getHistoricalFinancialForecast(activeMonth)
+        : null;
 
-    if (regTrEl) {
-      const count = scopedTransfers.length;
-      const forecastInfo = (histData && histData.totalTransferForecast > 0)
-        ? ` • Forecast: EGP ${histData.totalTransferForecast.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        : '';
-      regTrEl.innerText = `${count} (EGP ${totalTransfersAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${totalTransferFees > 0 ? ` + EGP ${totalTransferFees.toFixed(2)} fee` : ''})${forecastInfo}`;
-    }
+      if (regTrEl) {
+        const count = scopedTransfers.length;
+        const forecastInfo = (histData && histData.totalTransferForecast > 0)
+          ? ` • Forecast: EGP ${histData.totalTransferForecast.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : '';
+        regTrEl.innerText = `${count} (EGP ${totalTransfersAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${totalTransferFees > 0 ? ` + EGP ${totalTransferFees.toFixed(2)} fee` : ''})${forecastInfo}`;
+      }
 
-    const modeInc = document.getElementById('label-income-calc-mode');
-    const modeExp = document.getElementById('label-expense-calc-mode');
-    const isManual = localStorage.getItem('pro_allocations_mode') === 'manual';
+      const modeInc = document.getElementById('label-income-calc-mode');
+      const modeExp = document.getElementById('label-expense-calc-mode');
+      const isManual = localStorage.getItem('pro_allocations_mode') === 'manual';
 
-    if (forceSync) {
-      localStorage.removeItem('pro_allocations_mode');
-    }
+      if (forceSync) {
+        localStorage.removeItem('pro_allocations_mode');
+      }
 
-    if (!isManual || forceSync) {
-      // Auto-calculate budget limits: forecast income & expense quotas based on historical data
-      let autoIncome = 0;
-      if (histData && histData.incNumMonths > 0 && histData.totalIncomeForecast > 0) {
-        autoIncome = histData.totalIncomeForecast;
+      if (!isManual || forceSync) {
+        // Auto-calculate budget limits: forecast income & expense quotas based on historical data
+        let autoIncome = 0;
+        if (histData && histData.incNumMonths > 0 && histData.totalIncomeForecast > 0) {
+          autoIncome = histData.totalIncomeForecast;
+        } else {
+          autoIncome = registeredIncome > 0 ? registeredIncome : (window.budgetLimits.income || 3500);
+        }
+
+        let autoExpense = 0;
+        if (histData && histData.expNumMonths > 0 && histData.totalExpenseForecast > 0) {
+          autoExpense = histData.totalExpenseForecast + (histData.totalTransferFeeForecast || 0);
+        } else {
+          autoExpense = registeredIncome > 0 ? registeredIncome : ((registeredExpenses + totalTransferFees) > 0 ? (registeredExpenses + totalTransferFees) : (window.budgetLimits.expense || 2000));
+        }
+
+        window.budgetLimits.income = autoIncome;
+        window.budgetLimits.expense = autoExpense;
+        localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
+
+        // Dynamically sync blueprint percentages with historical forecasts
+        if (histData && histData.expCategoryPercentages) {
+          Object.keys(histData.expCategoryPercentages).forEach(cat => {
+            if (window.expenseAllocationBlueprint[cat]) {
+              window.expenseAllocationBlueprint[cat].pct = histData.expCategoryPercentages[cat];
+            }
+          });
+        }
+        if (histData && histData.incCategoryPercentages) {
+          Object.keys(histData.incCategoryPercentages).forEach(cat => {
+            if (window.incomeAllocationBlueprint[cat]) {
+              window.incomeAllocationBlueprint[cat].pct = histData.incCategoryPercentages[cat];
+            }
+          });
+        }
+
+        const incInput = document.getElementById('budget-income-input');
+        const expInput = document.getElementById('budget-expense-input');
+        if (incInput && document.activeElement !== incInput) incInput.value = autoIncome.toFixed(2);
+        if (expInput && document.activeElement !== expInput) expInput.value = autoExpense.toFixed(2);
+
+        if (modeInc) {
+          modeInc.textContent = (histData && histData.incNumMonths > 0) ? `Historical (${histData.incNumMonths}m)` : 'Auto-Linked';
+          modeInc.className = 'text-[10px] font-bold text-emerald-600 dark:text-emerald-400';
+        }
+        if (modeExp) {
+          modeExp.textContent = (histData && histData.expNumMonths > 0) ? `Historical (${histData.expNumMonths}m)` : 'Auto-Linked';
+          modeExp.className = 'text-[10px] font-bold text-rose-600 dark:text-rose-400';
+        }
+
+        if (forceSync && typeof window.triggerToast === 'function') {
+          window.triggerToast(`Allocations & transfers auto-forecasted for ${window.formatMonthLabel(activeMonth)}: Inflow EGP ${autoIncome.toFixed(2)}, Outflow EGP ${autoExpense.toFixed(2)}`, 'success');
+        }
       } else {
-        autoIncome = registeredIncome > 0 ? registeredIncome : (window.budgetLimits.income || 3500);
+        if (modeInc) {
+          modeInc.textContent = 'Manual';
+          modeInc.className = 'text-[10px] font-bold text-slate-400';
+        }
+        if (modeExp) {
+          modeExp.textContent = 'Manual';
+          modeExp.className = 'text-[10px] font-bold text-slate-400';
+        }
       }
-
-      let autoExpense = 0;
-      if (histData && histData.expNumMonths > 0 && histData.totalExpenseForecast > 0) {
-        autoExpense = histData.totalExpenseForecast + (histData.totalTransferFeeForecast || 0);
-      } else {
-        autoExpense = registeredIncome > 0 ? registeredIncome : ((registeredExpenses + totalTransferFees) > 0 ? (registeredExpenses + totalTransferFees) : (window.budgetLimits.expense || 2000));
-      }
-
-      window.budgetLimits.income = autoIncome;
-      window.budgetLimits.expense = autoExpense;
-      localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
-
-      // Dynamically sync blueprint percentages with historical forecasts
-      if (histData && histData.expCategoryPercentages) {
-        Object.keys(histData.expCategoryPercentages).forEach(cat => {
-          if (window.expenseAllocationBlueprint[cat]) {
-            window.expenseAllocationBlueprint[cat].pct = histData.expCategoryPercentages[cat];
-          }
-        });
-      }
-      if (histData && histData.incCategoryPercentages) {
-        Object.keys(histData.incCategoryPercentages).forEach(cat => {
-          if (window.incomeAllocationBlueprint[cat]) {
-            window.incomeAllocationBlueprint[cat].pct = histData.incCategoryPercentages[cat];
-          }
-        });
-      }
-
-      const incInput = document.getElementById('budget-income-input');
-      const expInput = document.getElementById('budget-expense-input');
-      if (incInput && document.activeElement !== incInput) incInput.value = autoIncome.toFixed(2);
-      if (expInput && document.activeElement !== expInput) expInput.value = autoExpense.toFixed(2);
-
-      if (modeInc) {
-        modeInc.textContent = (histData && histData.incNumMonths > 0) ? `Historical (${histData.incNumMonths}m)` : 'Auto-Linked';
-        modeInc.className = 'text-[10px] font-bold text-emerald-600 dark:text-emerald-400';
-      }
-      if (modeExp) {
-        modeExp.textContent = (histData && histData.expNumMonths > 0) ? `Historical (${histData.expNumMonths}m)` : 'Auto-Linked';
-        modeExp.className = 'text-[10px] font-bold text-rose-600 dark:text-rose-400';
-      }
-
-      if (forceSync && typeof window.triggerToast === 'function') {
-        window.triggerToast(`Allocations & transfers auto-forecasted for ${window.formatMonthLabel(activeMonth)}: Inflow EGP ${autoIncome.toFixed(2)}, Outflow EGP ${autoExpense.toFixed(2)}`, 'success');
-      }
-    } else {
-      if (modeInc) {
-        modeInc.textContent = 'Manual';
-        modeInc.className = 'text-[10px] font-bold text-slate-400';
-      }
-      if (modeExp) {
-        modeExp.textContent = 'Manual';
-        modeExp.className = 'text-[10px] font-bold text-slate-400';
-      }
+    } catch(err) {
+      console.error('[autoCalculateAllocations] Calculation error:', err);
     }
   };
 
@@ -2072,16 +2083,22 @@
   };
 
   window.renderDashboardBlueprintItems = function() {
-    const incContainer = document.getElementById('blueprint-income-items');
-    const expContainer = document.getElementById('blueprint-expense-items');
-    if (!incContainer || !expContainer) return;
+    try {
+      const incContainer = document.getElementById('blueprint-income-items');
+      const expContainer = document.getElementById('blueprint-expense-items');
+      if (!incContainer || !expContainer) return;
 
-    incContainer.innerHTML = '';
-    expContainer.innerHTML = '';
+      incContainer.innerHTML = '';
+      expContainer.innerHTML = '';
 
-    const { activeMonth, scopedTxns } = window.getAllocationsScopedData();
+      const allocData = (typeof window.getAllocationsScopedData === 'function')
+        ? window.getAllocationsScopedData()
+        : {};
+      const activeMonth = allocData.activeMonth || (typeof window.getActiveAllocationsMonth === 'function' ? window.getActiveAllocationsMonth() : new Date().toISOString().slice(0, 7));
+      const scopedTxns = Array.isArray(allocData.scopedTxns) ? allocData.scopedTxns : (window.transactions || []);
+      const scopedTransfers = Array.isArray(allocData.scopedTransfers) ? allocData.scopedTransfers : (window.accountTransfers || []);
 
-    // Determine previous month (YYYY-MM)
+      // Determine previous month (YYYY-MM)
     const refMonth = (activeMonth && activeMonth !== 'all') ? activeMonth : window.getActiveAllocationsMonth();
     let prevMonthStr = '';
     if (refMonth && refMonth.length >= 7) {
@@ -2284,7 +2301,9 @@
       let totalRegisteredTransfers = 0;
       let totalRegisteredTransferFees = 0;
 
-      (scopedTransfers || []).forEach(tr => {
+      const transfersToProcess = (typeof scopedTransfers !== 'undefined' && Array.isArray(scopedTransfers)) ? scopedTransfers : (Array.isArray(window.accountTransfers) ? window.accountTransfers : []);
+      transfersToProcess.forEach(tr => {
+        if (!tr) return;
         const amt = parseFloat(tr.amount) || 0;
         const fee = parseFloat(tr.fee) || 0;
         const fromLbl = tr.fromLabel || tr.fromId || 'Source';
@@ -2356,18 +2375,24 @@
     if (typeof lucide !== 'undefined' && lucide.createIcons) {
       lucide.createIcons();
     }
+    } catch(err) {
+      console.error('[renderDashboardBlueprintItems] Error:', err);
+    }
   };
 
   window.renderHouseholdFinancialFootprint = function() {
-    const expContainer = document.getElementById('expense-distribution-bars');
-    const incContainer = document.getElementById('income-distribution-bars');
-    if (!expContainer && !incContainer) return;
+    try {
+      const expContainer = document.getElementById('expense-distribution-bars');
+      const incContainer = document.getElementById('income-distribution-bars');
+      if (!expContainer && !incContainer) return;
 
-    const { activeMonth, scopedTxns } = window.getAllocationsScopedData();
+      const allocData = (typeof window.getAllocationsScopedData === 'function') ? window.getAllocationsScopedData() : {};
+      const activeMonth = allocData.activeMonth || (typeof window.getActiveAllocationsMonth === 'function' ? window.getActiveAllocationsMonth() : new Date().toISOString().slice(0, 7));
+      const scopedTxns = Array.isArray(allocData.scopedTxns) ? allocData.scopedTxns : (window.transactions || []);
 
-    // Update Footprint Month Badge
-    const footprintBadge = document.getElementById('footprint-month-badge');
-    if (footprintBadge) footprintBadge.innerText = window.formatMonthLabel(activeMonth);
+      // Update Footprint Month Badge
+      const footprintBadge = document.getElementById('footprint-month-badge');
+      if (footprintBadge) footprintBadge.innerText = window.formatMonthLabel(activeMonth);
 
     let totalExpenses = 0;
     let totalIncome = 0;
@@ -2466,12 +2491,16 @@
         incContainer.innerHTML = html;
       }
     }
+    } catch(err) {
+      console.error('[renderHouseholdFinancialFootprint] Error:', err);
+    }
   };
 
   window.renderConsolidatedTableRegistry = function() {
-    const tbody = document.getElementById('transactions-table-body');
-    const recentDashboardList = document.getElementById('recent-transactions-list');
-    if (!tbody) return;
+    try {
+      const tbody = document.getElementById('transactions-table-body');
+      const recentDashboardList = document.getElementById('recent-transactions-list');
+      if (!tbody) return;
 
     const filterType = document.getElementById('filter-txn-type')?.value || 'all';
     const filterCat = document.getElementById('filter-txn-cat')?.value || '';
@@ -2533,10 +2562,10 @@
     if (dateStart) records = records.filter(r => (r.date || '') >= dateStart);
     if (dateEnd) records = records.filter(r => (r.date || '') <= dateEnd);
 
-    if (filterSort === 'date-desc') records.sort((a,b) => new Date(b.date) - new Date(a.date));
-    else if (filterSort === 'date-asc') records.sort((a,b) => new Date(a.date) - new Date(b.date));
-    else if (filterSort === 'amt-desc') records.sort((a,b) => b.amount - a.amount);
-    else if (filterSort === 'amt-asc') records.sort((a,b) => a.amount - b.amount);
+    if (filterSort === 'date-desc') records.sort((a,b) => String(b.date || '').localeCompare(String(a.date || '')));
+    else if (filterSort === 'date-asc') records.sort((a,b) => String(a.date || '').localeCompare(String(b.date || '')));
+    else if (filterSort === 'amt-desc') records.sort((a,b) => (b.amount || 0) - (a.amount || 0));
+    else if (filterSort === 'amt-asc') records.sort((a,b) => (a.amount || 0) - (b.amount || 0));
 
     tbody.innerHTML = '';
     records.forEach(r => {
@@ -2678,6 +2707,9 @@
       if (window._lastAddedTxnId) {
         setTimeout(() => { window._lastAddedTxnId = null; }, 4000);
       }
+    }
+    } catch(err) {
+      console.error('[renderConsolidatedTableRegistry] Error:', err);
     }
   };
 
