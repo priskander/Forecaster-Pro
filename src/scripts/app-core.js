@@ -467,6 +467,111 @@
     } catch (e) { return 'tenant'; }
   };
 
+  /**
+   * Expert Financial Classifier
+   * Strictly categorizes transactions based on Property Role (Landlord, Tenant, Both)
+   * and Registration Method (Rental Contract, Manual).
+   * 
+   * Mapping Rules:
+   * 1. Role: Landlord
+   *    - Rental Contract: Type: Income, Category: Investments, Subcategory: Rental Yield
+   * 2. Role: Both
+   *    - Rental Contract:
+   *      - Income: Category: Investments, Subcategory: Rental Yield
+   *      - Expense: Category: Rent, Subcategory: to be chosen manually
+   * 3. Tenant Mode (Manual):
+   *    - Category/Type: Expenses, Category: Rent, Subcategory: to be chosen manually
+   */
+  window.classifyFinancialTransaction = function({ role, registrationMethod, type, manualSubcategory, existingCategory }) {
+    const rawRole = (role || (typeof window.getPropertyRole === 'function' ? window.getPropertyRole() : 'tenant')).toLowerCase();
+    const activeRole = (rawRole === 'landlord' || rawRole === 'both') ? rawRole : 'tenant';
+    const method = (registrationMethod || 'manual').toLowerCase();
+    const reqType = (type || 'expense').toLowerCase();
+
+    // Rental Contract Registration Method
+    if (method === 'rental_contract' || method === 'rental contract') {
+      if (activeRole === 'landlord') {
+        return {
+          type: 'income',
+          category: 'Investments',
+          subcategory: 'Rental Yield',
+          icon: '📈'
+        };
+      }
+      if (activeRole === 'both') {
+        if (reqType === 'income') {
+          return {
+            type: 'income',
+            category: 'Investments',
+            subcategory: 'Rental Yield',
+            icon: '📈'
+          };
+        }
+        // Expense for Both
+        return {
+          type: 'expense',
+          category: 'Rent',
+          subcategory: manualSubcategory || 'Monthly Lease',
+          icon: '🏠'
+        };
+      }
+      // Tenant with rental contract: Expenses, Rent, Subcategory chosen manually
+      return {
+        type: 'expense',
+        category: 'Rent',
+        subcategory: manualSubcategory || 'Monthly Lease',
+        icon: '🏠'
+      };
+    }
+
+    // Manual Registration Method
+    if (activeRole === 'tenant') {
+      // Tenant Mode (Manual): Category/Type: Expenses, Category: Rent, Subcategory: to be chosen manually (when registering rent)
+      const isRent = (existingCategory === 'Rent' || reqType === 'expense');
+      if (isRent && (existingCategory === 'Rent' || !existingCategory)) {
+        return {
+          type: 'expense',
+          category: 'Rent',
+          subcategory: manualSubcategory || 'Monthly Lease',
+          icon: '🏠'
+        };
+      }
+    } else if (activeRole === 'landlord') {
+      if (reqType === 'income' && (existingCategory === 'Investments' || existingCategory === 'Rent' || !existingCategory)) {
+        return {
+          type: 'income',
+          category: 'Investments',
+          subcategory: manualSubcategory || 'Rental Yield',
+          icon: '📈'
+        };
+      }
+    } else if (activeRole === 'both') {
+      if (reqType === 'income' && (existingCategory === 'Investments' || existingCategory === 'Rent' || !existingCategory)) {
+        return {
+          type: 'income',
+          category: 'Investments',
+          subcategory: manualSubcategory || 'Rental Yield',
+          icon: '📈'
+        };
+      }
+      if (reqType === 'expense' && (existingCategory === 'Rent' || !existingCategory)) {
+        return {
+          type: 'expense',
+          category: 'Rent',
+          subcategory: manualSubcategory || 'Monthly Lease',
+          icon: '🏠'
+        };
+      }
+    }
+
+    return {
+      type: reqType,
+      category: existingCategory || (reqType === 'income' ? 'Investments' : 'Rent'),
+      subcategory: manualSubcategory || (reqType === 'income' ? 'Rental Yield' : 'Monthly Lease'),
+      icon: reqType === 'income' ? '📈' : '🏠'
+    };
+  };
+
   /* =========================================================================
    * CUSTOM CATEGORIES & VISUAL ICON SELECTOR ENGINE
    * ========================================================================= */

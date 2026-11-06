@@ -252,13 +252,48 @@
   window.toggleRentalPayType = function(type) {
     const incLbl = document.getElementById('rental-pay-type-income-lbl');
     const expLbl = document.getElementById('rental-pay-type-expense-lbl');
-    if (!incLbl || !expLbl) return;
-    if (type === 'income') {
-      incLbl.className = 'cursor-pointer border-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
-      expLbl.className = 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
-    } else {
-      expLbl.className = 'cursor-pointer border-2 border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
-      incLbl.className = 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+    const subcatWrap = document.getElementById('rental-pay-subcategory-wrap');
+    const classBadge = document.getElementById('rental-pay-classification-info');
+    const role = (typeof window.getPropertyRole === 'function') ? window.getPropertyRole() : 'landlord';
+
+    if (incLbl && expLbl) {
+      if (type === 'income') {
+        incLbl.className = 'cursor-pointer border-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+        expLbl.className = 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+      } else {
+        expLbl.className = 'cursor-pointer border-2 border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+        incLbl.className = 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2.5 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+      }
+    }
+
+    // Dynamic classifier preview and subcategory control
+    const manualSubcat = document.getElementById('rental-pay-subcategory')?.value || 'Monthly Lease';
+    const classification = (typeof window.classifyFinancialTransaction === 'function')
+      ? window.classifyFinancialTransaction({
+          role: role,
+          registrationMethod: 'rental_contract',
+          type: type,
+          manualSubcategory: manualSubcat
+        })
+      : { type, category: type === 'income' ? 'Investments' : 'Rent', subcategory: type === 'income' ? 'Rental Yield' : manualSubcat, icon: type === 'income' ? '📈' : '🏠' };
+
+    if (classBadge) {
+      classBadge.innerHTML = `
+        <span class="inline-flex items-center gap-1.5 font-extrabold text-xs">
+          <span>${classification.icon}</span>
+          <span class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white uppercase text-[10px] tracking-wide font-black">${classification.type}</span>
+          <span>${classification.category} &bull; <span class="text-emerald-600 dark:text-emerald-400" id="rental-pay-active-subcat-txt">${classification.subcategory}</span></span>
+        </span>
+      `;
+    }
+
+    if (subcatWrap) {
+      // Subcategory is chosen manually for expenses (Role: Both or Tenant)
+      if (type === 'expense') {
+        subcatWrap.classList.remove('hidden');
+      } else {
+        subcatWrap.classList.add('hidden');
+      }
     }
   };
 
@@ -280,6 +315,22 @@
     document.getElementById('rental-pay-property').textContent = c.property || 'Property Unit';
 
     const role = (typeof window.getPropertyRole === 'function') ? window.getPropertyRole() : 'landlord';
+    const incLbl = document.getElementById('rental-pay-type-income-lbl');
+    const expLbl = document.getElementById('rental-pay-type-expense-lbl');
+
+    // Role-governed registration options
+    if (role === 'landlord') {
+      if (incLbl) incLbl.classList.remove('hidden');
+      if (expLbl) expLbl.classList.add('hidden');
+    } else if (role === 'tenant') {
+      if (incLbl) incLbl.classList.add('hidden');
+      if (expLbl) expLbl.classList.remove('hidden');
+    } else {
+      // Both
+      if (incLbl) incLbl.classList.remove('hidden');
+      if (expLbl) expLbl.classList.remove('hidden');
+    }
+
     const defaultType = (role === 'tenant') ? 'expense' : 'income';
     const radio = document.querySelector(`input[name="rental-pay-type"][value="${defaultType}"]`);
     if (radio) radio.checked = true;
@@ -320,28 +371,45 @@
     const c = rentalContracts.find(x => x.id === contractId);
 
     const typeRadio = document.querySelector('input[name="rental-pay-type"]:checked');
-    const type = typeRadio ? typeRadio.value : 'income';
+    const requestedType = typeRadio ? typeRadio.value : 'income';
     const amount = parseFloat(document.getElementById('rental-pay-amount')?.value) || 0;
     const date = document.getElementById('rental-pay-date')?.value || new Date().toISOString().split('T')[0];
     const accountId = document.getElementById('rental-pay-account')?.value || '';
     const desc = document.getElementById('rental-pay-desc')?.value.trim() || `Rent Payment (${c ? c.tenantName : ''})`;
     const nextDue = document.getElementById('rental-pay-next-due')?.value;
+    const manualSubcat = document.getElementById('rental-pay-subcategory')?.value || 'Monthly Lease';
 
     if (amount <= 0) {
       if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a valid payment amount.', 'error');
       return;
     }
 
+    // Role and registration-method-based expert classification
+    const role = (typeof window.getPropertyRole === 'function') ? window.getPropertyRole() : 'landlord';
+    const classified = (typeof window.classifyFinancialTransaction === 'function')
+      ? window.classifyFinancialTransaction({
+          role: role,
+          registrationMethod: 'rental_contract',
+          type: requestedType,
+          manualSubcategory: manualSubcat
+        })
+      : {
+          type: requestedType,
+          category: requestedType === 'income' ? 'Investments' : 'Rent',
+          subcategory: requestedType === 'income' ? 'Rental Yield' : manualSubcat,
+          icon: requestedType === 'income' ? '📈' : '🏠'
+        };
+
     // Build the linked transaction entry
     const entry = {
       id: 'tx_rent_' + Date.now(),
       date: date,
-      category: 'Rent',
-      subcategory: (type === 'income') ? 'Rental Inflow' : 'Lease Settlement',
-      icon: '🏠',
+      category: classified.category,
+      subcategory: classified.subcategory,
+      icon: classified.icon,
       amount: amount,
       description: desc,
-      type: type,
+      type: classified.type,
       accountId: accountId,
       contractId: contractId || null
     };

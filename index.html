@@ -2451,6 +2451,31 @@
           </div>
         </div>
 
+        <!-- Dynamic Classifier Status Box -->
+        <div class="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Classification:</span>
+            <div id="rental-pay-classification-info">
+              <span class="inline-flex items-center gap-1.5 font-extrabold text-xs">
+                <span>📈</span>
+                <span class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white uppercase text-[10px] tracking-wide font-black">income</span>
+                <span>Investments &bull; <span class="text-emerald-600 dark:text-emerald-400">Rental Yield</span></span>
+              </span>
+            </div>
+          </div>
+          <span class="text-[9px] font-bold text-slate-400 uppercase px-1.5 py-0.5 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">Rental Contract</span>
+        </div>
+
+        <div id="rental-pay-subcategory-wrap" class="hidden">
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Rent Subcategory (Manual Choice)</label>
+          <select id="rental-pay-subcategory" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" onchange="const t = document.querySelector('input[name=\'rental-pay-type\']:checked')?.value || 'expense'; window.toggleRentalPayType(t);">
+            <option value="Monthly Lease" selected>🏠 Monthly Lease</option>
+            <option value="Building Maintenance">🛠️ Building Maintenance</option>
+            <option value="Security Deposit">🔒 Security Deposit</option>
+            <option value="Parking Space">🚗 Parking Space</option>
+          </select>
+        </div>
+
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Amount (EGP)</label>
