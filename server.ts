@@ -2197,6 +2197,9 @@ async function startServer() {
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   } else {
+    // Serve public directory assets directly so scripts, service workers, and static files return proper JS/MIME types
+    app.use(express.static(path.resolve(__dirname, 'public')));
+
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -2204,15 +2207,16 @@ async function startServer() {
     app.use(vite.middlewares);
 
     app.use('*', async (req, res, next) => {
-      const url = req.originalUrl;
+      const url = req.originalUrl.split('?')[0];
+      // Do not serve index.html for API routes or file requests with extensions
       if (url.startsWith('/api') || (url.includes('.') && !url.endsWith('.html'))) {
-        return next();
+        return res.status(404).send('Not found');
       }
       try {
         const indexPath = path.resolve(__dirname, 'index.html');
         if (fs.existsSync(indexPath)) {
           let html = fs.readFileSync(indexPath, 'utf-8');
-          html = await vite.transformIndexHtml(url, html);
+          html = await vite.transformIndexHtml(req.originalUrl, html);
           res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
         } else {
           next();
