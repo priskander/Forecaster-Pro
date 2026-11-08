@@ -122,6 +122,12 @@
     if (!Array.isArray(window.accounts)) {
       window.accounts = [];
     }
+    if (window.accounts.length === 0) {
+      window.accounts = [
+        { id: 'acc_cash_default', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
+        { id: 'acc_bank_default', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
+      ];
+    }
     localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
 
     // Load Account Transfers
@@ -415,25 +421,30 @@
     }
   };
 
-  window.logAutomaticExpense = function(name, totalCost, category, accountId = '', subcategory = '') {
+  window.logAutomaticExpense = function(name, totalCost, category, accountId = '', subcategory = '', batchId = null) {
     const today = new Date().toISOString().split('T')[0];
     const icon = window.getCategoryIcon ? window.getCategoryIcon(category) : '🏷️';
+    let targetAccountId = accountId;
+    if (!targetAccountId && Array.isArray(window.accounts) && window.accounts.length > 0) {
+      targetAccountId = window.accounts[0].id;
+    }
     const autoExpense = {
       id: 'exp_auto_' + Date.now() + Math.random().toString(36).substr(2, 4),
       date: today,
       category: category,
-      subcategory: subcategory || (category === 'Transportation' ? 'Vehicle Maintenance' : ''),
+      subcategory: subcategory || (category === 'Transportation' ? 'Vehicle Maintenance' : (category === 'Medical' ? 'Prescription Drugs' : '')),
       icon: icon,
-      amount: parseFloat(totalCost),
+      amount: parseFloat(totalCost) || 0,
       description: `Purchase: ${name}`,
       type: 'expense',
-      accountId: accountId || ''
+      accountId: targetAccountId || '',
+      batchId: batchId || null
     };
     window._lastAddedTxnId = autoExpense.id;
     if (!Array.isArray(window.transactions)) window.transactions = [];
     window.transactions.push(autoExpense);
     window.saveTransactionsDatabase();
-    window.triggerToast(`Auto-Expense compiled: EGP ${Number(totalCost).toFixed(2)} successfully logged to ${category}!`, "info");
+    window.triggerToast(`Auto-Expense compiled: EGP ${Number(totalCost || 0).toFixed(2)} successfully logged to ${category}!`, "info");
   };
 
   const RENT_EXPENSE_ALLOCATION = { pct: 35, color: "#8b5cf6" };
@@ -1277,28 +1288,32 @@
     }
 
     const isNew = document.querySelector('input[name="stock-origin"]:checked')?.value !== 'old';
-    const accountId = document.getElementById('stock-account')?.value || '';
+    let accountId = document.getElementById('stock-account')?.value || '';
+    if (!accountId && Array.isArray(window.accounts) && window.accounts.length > 0) {
+      accountId = window.accounts[0].id;
+    }
 
+    const batchId = 'stk_' + Date.now();
     const asset = {
-      id: 'stk_' + Date.now(),
+      id: batchId,
       name, quantity, unit, price, threshold, alertMethod, prodDate, expDate, packSize, buyStyle: style,
       accountId: accountId,
       isOldStock: !isNew,
       consumptionLogs: []
     };
 
+    if (!Array.isArray(window.stockData)) window.stockData = [];
     window.stockData.push(asset);
     localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
 
-    if (isNew && rawPrice > 0) {
-      const computedCost = rawQty * (style === 'pack' ? rawPrice : price);
-      window.logAutomaticExpense(name, computedCost, "Groceries", accountId, "General Groceries");
-    }
+    const computedCost = rawQty * (style === 'pack' ? rawPrice : price);
+    window.logAutomaticExpense(name, computedCost, "Groceries", accountId, "General Groceries", batchId);
 
     window.triggerToast("Asset ledger record finalized!", "success");
     e.target.reset();
     window.togglePackagingMath('stock');
     if (typeof window.toggleStockOrigin === 'function') window.toggleStockOrigin();
+    if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
@@ -1317,7 +1332,11 @@
     const reason = document.getElementById('pharmacy-reason').value.trim();
     const prescription = document.getElementById('pharmacy-prescription').value;
     const isNew = document.querySelector('input[name="pharmacy-origin"]:checked')?.value !== 'old';
-    const accountId = document.getElementById('pharmacy-account')?.value || '';
+    
+    let accountId = document.getElementById('pharmacy-account')?.value || '';
+    if (!accountId && Array.isArray(window.accounts) && window.accounts.length > 0) {
+      accountId = window.accounts[0].id;
+    }
 
     let quantity = rawQty;
     let price = rawPrice;
@@ -1329,26 +1348,27 @@
       price = rawPrice / packSize;
     }
 
+    const batchId = 'med_' + Date.now();
     const med = {
-      id: 'med_' + Date.now(),
+      id: batchId,
       name, quantity, unit, price, threshold, alertMethod, prodDate, expDate, dosage, reason, prescription, packSize, buyStyle: style,
       accountId: accountId,
       isOldStock: !isNew,
       consumptionLogs: []
     };
 
+    if (!Array.isArray(window.pharmacyData)) window.pharmacyData = [];
     window.pharmacyData.push(med);
     localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
 
-    if (isNew && rawPrice > 0) {
-      const computedCost = rawQty * (style === 'pack' ? rawPrice : price);
-      window.logAutomaticExpense(name, computedCost, "Medical", accountId, "Prescription Drugs");
-    }
+    const computedCost = rawQty * (style === 'pack' ? rawPrice : price);
+    window.logAutomaticExpense(name, computedCost, "Medical", accountId, "Prescription Drugs", batchId);
 
     window.triggerToast("Medication details integrated!", "success");
     e.target.reset();
     window.togglePackagingMath('pharmacy');
     if (typeof window.togglePharmacyOrigin === 'function') window.togglePharmacyOrigin();
+    if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
@@ -1762,6 +1782,12 @@
     }
     window.pharmacyData = (window.pharmacyData || []).filter(m => m.id !== id);
     localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+
+    if (Array.isArray(window.transactions)) {
+      window.transactions = window.transactions.filter(t => t.batchId !== id);
+      window.saveTransactionsDatabase();
+    }
+
     if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
       window.ForecasterCloudSync.notifyDataChanged();
     }
@@ -1789,6 +1815,8 @@
     const pharmacyModal = document.getElementById('edit-pharmacy-modal');
     if (!customModal || !pharmacyModal) return;
 
+    if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+
     customModal.classList.remove('hidden');
     pharmacyModal.classList.remove('hidden');
 
@@ -1802,6 +1830,7 @@
     const expInput = document.getElementById('edit-pharmacy-exp-date');
     const dosageInput = document.getElementById('edit-pharmacy-dosage');
     const reasonInput = document.getElementById('edit-pharmacy-reason');
+    const accountSelect = document.getElementById('edit-pharmacy-account');
 
     if (idInput) idInput.value = med.id;
     if (nameInput) nameInput.value = med.name || '';
@@ -1813,6 +1842,12 @@
     if (expInput) expInput.value = med.expDate || '';
     if (dosageInput) dosageInput.value = med.dosage || '';
     if (reasonInput) reasonInput.value = med.reason || '';
+
+    if (accountSelect) {
+      const linkedTxn = (window.transactions || []).find(t => t.batchId === med.id || (t.category === 'Medical' && t.description === `Purchase: ${med.name}`));
+      const selectedAccId = med.accountId || (linkedTxn ? linkedTxn.accountId : '') || (window.accounts?.[0]?.id || '');
+      accountSelect.value = selectedAccId;
+    }
   };
 
   window.handleEditPharmacySubmit = function(e) {
@@ -1833,12 +1868,14 @@
     const expDate = document.getElementById('edit-pharmacy-exp-date')?.value || '';
     const dosage = document.getElementById('edit-pharmacy-dosage')?.value.trim() || '';
     const reason = document.getElementById('edit-pharmacy-reason')?.value.trim() || '';
+    const accountId = document.getElementById('edit-pharmacy-account')?.value || (window.accounts?.[0]?.id || '');
 
     if (!name || isNaN(qty) || qty < 0) {
       if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a valid medication name and quantity.', 'error');
       return;
     }
 
+    const oldName = med.name;
     med.name = name;
     med.quantity = qty;
     med.unit = unit;
@@ -1848,9 +1885,29 @@
     med.expDate = expDate;
     med.dosage = dosage;
     med.reason = reason;
+    med.accountId = accountId;
     med.updatedAt = new Date().toISOString();
 
     localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+
+    // Synchronize or create linked transaction in the audit register
+    if (!Array.isArray(window.transactions)) window.transactions = [];
+    let linkedTxn = window.transactions.find(t => t.batchId === med.id);
+    if (!linkedTxn) {
+      linkedTxn = window.transactions.find(t => t.category === 'Medical' && (t.description === `Purchase: ${oldName}` || t.description === `Purchase: ${name}`));
+    }
+
+    const computedTotalCost = qty * price;
+    if (linkedTxn) {
+      linkedTxn.accountId = accountId;
+      linkedTxn.description = `Purchase: ${name}`;
+      if (computedTotalCost > 0) linkedTxn.amount = computedTotalCost;
+      linkedTxn.batchId = med.id;
+    } else {
+      window.logAutomaticExpense(name, computedTotalCost, "Medical", accountId, "Prescription Drugs", med.id);
+    }
+    window.saveTransactionsDatabase();
+
     if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
       window.ForecasterCloudSync.notifyDataChanged();
     }
@@ -1877,6 +1934,8 @@
     const stockModal = document.getElementById('edit-stock-modal');
     if (!customModal || !stockModal) return;
 
+    if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+
     customModal.classList.remove('hidden');
     stockModal.classList.remove('hidden');
 
@@ -1888,6 +1947,7 @@
     const thInput = document.getElementById('edit-stock-threshold');
     const prodInput = document.getElementById('edit-stock-prod-date');
     const expInput = document.getElementById('edit-stock-exp-date');
+    const accountSelect = document.getElementById('edit-stock-account');
 
     if (idInput) idInput.value = item.id;
     if (nameInput) nameInput.value = item.name || '';
@@ -1897,6 +1957,12 @@
     if (thInput) thInput.value = (item.threshold !== undefined && item.threshold !== null) ? item.threshold : '';
     if (prodInput) prodInput.value = item.prodDate || '';
     if (expInput) expInput.value = item.expDate || '';
+
+    if (accountSelect) {
+      const linkedTxn = (window.transactions || []).find(t => t.batchId === item.id || (t.category === 'Groceries' && t.description === `Purchase: ${item.name}`));
+      const selectedAccId = item.accountId || (linkedTxn ? linkedTxn.accountId : '') || (window.accounts?.[0]?.id || '');
+      accountSelect.value = selectedAccId;
+    }
   };
 
   window.handleEditStockSubmit = function(e) {
@@ -1915,12 +1981,14 @@
     const threshold = parseFloat(document.getElementById('edit-stock-threshold')?.value) || 0;
     const prodDate = document.getElementById('edit-stock-prod-date')?.value || '';
     const expDate = document.getElementById('edit-stock-exp-date')?.value || '';
+    const accountId = document.getElementById('edit-stock-account')?.value || (window.accounts?.[0]?.id || '');
 
     if (!name || isNaN(qty) || qty < 0) {
       if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a valid item name and quantity.', 'error');
       return;
     }
 
+    const oldName = item.name;
     item.name = name;
     item.quantity = qty;
     item.unit = unit;
@@ -1928,9 +1996,29 @@
     item.threshold = threshold;
     item.prodDate = prodDate;
     item.expDate = expDate;
+    item.accountId = accountId;
     item.updatedAt = new Date().toISOString();
 
     localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+
+    // Synchronize or create linked transaction in the audit register
+    if (!Array.isArray(window.transactions)) window.transactions = [];
+    let linkedTxn = window.transactions.find(t => t.batchId === item.id);
+    if (!linkedTxn) {
+      linkedTxn = window.transactions.find(t => t.category === 'Groceries' && (t.description === `Purchase: ${oldName}` || t.description === `Purchase: ${name}`));
+    }
+
+    const computedTotalCost = qty * price;
+    if (linkedTxn) {
+      linkedTxn.accountId = accountId;
+      linkedTxn.description = `Purchase: ${name}`;
+      if (computedTotalCost > 0) linkedTxn.amount = computedTotalCost;
+      linkedTxn.batchId = item.id;
+    } else {
+      window.logAutomaticExpense(name, computedTotalCost, "Groceries", accountId, "General Groceries", item.id);
+    }
+    window.saveTransactionsDatabase();
+
     if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
       window.ForecasterCloudSync.notifyDataChanged();
     }
@@ -2212,8 +2300,71 @@
     return { activeMonth, scopedTxns, scopedTransfers };
   };
 
+  /* RECONCILE PHARMACY AND STOCK BATCHES WITH TRANSACTIONS AUDIT REGISTER */
+  window.reconcilePharmacyAndStockTransactions = function() {
+    if (!Array.isArray(window.transactions)) window.transactions = [];
+    let updated = false;
+    const defaultAccId = Array.isArray(window.accounts) && window.accounts.length > 0 ? window.accounts[0].id : '';
+
+    (window.pharmacyData || []).forEach(med => {
+      if (!med) return;
+      if (!med.accountId && defaultAccId) {
+        med.accountId = defaultAccId;
+        updated = true;
+      }
+      let txn = window.transactions.find(t => t.batchId === med.id);
+      if (!txn) {
+        txn = window.transactions.find(t => t.category === 'Medical' && (t.description === `Purchase: ${med.name}` || t.description?.includes(med.name)));
+      }
+      if (txn) {
+        if (!txn.batchId) { txn.batchId = med.id; updated = true; }
+        if (!txn.accountId && med.accountId) { txn.accountId = med.accountId; updated = true; }
+      } else if (med.accountId || defaultAccId) {
+        const accId = med.accountId || defaultAccId;
+        const total = (parseFloat(med.quantity) || 1) * (parseFloat(med.price) || 0);
+        const autoTxn = {
+          id: 'exp_auto_' + Date.now() + Math.random().toString(36).substr(2, 4),
+          date: med.prodDate || new Date().toISOString().split('T')[0],
+          category: 'Medical',
+          subcategory: 'Prescription Drugs',
+          icon: '💊',
+          amount: total,
+          description: `Purchase: ${med.name}`,
+          type: 'expense',
+          accountId: accId,
+          batchId: med.id
+        };
+        window.transactions.push(autoTxn);
+        updated = true;
+      }
+    });
+
+    (window.stockData || []).forEach(item => {
+      if (!item) return;
+      if (!item.accountId && defaultAccId) {
+        item.accountId = defaultAccId;
+        updated = true;
+      }
+      let txn = window.transactions.find(t => t.batchId === item.id);
+      if (!txn) {
+        txn = window.transactions.find(t => t.category === 'Groceries' && (t.description === `Purchase: ${item.name}` || t.description?.includes(item.name)));
+      }
+      if (txn) {
+        if (!txn.batchId) { txn.batchId = item.id; updated = true; }
+        if (!txn.accountId && item.accountId) { txn.accountId = item.accountId; updated = true; }
+      }
+    });
+
+    if (updated) {
+      localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+      localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+      localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+    }
+  };
+
   /* MAIN ORCHESTRATOR */
   window.renderAllViews = function() {
+    try { window.reconcilePharmacyAndStockTransactions(); } catch(e) { console.warn('reconcile error:', e); }
     try { window.populateAllocationsMonthFilter(); } catch(e) { console.warn('populateAllocationsMonthFilter error:', e); }
     try { window.autoCalculateAllocations(false); } catch(e) { console.warn('autoCalculateAllocations error:', e); }
     try { window.calculateOverallDashboardAggregates(); } catch(e) { console.warn('calculateOverallDashboardAggregates error:', e); }
@@ -3117,6 +3268,13 @@
                 <span>Exp: ${b.expDate || 'N/A'}</span>
                 <span>Cost: EGP ${(b.price * (b.packSize || 1)).toFixed(2)}</span>
               </div>
+              <div class="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 font-medium pt-0.5">
+                <span>Account:</span>
+                <span class="font-bold text-slate-700 dark:text-slate-300">${(() => {
+                  const acc = (window.accounts || []).find(a => a.id === b.accountId);
+                  return acc ? `${window.accountIcon ? window.accountIcon(acc.type) : '💳'} ${acc.label}` : (b.accountId ? `💳 ${b.accountId}` : '<span class="text-slate-400 font-normal">—</span>');
+                })()}</span>
+              </div>
               <div class="flex justify-end gap-1.5 pt-1.5">
                 <button type="button" onclick="editStockItem('${b.id}', event)" class="text-[10px] text-blue-600 font-bold hover:underline">Edit Batch</button>
                 <span class="text-slate-300">|</span>
@@ -3399,6 +3557,13 @@
               <div class="flex justify-between text-[10px] text-slate-404 font-medium">
                 <span>Exp Date: ${b.expDate || 'N/A'}</span>
                 <span>Price per unit: EGP ${(b.price).toFixed(2)}</span>
+              </div>
+              <div class="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 font-medium pt-0.5">
+                <span>Account:</span>
+                <span class="font-bold text-slate-700 dark:text-slate-300">${(() => {
+                  const acc = (window.accounts || []).find(a => a.id === b.accountId);
+                  return acc ? `${window.accountIcon ? window.accountIcon(acc.type) : '💳'} ${acc.label}` : (b.accountId ? `💳 ${b.accountId}` : '<span class="text-slate-400 font-normal">—</span>');
+                })()}</span>
               </div>
               <div class="flex justify-end gap-1.5 pt-1.5">
                 <button type="button" onclick="editPharmacyItem('${b.id}', event)" class="text-[10px] text-blue-600 font-bold hover:underline">Edit Batch</button>

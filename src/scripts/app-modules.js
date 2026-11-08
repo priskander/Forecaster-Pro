@@ -1300,7 +1300,11 @@
           sel.value = currentVal;
         } else if (sel.id === 'form-transfer-to' && accounts.length > 1) {
           sel.value = accounts[1].id;
+        } else if (accounts.length > 0) {
+          sel.value = accounts[0].id;
         }
+      } else if (!sel.value && accounts.length > 0) {
+        sel.value = accounts[0].id;
       }
     });
   };
