@@ -1717,6 +1717,177 @@
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
+  /* =========================================================================
+   * BATCH EDITING ENGINE FOR PHARMACY & INVENTORY AUDIT REGISTERS
+   * ========================================================================= */
+  window.editPharmacyItem = function(id, evt) {
+    if (evt) {
+      if (typeof evt.preventDefault === 'function') evt.preventDefault();
+      if (typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    }
+    const med = (window.pharmacyData || []).find(m => m.id === id);
+    if (!med) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Medication batch not found.', 'error');
+      return;
+    }
+
+    if (typeof window.closeModal === 'function') window.closeModal();
+
+    const customModal = document.getElementById('custom-modal');
+    const pharmacyModal = document.getElementById('edit-pharmacy-modal');
+    if (!customModal || !pharmacyModal) return;
+
+    customModal.classList.remove('hidden');
+    pharmacyModal.classList.remove('hidden');
+
+    const idInput = document.getElementById('edit-pharmacy-id');
+    const nameInput = document.getElementById('edit-pharmacy-name');
+    const qtyInput = document.getElementById('edit-pharmacy-quantity');
+    const unitSelect = document.getElementById('edit-pharmacy-unit');
+    const priceInput = document.getElementById('edit-pharmacy-price');
+    const thInput = document.getElementById('edit-pharmacy-threshold');
+    const prodInput = document.getElementById('edit-pharmacy-prod-date');
+    const expInput = document.getElementById('edit-pharmacy-exp-date');
+    const dosageInput = document.getElementById('edit-pharmacy-dosage');
+    const reasonInput = document.getElementById('edit-pharmacy-reason');
+
+    if (idInput) idInput.value = med.id;
+    if (nameInput) nameInput.value = med.name || '';
+    if (qtyInput) qtyInput.value = (med.quantity !== undefined && med.quantity !== null) ? med.quantity : '';
+    if (unitSelect) unitSelect.value = med.unit || 'pills';
+    if (priceInput) priceInput.value = (med.price !== undefined && med.price !== null) ? med.price : '';
+    if (thInput) thInput.value = (med.threshold !== undefined && med.threshold !== null) ? med.threshold : '';
+    if (prodInput) prodInput.value = med.prodDate || '';
+    if (expInput) expInput.value = med.expDate || '';
+    if (dosageInput) dosageInput.value = med.dosage || '';
+    if (reasonInput) reasonInput.value = med.reason || '';
+  };
+
+  window.handleEditPharmacySubmit = function(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-pharmacy-id')?.value;
+    const med = (window.pharmacyData || []).find(m => m.id === id);
+    if (!med) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Unable to locate medication batch.', 'error');
+      return;
+    }
+
+    const name = document.getElementById('edit-pharmacy-name')?.value.trim();
+    const qty = parseFloat(document.getElementById('edit-pharmacy-quantity')?.value);
+    const unit = document.getElementById('edit-pharmacy-unit')?.value || 'pills';
+    const price = parseFloat(document.getElementById('edit-pharmacy-price')?.value) || 0;
+    const threshold = parseFloat(document.getElementById('edit-pharmacy-threshold')?.value) || 0;
+    const prodDate = document.getElementById('edit-pharmacy-prod-date')?.value || '';
+    const expDate = document.getElementById('edit-pharmacy-exp-date')?.value || '';
+    const dosage = document.getElementById('edit-pharmacy-dosage')?.value.trim() || '';
+    const reason = document.getElementById('edit-pharmacy-reason')?.value.trim() || '';
+
+    if (!name || isNaN(qty) || qty < 0) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a valid medication name and quantity.', 'error');
+      return;
+    }
+
+    med.name = name;
+    med.quantity = qty;
+    med.unit = unit;
+    med.price = price;
+    med.threshold = threshold;
+    med.prodDate = prodDate;
+    med.expDate = expDate;
+    med.dosage = dosage;
+    med.reason = reason;
+    med.updatedAt = new Date().toISOString();
+
+    localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
+
+    if (typeof window.closeModal === 'function') window.closeModal();
+    if (typeof window.triggerToast === 'function') window.triggerToast(`Medication batch for "${name}" updated successfully!`, 'success');
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+  };
+
+  window.editStockItem = function(id, evt) {
+    if (evt) {
+      if (typeof evt.preventDefault === 'function') evt.preventDefault();
+      if (typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    }
+    const item = (window.stockData || []).find(s => s.id === id);
+    if (!item) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Inventory batch not found.', 'error');
+      return;
+    }
+
+    if (typeof window.closeModal === 'function') window.closeModal();
+
+    const customModal = document.getElementById('custom-modal');
+    const stockModal = document.getElementById('edit-stock-modal');
+    if (!customModal || !stockModal) return;
+
+    customModal.classList.remove('hidden');
+    stockModal.classList.remove('hidden');
+
+    const idInput = document.getElementById('edit-stock-id');
+    const nameInput = document.getElementById('edit-stock-name');
+    const qtyInput = document.getElementById('edit-stock-quantity');
+    const unitSelect = document.getElementById('edit-stock-unit');
+    const priceInput = document.getElementById('edit-stock-price');
+    const thInput = document.getElementById('edit-stock-threshold');
+    const prodInput = document.getElementById('edit-stock-prod-date');
+    const expInput = document.getElementById('edit-stock-exp-date');
+
+    if (idInput) idInput.value = item.id;
+    if (nameInput) nameInput.value = item.name || '';
+    if (qtyInput) qtyInput.value = (item.quantity !== undefined && item.quantity !== null) ? item.quantity : '';
+    if (unitSelect) unitSelect.value = item.unit || 'units';
+    if (priceInput) priceInput.value = (item.price !== undefined && item.price !== null) ? item.price : '';
+    if (thInput) thInput.value = (item.threshold !== undefined && item.threshold !== null) ? item.threshold : '';
+    if (prodInput) prodInput.value = item.prodDate || '';
+    if (expInput) expInput.value = item.expDate || '';
+  };
+
+  window.handleEditStockSubmit = function(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-stock-id')?.value;
+    const item = (window.stockData || []).find(s => s.id === id);
+    if (!item) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Unable to locate inventory batch.', 'error');
+      return;
+    }
+
+    const name = document.getElementById('edit-stock-name')?.value.trim();
+    const qty = parseFloat(document.getElementById('edit-stock-quantity')?.value);
+    const unit = document.getElementById('edit-stock-unit')?.value || 'units';
+    const price = parseFloat(document.getElementById('edit-stock-price')?.value) || 0;
+    const threshold = parseFloat(document.getElementById('edit-stock-threshold')?.value) || 0;
+    const prodDate = document.getElementById('edit-stock-prod-date')?.value || '';
+    const expDate = document.getElementById('edit-stock-exp-date')?.value || '';
+
+    if (!name || isNaN(qty) || qty < 0) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a valid item name and quantity.', 'error');
+      return;
+    }
+
+    item.name = name;
+    item.quantity = qty;
+    item.unit = unit;
+    item.price = price;
+    item.threshold = threshold;
+    item.prodDate = prodDate;
+    item.expDate = expDate;
+    item.updatedAt = new Date().toISOString();
+
+    localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
+
+    if (typeof window.closeModal === 'function') window.closeModal();
+    if (typeof window.triggerToast === 'function') window.triggerToast(`Inventory batch for "${name}" updated successfully!`, 'success');
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
+  };
+
   /* MONTHLY CATEGORY SCOPING HELPERS */
   window.formatMonthLabel = function(ym) {
     if (!ym || ym === 'all') return 'All Recorded Time';
