@@ -1276,21 +1276,29 @@
       price = rawPrice / packSize;
     }
 
+    const isNew = document.querySelector('input[name="stock-origin"]:checked')?.value !== 'old';
+    const accountId = document.getElementById('stock-account')?.value || '';
+
     const asset = {
       id: 'stk_' + Date.now(),
       name, quantity, unit, price, threshold, alertMethod, prodDate, expDate, packSize, buyStyle: style,
+      accountId: accountId,
+      isOldStock: !isNew,
       consumptionLogs: []
     };
 
     window.stockData.push(asset);
     localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
 
-    const computedCost = rawQty * (style === 'pack' ? rawPrice : price);
-    window.logAutomaticExpense(name, computedCost, "Groceries");
+    if (isNew && rawPrice > 0) {
+      const computedCost = rawQty * (style === 'pack' ? rawPrice : price);
+      window.logAutomaticExpense(name, computedCost, "Groceries", accountId, "General Groceries");
+    }
 
     window.triggerToast("Asset ledger record finalized!", "success");
     e.target.reset();
     window.togglePackagingMath('stock');
+    if (typeof window.toggleStockOrigin === 'function') window.toggleStockOrigin();
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
 
@@ -1308,6 +1316,8 @@
     const dosage = document.getElementById('pharmacy-dosage').value.trim();
     const reason = document.getElementById('pharmacy-reason').value.trim();
     const prescription = document.getElementById('pharmacy-prescription').value;
+    const isNew = document.querySelector('input[name="pharmacy-origin"]:checked')?.value !== 'old';
+    const accountId = document.getElementById('pharmacy-account')?.value || '';
 
     let quantity = rawQty;
     let price = rawPrice;
@@ -1322,19 +1332,61 @@
     const med = {
       id: 'med_' + Date.now(),
       name, quantity, unit, price, threshold, alertMethod, prodDate, expDate, dosage, reason, prescription, packSize, buyStyle: style,
+      accountId: accountId,
+      isOldStock: !isNew,
       consumptionLogs: []
     };
 
     window.pharmacyData.push(med);
     localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
 
-    const computedCost = rawQty * (style === 'pack' ? rawPrice : price);
-    window.logAutomaticExpense(name, computedCost, "Medical");
+    if (isNew && rawPrice > 0) {
+      const computedCost = rawQty * (style === 'pack' ? rawPrice : price);
+      window.logAutomaticExpense(name, computedCost, "Medical", accountId, "Prescription Drugs");
+    }
 
     window.triggerToast("Medication details integrated!", "success");
     e.target.reset();
     window.togglePackagingMath('pharmacy');
+    if (typeof window.togglePharmacyOrigin === 'function') window.togglePharmacyOrigin();
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
+  };
+
+  /* TOGGLE ORIGIN (NEW PURCHASE VS OLD STOCK) FOR STOCK & PHARMACY */
+  window.toggleStockOrigin = function() {
+    const isNew = document.querySelector('input[name="stock-origin"]:checked')?.value !== 'old';
+    const newLbl = document.getElementById('stock-origin-label-new');
+    const oldLbl = document.getElementById('stock-origin-label-old');
+    const disclaimer = document.getElementById('stock-origin-disclaimer');
+    if (newLbl) {
+      newLbl.className = isNew
+        ? 'cursor-pointer border-2 border-blue-600 bg-blue-50 text-blue-700 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs'
+        : 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+    }
+    if (oldLbl) {
+      oldLbl.className = !isNew
+        ? 'cursor-pointer border-2 border-blue-600 bg-blue-50 text-blue-700 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs'
+        : 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+    }
+    if (disclaimer) disclaimer.classList.toggle('hidden', isNew);
+  };
+
+  window.togglePharmacyOrigin = function() {
+    const isNew = document.querySelector('input[name="pharmacy-origin"]:checked')?.value !== 'old';
+    const newLbl = document.getElementById('pharmacy-origin-label-new');
+    const oldLbl = document.getElementById('pharmacy-origin-label-old');
+    const disclaimer = document.getElementById('pharmacy-origin-disclaimer');
+    if (newLbl) {
+      newLbl.className = isNew
+        ? 'cursor-pointer border-2 border-blue-600 bg-blue-50 text-blue-700 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs'
+        : 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+    }
+    if (oldLbl) {
+      oldLbl.className = !isNew
+        ? 'cursor-pointer border-2 border-blue-600 bg-blue-50 text-blue-700 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs'
+        : 'cursor-pointer border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs';
+    }
+    if (disclaimer) disclaimer.classList.toggle('hidden', isNew);
   };
 
   /* SPARE PARTS MANAGEMENT IN STOCK MODULE */
