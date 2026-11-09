@@ -382,6 +382,29 @@
     if (currentVal) filterCat.value = currentVal;
   };
 
+  window.updatePharmacyUnitLabels = function() {
+    const unitEl = document.getElementById('pharmacy-unit');
+    const buyStyleEl = document.getElementById('pharmacy-buy-style');
+    const qtyLabel = document.getElementById('lbl-pharmacy-qty');
+    const packSizeLabel = document.getElementById('lbl-pharmacy-pack-size');
+    if (!unitEl || !qtyLabel) return;
+    
+    const unitVal = unitEl.value || 'units';
+    const selectedOption = unitEl.options[unitEl.selectedIndex];
+    const unitText = selectedOption ? selectedOption.text.split('(')[0].trim() : unitVal;
+    const isPack = buyStyleEl && buyStyleEl.value === 'pack';
+    
+    if (isPack) {
+      qtyLabel.innerText = "Packs / Boxes Bought";
+      if (packSizeLabel) {
+        packSizeLabel.innerText = `${unitText} per Box / Pack`;
+      }
+    } else {
+      qtyLabel.innerText = `In Stock (${unitText})`;
+    }
+    window.updateFormRealtimePreview('pharmacy');
+  };
+
   window.togglePackagingMath = function(tab) {
     const styleEl = document.getElementById(`${tab}-buy-style`);
     if (!styleEl) return;
@@ -392,12 +415,24 @@
     
     if (style === 'pack') {
       if (sizeContainer) sizeContainer.classList.remove('hidden');
-      if (qtyLabel) qtyLabel.innerText = "Packs Bought";
+      if (qtyLabel) qtyLabel.innerText = tab === 'pharmacy' ? "Packs / Boxes Bought" : "Packs Bought";
       if (priceLabel) priceLabel.innerText = "Price per Pack (EGP)";
     } else {
       if (sizeContainer) sizeContainer.classList.add('hidden');
-      if (qtyLabel) qtyLabel.innerText = tab === 'pharmacy' ? "In Stock (Pills/ml)" : "Quantity Bought";
+      if (qtyLabel) {
+        if (tab === 'pharmacy') {
+          const unitEl = document.getElementById('pharmacy-unit');
+          const opt = unitEl ? unitEl.options[unitEl.selectedIndex] : null;
+          const uLabel = opt ? opt.text.split('(')[0].trim() : (unitEl?.value || 'Units');
+          qtyLabel.innerText = `In Stock (${uLabel})`;
+        } else {
+          qtyLabel.innerText = "Quantity Bought";
+        }
+      }
       if (priceLabel) priceLabel.innerText = "Price per Unit (EGP)";
+    }
+    if (tab === 'pharmacy' && typeof window.updatePharmacyUnitLabels === 'function') {
+      window.updatePharmacyUnitLabels();
     }
     window.updateFormRealtimePreview(tab);
   };
@@ -415,7 +450,14 @@
       const totalLoose = qty * packSize;
       const unitPrice = packSize > 0 ? (price / packSize) : 0;
       
-      previewEl.innerText = `Intelligent Packaging Assist: ${totalLoose} total base elements compiled @ EGP ${unitPrice.toFixed(2)}/unit.`;
+      let unitLabel = 'units';
+      if (tab === 'pharmacy') {
+        const unitEl = document.getElementById('pharmacy-unit');
+        const opt = unitEl ? unitEl.options[unitEl.selectedIndex] : null;
+        unitLabel = opt ? opt.text.split('(')[0].trim().toLowerCase() : (unitEl?.value || 'units');
+      }
+      
+      previewEl.innerText = `Intelligent Packaging Assist: ${totalLoose} ${unitLabel} compiled @ EGP ${unitPrice.toFixed(2)}/${unitLabel}.`;
       previewEl.classList.remove('hidden');
     } else if (previewEl) {
       previewEl.classList.add('hidden');
@@ -1849,7 +1891,71 @@
     if (idInput) idInput.value = med.id;
     if (nameInput) nameInput.value = med.name || '';
     if (qtyInput) qtyInput.value = (med.quantity !== undefined && med.quantity !== null) ? med.quantity : '';
-    if (unitSelect) unitSelect.value = med.unit || 'pills';
+    if (unitSelect) {
+      const rawUnit = (med.unit || 'tablets').trim();
+      const cleanUnit = rawUnit.toLowerCase();
+      const unitAliases = {
+        'sapository': 'suppositories',
+        'sapositories': 'suppositories',
+        'suppository': 'suppositories',
+        'لبوس': 'suppositories',
+        'تحاميل': 'suppositories',
+        'sachet': 'sachets',
+        'sachets': 'sachets',
+        'فوار': 'sachets',
+        'كيس': 'sachets',
+        'ampule': 'ampules',
+        'ampules': 'ampules',
+        'ampoule': 'ampules',
+        'ampoules': 'ampules',
+        'أمبول': 'ampules',
+        'أمبولات': 'ampules',
+        'tablet': 'tablets',
+        'tablets': 'tablets',
+        'قرص': 'tablets',
+        'أقراص': 'tablets',
+        'capsule': 'capsules',
+        'capsules': 'capsules',
+        'كبسولة': 'capsules',
+        'كبسولات': 'capsules',
+        'vial': 'vials',
+        'vials': 'vials',
+        'فيال': 'vials',
+        'syringe': 'syringes',
+        'syringes': 'syringes',
+        'puff': 'puffs',
+        'puffs': 'puffs',
+        'بخة': 'puffs',
+        'spray': 'sprays',
+        'sprays': 'sprays',
+        'بخاخ': 'sprays',
+        'tube': 'tubes',
+        'tubes': 'tubes',
+        'مرهم': 'tubes',
+        'كريم': 'tubes',
+        'bottle': 'bottles',
+        'bottles': 'bottles',
+        'زجاجة': 'bottles',
+        'strip': 'strips',
+        'strips': 'strips',
+        'شريط': 'strips',
+        'drop': 'drops',
+        'drops': 'drops',
+        'نقط': 'drops',
+        'قطرة': 'drops'
+      };
+      const resolved = unitAliases[cleanUnit] || cleanUnit;
+      const matched = Array.from(unitSelect.options).find(o => o.value.toLowerCase() === resolved || o.value.toLowerCase() === cleanUnit);
+      if (matched) {
+        unitSelect.value = matched.value;
+      } else {
+        const customOpt = document.createElement('option');
+        customOpt.value = rawUnit;
+        customOpt.textContent = rawUnit;
+        unitSelect.appendChild(customOpt);
+        unitSelect.value = rawUnit;
+      }
+    }
     if (priceInput) priceInput.value = (med.price !== undefined && med.price !== null) ? med.price : '';
     if (thInput) thInput.value = (med.threshold !== undefined && med.threshold !== null) ? med.threshold : '';
     if (prodInput) prodInput.value = med.prodDate || '';
@@ -4018,8 +4124,8 @@
           </div>
 
           <div class="flex gap-2 items-center">
-            <input type="number" id="med-consume-val-${name.replace(/\s+/g, '-')}" placeholder="Qty" class="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold" min="1" step="1" value="1">
-            <button onclick="executeConsolidatedPharmacyConsumption('${name}', ${totalInStock})" class="flex-grow py-1 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition">
+            <input type="number" id="med-consume-val-${name.replace(/\s+/g, '-')}" placeholder="Qty" class="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold" min="0.1" step="0.5" value="1">
+            <button onclick="executeConsolidatedPharmacyConsumption(decodeURIComponent('${encodeURIComponent(name)}'), ${totalInStock}, '${unit}')" class="flex-grow py-1 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition">
               Dispense Dose
             </button>
             <button onclick="toggleMedGroupCollapse('${name}')" class="p-1 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
@@ -4069,12 +4175,12 @@
     }
   };
 
-  window.executeConsolidatedPharmacyConsumption = function(name, currentTotal) {
-    const inputVal = parseInt(document.getElementById(`med-consume-val-${name.replace(/\s+/g, '-')}`)?.value) || 0;
+  window.executeConsolidatedPharmacyConsumption = function(name, currentTotal, unit = 'units') {
+    const inputVal = parseFloat(document.getElementById(`med-consume-val-${name.replace(/\s+/g, '-')}`)?.value) || 0;
     if (inputVal <= 0) return;
 
     if (currentTotal < inputVal) {
-      window.triggerToast(`Not enough cumulative stock of ${name} left!`, "error");
+      window.triggerToast(`Not enough cumulative stock of ${name} left! Available: ${currentTotal} ${unit}`, "error");
       return;
     }
 
@@ -4096,7 +4202,7 @@
     }
 
     localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
-    window.triggerToast(`Disbursed ${inputVal} total medication elements of ${name}.`, "success");
+    window.triggerToast(`Disbursed ${inputVal} ${unit} of ${name}. Remaining: ${(currentTotal - inputVal).toFixed(1)} ${unit}.`, "success");
     window.renderAllViews();
   };
 

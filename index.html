@@ -1343,21 +1343,61 @@
               </div>
               <div>
                 <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Medical Unit</label>
-                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-unit">
-                  <option value="pills">pills</option>
-                  <option value="packs">packs</option>
-                  <option value="ml">ml</option>
-                  <option value="units">units</option>
+                <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-unit" onchange="if (typeof window.updatePharmacyUnitLabels === 'function') window.updatePharmacyUnitLabels();">
+                  <optgroup label="Solid Oral Forms">
+                    <option value="tablets">Tablets (tab / قرص)</option>
+                    <option value="capsules">Capsules (cap / كبسولة)</option>
+                    <option value="sachets">Sachets / Powders (sachet / فوار / كيس)</option>
+                    <option value="pills" selected>Pills (pill / حبة)</option>
+                    <option value="strips">Strips (strip / شريط)</option>
+                    <option value="lozenges">Lozenges (حلاب / استحلاب)</option>
+                    <option value="effervescent">Effervescent Tablets (فوار)</option>
+                    <option value="packs">Packs / Boxes (علبة)</option>
+                  </optgroup>
+                  <optgroup label="Injections &amp; Infusions">
+                    <option value="ampules">Ampoules / Ampules (amp / أمبول)</option>
+                    <option value="vials">Vials (vial / فيال)</option>
+                    <option value="syringes">Pre-filled Syringes (حقنة جاهزة)</option>
+                    <option value="cartridges">Pen Cartridges / Pens (خرطوشة / قلم)</option>
+                    <option value="infusion_bags">Infusion Bags (IV / محلول وريدي)</option>
+                  </optgroup>
+                  <optgroup label="Rectal &amp; Vaginal">
+                    <option value="suppositories">Suppositories (Sapository / لبوس / تحاميل)</option>
+                    <option value="enemas">Enemas (حقنة شرجية)</option>
+                    <option value="pessaries">Pessaries / Vaginal Ovules (بويضات مهبلية)</option>
+                  </optgroup>
+                  <optgroup label="Liquid Oral &amp; Drops">
+                    <option value="ml">Milliliters (ml / مل)</option>
+                    <option value="drops">Drops (gtt / نقط)</option>
+                    <option value="bottles">Bottles / Syrups (زجاجة شراب)</option>
+                    <option value="spoons">Spoons / 5ml Doses (ملعقة)</option>
+                  </optgroup>
+                  <optgroup label="Topical &amp; Dermatological">
+                    <option value="tubes">Tubes (Cream / Ointment / Gel / أنبوبة)</option>
+                    <option value="patches">Transdermal Patches (لاصقة طبية)</option>
+                    <option value="lotions">Lotions / Topical Sol. (لوشن)</option>
+                  </optgroup>
+                  <optgroup label="Respiratory &amp; Sprays">
+                    <option value="puffs">Inhaler Puffs / Actuations (بخة استنشاق)</option>
+                    <option value="sprays">Sprays (Nasal / Oral / بخاخ)</option>
+                    <option value="nebules">Nebulizer Respules / Nebules (أمبول استنشاق)</option>
+                    <option value="eye_drops">Eye / Ear Drops (قطرة عين / أذن)</option>
+                  </optgroup>
+                  <optgroup label="General &amp; Biological">
+                    <option value="units">International Units (IU / وحدة دولية)</option>
+                    <option value="doses">Standard Doses (جرعة)</option>
+                    <option value="pieces">Pieces / Units (قطعة)</option>
+                  </optgroup>
                 </select>
               </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="lbl-pharmacy-qty">In Stock (Pills/ml)</label>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="lbl-pharmacy-qty">In Stock (Pills)</label>
                 <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-quantity" min="0" placeholder="30" required="" step="1" type="number"/>
               </div>
               <div class="hidden" id="pharmacy-pack-size-container">
-                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Pills per Strip/Box</label>
+                <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1" id="lbl-pharmacy-pack-size">Units per Strip/Box</label>
                 <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="pharmacy-pack-size" min="1" step="1" type="number" value="10"/>
               </div>
             </div>
@@ -2588,10 +2628,50 @@
           <div>
             <label class="block text-xs font-semibold text-slate-505 dark:text-slate-404 mb-1">Unit</label>
             <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold" id="edit-pharmacy-unit">
-              <option value="pills">pills</option>
-              <option value="packs">packs</option>
-              <option value="ml">ml</option>
-              <option value="units">units</option>
+              <optgroup label="Solid Oral Forms">
+                <option value="tablets">Tablets (tab / قرص)</option>
+                <option value="capsules">Capsules (cap / كبسولة)</option>
+                <option value="sachets">Sachets / Powders (sachet / فوار / كيس)</option>
+                <option value="pills">Pills (pill / حبة)</option>
+                <option value="strips">Strips (strip / شريط)</option>
+                <option value="lozenges">Lozenges (حلاب / استحلاب)</option>
+                <option value="effervescent">Effervescent Tablets (فوار)</option>
+                <option value="packs">Packs / Boxes (علبة)</option>
+              </optgroup>
+              <optgroup label="Injections &amp; Infusions">
+                <option value="ampules">Ampoules / Ampules (amp / أمبول)</option>
+                <option value="vials">Vials (vial / فيال)</option>
+                <option value="syringes">Pre-filled Syringes (حقنة جاهزة)</option>
+                <option value="cartridges">Pen Cartridges / Pens (خرطوشة / قلم)</option>
+                <option value="infusion_bags">Infusion Bags (IV / محلول وريدي)</option>
+              </optgroup>
+              <optgroup label="Rectal &amp; Vaginal">
+                <option value="suppositories">Suppositories (Sapository / لبوس / تحاميل)</option>
+                <option value="enemas">Enemas (حقنة شرجية)</option>
+                <option value="pessaries">Pessaries / Vaginal Ovules (بويضات مهبلية)</option>
+              </optgroup>
+              <optgroup label="Liquid Oral &amp; Drops">
+                <option value="ml">Milliliters (ml / مل)</option>
+                <option value="drops">Drops (gtt / نقط)</option>
+                <option value="bottles">Bottles / Syrups (زجاجة شراب)</option>
+                <option value="spoons">Spoons / 5ml Doses (ملعقة)</option>
+              </optgroup>
+              <optgroup label="Topical &amp; Dermatological">
+                <option value="tubes">Tubes (Cream / Ointment / Gel / أنبوبة)</option>
+                <option value="patches">Transdermal Patches (لاصقة طبية)</option>
+                <option value="lotions">Lotions / Topical Sol. (لوشن)</option>
+              </optgroup>
+              <optgroup label="Respiratory &amp; Sprays">
+                <option value="puffs">Inhaler Puffs / Actuations (بخة استنشاق)</option>
+                <option value="sprays">Sprays (Nasal / Oral / بخاخ)</option>
+                <option value="nebules">Nebulizer Respules / Nebules (أمبول استنشاق)</option>
+                <option value="eye_drops">Eye / Ear Drops (قطرة عين / أذن)</option>
+              </optgroup>
+              <optgroup label="General &amp; Biological">
+                <option value="units">International Units (IU / وحدة دولية)</option>
+                <option value="doses">Standard Doses (جرعة)</option>
+                <option value="pieces">Pieces / Units (قطعة)</option>
+              </optgroup>
             </select>
           </div>
         </div>
