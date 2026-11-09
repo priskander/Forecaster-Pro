@@ -322,6 +322,7 @@
       if (typeof window.renderSparePartsLedger === 'function') window.renderSparePartsLedger();
     } else if (module === 'pharmacy') {
       if (typeof window.renderPharmacyLedger === 'function') window.renderPharmacyLedger();
+      if (typeof window.renderPharmacyScheduleManager === 'function') window.renderPharmacyScheduleManager();
     } else {
       if (typeof window.renderStockInventoryLedger === 'function') window.renderStockInventoryLedger();
     }
@@ -1329,9 +1330,16 @@
     const prodDate = document.getElementById('pharmacy-prod-date').value;
     const expDate = document.getElementById('pharmacy-exp-date').value;
     const dosage = document.getElementById('pharmacy-dosage').value.trim();
+    const doseQty = parseFloat(document.getElementById('pharmacy-dose-qty')?.value) || 1;
     const reason = document.getElementById('pharmacy-reason').value.trim();
     const prescription = document.getElementById('pharmacy-prescription').value;
     const isNew = document.querySelector('input[name="pharmacy-origin"]:checked')?.value !== 'old';
+
+    const schedCbs = document.querySelectorAll('input[name="pharmacy-schedule"]:checked');
+    let schedules = Array.from(schedCbs).map(cb => cb.value);
+    if (schedules.length === 0 && typeof window.parseMedicineSchedules === 'function') {
+      schedules = window.parseMedicineSchedules({ dosage, reason });
+    }
     
     let accountId = document.getElementById('pharmacy-account')?.value || '';
     if (!accountId && Array.isArray(window.accounts) && window.accounts.length > 0) {
@@ -1351,7 +1359,10 @@
     const batchId = 'med_' + Date.now();
     const med = {
       id: batchId,
-      name, quantity, unit, price, threshold, alertMethod, prodDate, expDate, dosage, reason, prescription, packSize, buyStyle: style,
+      name, quantity, unit, price, threshold, alertMethod, prodDate, expDate, dosage,
+      doseQty: doseQty,
+      schedules: schedules,
+      reason, prescription, packSize, buyStyle: style,
       accountId: accountId,
       isOldStock: !isNew,
       consumptionLogs: []
@@ -1364,8 +1375,10 @@
     const computedCost = rawQty * (style === 'pack' ? rawPrice : price);
     window.logAutomaticExpense(name, computedCost, "Medical", accountId, "Prescription Drugs", batchId);
 
-    window.triggerToast("Medication details integrated!", "success");
+    window.triggerToast(`Medication "${name}" integrated with ${schedules.length} routine schedule(s)!`, "success");
     e.target.reset();
+    const doseQtyEl = document.getElementById('pharmacy-dose-qty');
+    if (doseQtyEl) doseQtyEl.value = '1';
     window.togglePackagingMath('pharmacy');
     if (typeof window.togglePharmacyOrigin === 'function') window.togglePharmacyOrigin();
     if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
@@ -1542,7 +1555,7 @@
   window.closeModal = function() {
     const modal = document.getElementById('custom-modal');
     if (modal) modal.classList.add('hidden');
-    ['edit-expense-modal', 'edit-income-modal', 'edit-stock-modal', 'edit-pharmacy-modal', 'edit-transfer-modal', 'add-batch-modal', 'unhide-items-modal', 'add-txn-modal', 'rental-payment-modal'].forEach(id => {
+    ['edit-expense-modal', 'edit-income-modal', 'edit-stock-modal', 'edit-pharmacy-modal', 'edit-transfer-modal', 'add-batch-modal', 'unhide-items-modal', 'add-txn-modal', 'rental-payment-modal', 'confirm-scheduled-intake-modal'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.classList.add('hidden');
     });
@@ -1829,6 +1842,7 @@
     const prodInput = document.getElementById('edit-pharmacy-prod-date');
     const expInput = document.getElementById('edit-pharmacy-exp-date');
     const dosageInput = document.getElementById('edit-pharmacy-dosage');
+    const doseQtyInput = document.getElementById('edit-pharmacy-dose-qty');
     const reasonInput = document.getElementById('edit-pharmacy-reason');
     const accountSelect = document.getElementById('edit-pharmacy-account');
 
@@ -1841,7 +1855,17 @@
     if (prodInput) prodInput.value = med.prodDate || '';
     if (expInput) expInput.value = med.expDate || '';
     if (dosageInput) dosageInput.value = med.dosage || '';
+    if (doseQtyInput) doseQtyInput.value = med.doseQty || (typeof window.getMedicineDoseQty === 'function' ? window.getMedicineDoseQty(med) : 1);
     if (reasonInput) reasonInput.value = med.reason || '';
+
+    const activeSchedules = (Array.isArray(med.schedules) && med.schedules.length > 0)
+      ? med.schedules
+      : (typeof window.parseMedicineSchedules === 'function' ? window.parseMedicineSchedules(med) : []);
+
+    ['after_breakfast', 'after_lunch', 'after_dinner', 'before_bed'].forEach(sid => {
+      const cb = document.getElementById(`edit-sched-${sid}`);
+      if (cb) cb.checked = activeSchedules.includes(sid);
+    });
 
     if (accountSelect) {
       const linkedTxn = (window.transactions || []).find(t => t.batchId === med.id || (t.category === 'Medical' && t.description === `Purchase: ${med.name}`));
@@ -1867,8 +1891,12 @@
     const prodDate = document.getElementById('edit-pharmacy-prod-date')?.value || '';
     const expDate = document.getElementById('edit-pharmacy-exp-date')?.value || '';
     const dosage = document.getElementById('edit-pharmacy-dosage')?.value.trim() || '';
+    const doseQty = parseFloat(document.getElementById('edit-pharmacy-dose-qty')?.value) || 1;
     const reason = document.getElementById('edit-pharmacy-reason')?.value.trim() || '';
     const accountId = document.getElementById('edit-pharmacy-account')?.value || (window.accounts?.[0]?.id || '');
+
+    const editScheduleCheckboxes = document.querySelectorAll('input[name="edit-pharmacy-schedule"]:checked');
+    let schedules = Array.from(editScheduleCheckboxes).map(cb => cb.value);
 
     if (!name || isNaN(qty) || qty < 0) {
       if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a valid medication name and quantity.', 'error');
@@ -1884,6 +1912,8 @@
     med.prodDate = prodDate;
     med.expDate = expDate;
     med.dosage = dosage;
+    med.doseQty = doseQty;
+    med.schedules = schedules;
     med.reason = reason;
     med.accountId = accountId;
     med.updatedAt = new Date().toISOString();
@@ -2373,6 +2403,7 @@
     try { window.renderConsolidatedTableRegistry(); } catch(e) { console.warn('renderConsolidatedTableRegistry error:', e); }
     try { window.renderStockInventoryLedger(); } catch(e) { console.warn('renderStockInventoryLedger error:', e); }
     try { window.renderPharmacyLedger(); } catch(e) { console.warn('renderPharmacyLedger error:', e); }
+    try { window.renderPharmacyScheduleManager(); } catch(e) { console.warn('renderPharmacyScheduleManager error:', e); }
     if (typeof window.renderSparePartsLedger === 'function') {
       try { window.renderSparePartsLedger(); } catch(e) { console.warn('renderSparePartsLedger error:', e); }
     }
@@ -3485,6 +3516,442 @@
     window.renderAllViews();
   };
 
+  /* =========================================================================
+   * ROUTINE DOSE SCHEDULING & AUTOMATED INTAKE ENGINE
+   * ========================================================================= */
+  window.MEDICINE_SCHEDULES = [
+    { id: 'after_breakfast', label: 'After Breakfast', icon: '🌅', color: 'amber', badgeBg: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' },
+    { id: 'after_lunch', label: 'After Lunch', icon: '☀️', color: 'orange', badgeBg: 'bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800' },
+    { id: 'after_dinner', label: 'After Dinner', icon: '🌙', color: 'indigo', badgeBg: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' },
+    { id: 'before_bed', label: 'Bedtime', icon: '🛌', color: 'purple', badgeBg: 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' }
+  ];
+
+  window.activePharmacyScheduleTab = window.activePharmacyScheduleTab || 'after_breakfast';
+
+  window.setPharmacyScheduleTab = function(schedId) {
+    window.activePharmacyScheduleTab = schedId;
+    window.renderPharmacyScheduleManager();
+  };
+
+  window.parseMedicineSchedules = function(med) {
+    if (!med) return [];
+    if (Array.isArray(med.schedules) && med.schedules.length > 0) {
+      return med.schedules;
+    }
+    const str = (((med.dosage || '') + ' ' + (med.reason || '')).toLowerCase());
+    const detected = [];
+    if (str.includes('breakfast') || str.includes('morning') || str.includes('am') || str.includes('فطور') || str.includes('صباح')) {
+      detected.push('after_breakfast');
+    }
+    if (str.includes('lunch') || str.includes('afternoon') || str.includes('noon') || str.includes('غداء') || str.includes('ظهر')) {
+      detected.push('after_lunch');
+    }
+    if (str.includes('dinner') || str.includes('evening') || str.includes('pm') || str.includes('عشاء') || str.includes('مساء')) {
+      detected.push('after_dinner');
+    }
+    if (str.includes('bed') || str.includes('night') || str.includes('sleep') || str.includes('نوم')) {
+      detected.push('before_bed');
+    }
+    return detected;
+  };
+
+  window.getMedicineDoseQty = function(med) {
+    if (!med) return 1;
+    if (typeof med.doseQty === 'number' && !isNaN(med.doseQty) && med.doseQty > 0) {
+      return med.doseQty;
+    }
+    const str = (med.dosage || '').trim();
+    const match = str.match(/(\d+(\.\d+)?)/);
+    if (match) {
+      const val = parseFloat(match[1]);
+      if (val > 0) return val;
+    }
+    return 1;
+  };
+
+  window.deductMedicineStock = function(medName, doseQty, scheduleLabel = 'Manual Routine') {
+    if (!medName || doseQty <= 0) return { success: false, reason: 'Invalid parameters' };
+    const matchedBatches = (window.pharmacyData || []).filter(m => m && !m.isHidden && m.name === medName).sort((a,b) => {
+      if (a.expDate && b.expDate) return new Date(a.expDate) - new Date(b.expDate);
+      return new Date(a.prodDate || 0) - new Date(b.prodDate || 0);
+    });
+
+    const totalAvailable = matchedBatches.reduce((s, b) => s + (parseFloat(b.quantity) || 0), 0);
+    if (totalAvailable < doseQty) {
+      return { success: false, reason: `Insufficient stock for ${medName}. Available: ${totalAvailable}, needed: ${doseQty}` };
+    }
+
+    let deficit = doseQty;
+    const today = new Date().toISOString().split('T')[0];
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    for (let i = 0; i < matchedBatches.length; i++) {
+      if (deficit <= 0) break;
+      const batch = matchedBatches[i];
+      const batchQty = parseFloat(batch.quantity) || 0;
+      if (batchQty >= deficit) {
+        batch.quantity = batchQty - deficit;
+        if (!Array.isArray(batch.consumptionLogs)) batch.consumptionLogs = [];
+        batch.consumptionLogs.push({
+          date: today,
+          time: nowTime,
+          amount: deficit,
+          type: 'consumed_schedule',
+          schedule: scheduleLabel,
+          reason: `Routine dose (${scheduleLabel})`
+        });
+        deficit = 0;
+      } else {
+        deficit -= batchQty;
+        if (!Array.isArray(batch.consumptionLogs)) batch.consumptionLogs = [];
+        batch.consumptionLogs.push({
+          date: today,
+          time: nowTime,
+          amount: batchQty,
+          type: 'consumed_schedule',
+          schedule: scheduleLabel,
+          reason: `Routine dose (${scheduleLabel})`
+        });
+        batch.quantity = 0;
+      }
+    }
+
+    return { success: true, remaining: totalAvailable - doseQty };
+  };
+
+  window.consumeSingleScheduleMed = function(medName, doseQty, schedId) {
+    const schedDef = window.MEDICINE_SCHEDULES.find(s => s.id === schedId);
+    const schedLabel = schedDef ? schedDef.label : (schedId || 'Routine');
+    const result = window.deductMedicineStock(medName, doseQty, schedLabel);
+    if (result.success) {
+      localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+      if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+        window.ForecasterCloudSync.notifyDataChanged();
+      }
+      window.triggerToast(`✓ Took ${doseQty} of ${medName} for ${schedLabel}. Remaining stock: ${result.remaining.toFixed(1)}`, 'success');
+      window.renderAllViews();
+    } else {
+      window.triggerToast(result.reason, 'error');
+    }
+  };
+
+  window.pendingScheduleIntake = null;
+
+  window.openConfirmScheduleIntakeModal = function(schedId) {
+    const schedDef = window.MEDICINE_SCHEDULES.find(s => s.id === schedId) || window.MEDICINE_SCHEDULES[0];
+    const grouped = {};
+    (window.pharmacyData || []).forEach(m => {
+      if (!m || m.isHidden) return;
+      if (!grouped[m.name]) {
+        grouped[m.name] = {
+          name: m.name,
+          unit: m.unit || 'pills',
+          schedules: window.parseMedicineSchedules(m),
+          doseQty: window.getMedicineDoseQty(m),
+          totalStock: 0,
+          prescription: m.prescription,
+          reason: m.reason
+        };
+      }
+      grouped[m.name].totalStock += (parseFloat(m.quantity) || 0);
+    });
+
+    const scheduledMeds = Object.values(grouped).filter(g => g.schedules.includes(schedDef.id));
+
+    if (scheduledMeds.length === 0) {
+      window.triggerToast(`No medications currently assigned to "${schedDef.label}". Assign routines when registering or editing medicines.`, 'info');
+      return;
+    }
+
+    window.pendingScheduleIntake = {
+      scheduleId: schedDef.id,
+      scheduleLabel: schedDef.label,
+      meds: scheduledMeds
+    };
+
+    const modal = document.getElementById('confirm-scheduled-intake-modal');
+    const customModal = document.getElementById('custom-modal');
+    const titleEl = document.getElementById('confirm-schedule-modal-title');
+    const listEl = document.getElementById('confirm-schedule-meds-list');
+    const summaryEl = document.getElementById('confirm-schedule-total-summary');
+    const warningEl = document.getElementById('confirm-schedule-stock-warning');
+
+    if (!modal || !customModal || !listEl) return;
+
+    if (titleEl) {
+      titleEl.innerHTML = `<span>${schedDef.icon}</span> Confirm Routine: ${schedDef.label}`;
+    }
+
+    let hasLowStock = false;
+    listEl.innerHTML = scheduledMeds.map((m, idx) => {
+      const willRemain = m.totalStock - m.doseQty;
+      const isDeficient = m.totalStock < m.doseQty;
+      if (isDeficient) hasLowStock = true;
+
+      return `
+        <label class="flex items-start justify-between gap-3 p-3 rounded-xl border ${isDeficient ? 'border-rose-300 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60'} cursor-pointer hover:border-blue-400 transition">
+          <div class="flex items-start gap-2.5">
+            <input type="checkbox" id="sched-check-${idx}" data-name="${encodeURIComponent(m.name)}" data-dose="${m.doseQty}" checked class="mt-0.5 rounded text-blue-600 focus:ring-blue-500 w-4 h-4"/>
+            <div>
+              <div class="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span>💊</span>
+                <span>${window.escapeHtml(m.name)}</span>
+                ${m.reason ? `<span class="text-[10px] text-slate-404 font-normal">(${window.escapeHtml(m.reason)})</span>` : ''}
+              </div>
+              <div class="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                Dose: <strong class="text-blue-600 dark:text-blue-400 font-black">${m.doseQty} ${m.unit}</strong> • Current Stock: <strong class="${isDeficient ? 'text-rose-600 font-bold' : 'text-slate-700 dark:text-slate-300'}">${m.totalStock} ${m.unit}</strong>
+              </div>
+            </div>
+          </div>
+          <div class="text-right text-[11px] font-bold">
+            ${isDeficient 
+              ? `<span class="text-rose-600 dark:text-rose-400 font-black">Deficit (-${(m.doseQty - m.totalStock).toFixed(1)})</span>` 
+              : `<span class="text-emerald-600 dark:text-emerald-400 font-black">➔ ${willRemain.toFixed(1)} left</span>`}
+          </div>
+        </label>
+      `;
+    }).join('');
+
+    if (summaryEl) {
+      summaryEl.innerText = `Routine Meds: ${scheduledMeds.length} items`;
+    }
+    if (warningEl) {
+      warningEl.classList.toggle('hidden', !hasLowStock);
+    }
+
+    customModal.classList.remove('hidden');
+    modal.classList.remove('hidden');
+  };
+
+  window.executeConfirmedScheduleIntake = function() {
+    if (!window.pendingScheduleIntake) return;
+    const { scheduleId, scheduleLabel, meds } = window.pendingScheduleIntake;
+    const checkboxes = document.querySelectorAll('#confirm-schedule-meds-list input[type="checkbox"]');
+    
+    let consumedCount = 0;
+    let failedList = [];
+
+    checkboxes.forEach(cb => {
+      if (!cb.checked) return;
+      const rawName = cb.getAttribute('data-name');
+      const medName = rawName ? decodeURIComponent(rawName) : '';
+      const doseQty = parseFloat(cb.getAttribute('data-dose')) || 1;
+      const result = window.deductMedicineStock(medName, doseQty, scheduleLabel);
+      if (result.success) {
+        consumedCount++;
+      } else {
+        failedList.push(`${medName} (${result.reason})`);
+      }
+    });
+
+    if (consumedCount > 0) {
+      localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+      if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+        window.ForecasterCloudSync.notifyDataChanged();
+      }
+      window.triggerToast(`✅ Completed ${scheduleLabel}! Successfully subtracted doses for ${consumedCount} medication(s).`, 'success');
+    }
+
+    if (failedList.length > 0) {
+      window.triggerToast(`Could not deduct: ${failedList.join(', ')}`, 'error');
+    }
+
+    if (typeof window.closeModal === 'function') window.closeModal();
+    window.pendingScheduleIntake = null;
+    window.renderAllViews();
+  };
+
+  window.renderPharmacyScheduleManager = function() {
+    const tabsContainer = document.getElementById('pharmacy-schedule-tabs');
+    const contentContainer = document.getElementById('pharmacy-schedule-active-card');
+    if (!tabsContainer || !contentContainer) return;
+
+    // Group pharmacy medications by unique name
+    const grouped = {};
+    (window.pharmacyData || []).forEach(m => {
+      if (!m || m.isHidden) return;
+      if (!grouped[m.name]) {
+        grouped[m.name] = {
+          name: m.name,
+          unit: m.unit || 'pills',
+          schedules: window.parseMedicineSchedules(m),
+          doseQty: window.getMedicineDoseQty(m),
+          totalStock: 0,
+          prescription: m.prescription,
+          reason: m.reason,
+          dosage: m.dosage
+        };
+      }
+      grouped[m.name].totalStock += (parseFloat(m.quantity) || 0);
+    });
+
+    const allMeds = Object.values(grouped);
+
+    // Render tabs with counts
+    const activeTab = window.activePharmacyScheduleTab || 'after_breakfast';
+    let tabsHTML = window.MEDICINE_SCHEDULES.map(sched => {
+      const count = allMeds.filter(m => m.schedules.includes(sched.id)).length;
+      const isActive = (activeTab === sched.id);
+      return `
+        <button type="button" onclick="window.setPharmacyScheduleTab('${sched.id}')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+          isActive 
+            ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-600/30' 
+            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+        }">
+          <span>${sched.icon}</span>
+          <span>${sched.label}</span>
+          <span class="px-1.5 py-0.2 rounded-full text-[10px] ${isActive ? 'bg-white/25 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'} font-extrabold">${count}</span>
+        </button>
+      `;
+    }).join('');
+
+    // Tab for All Scheduled
+    const allScheduledCount = allMeds.filter(m => m.schedules.length > 0).length;
+    const isAllActive = (activeTab === 'all');
+    tabsHTML += `
+      <button type="button" onclick="window.setPharmacyScheduleTab('all')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+        isAllActive 
+          ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-600/30' 
+          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+      }">
+        <span>📋</span>
+        <span>All Scheduled</span>
+        <span class="px-1.5 py-0.2 rounded-full text-[10px] ${isAllActive ? 'bg-white/25 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'} font-extrabold">${allScheduledCount}</span>
+      </button>
+    `;
+    tabsContainer.innerHTML = tabsHTML;
+
+    // Render active schedule content
+    if (activeTab === 'all') {
+      const scheduledMeds = allMeds.filter(m => m.schedules.length > 0);
+      if (scheduledMeds.length === 0) {
+        contentContainer.innerHTML = `
+          <div class="p-6 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-xl space-y-2">
+            <span class="text-3xl">💊</span>
+            <p class="text-xs font-bold text-slate-700 dark:text-slate-300">No Routine Doses Configured Yet</p>
+            <p class="text-[11px] text-slate-404 max-w-md mx-auto">When registering medications on the left, check schedules like "After Breakfast" or "After Dinner" to enable automated routine dose consumption.</p>
+          </div>
+        `;
+        return;
+      }
+
+      contentContainer.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          ${scheduledMeds.map(m => {
+            return `
+              <div class="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-2.5 font-medium">
+                <div class="flex items-start justify-between">
+                  <div>
+                    <h4 class="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>💊</span> ${window.escapeHtml(m.name)}
+                    </h4>
+                    ${m.reason ? `<p class="text-[10px] text-slate-404 mt-0.5">${window.escapeHtml(m.reason)}</p>` : ''}
+                  </div>
+                  <span class="text-xs font-bold ${m.totalStock <= 5 ? 'text-rose-600' : 'text-emerald-600'}">
+                    ${m.totalStock} ${m.unit} in stock
+                  </span>
+                </div>
+                <div class="flex flex-wrap gap-1">
+                  ${m.schedules.map(sid => {
+                    const def = window.MEDICINE_SCHEDULES.find(x => x.id === sid);
+                    return def ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold border ${def.badgeBg}">${def.icon} ${def.label} (${m.doseQty} ${m.unit})</span>` : '';
+                  }).join('')}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+      return;
+    }
+
+    const currentSchedDef = window.MEDICINE_SCHEDULES.find(s => s.id === activeTab) || window.MEDICINE_SCHEDULES[0];
+    const matchingMeds = allMeds.filter(m => m.schedules.includes(currentSchedDef.id));
+
+    if (matchingMeds.length === 0) {
+      contentContainer.innerHTML = `
+        <div class="p-6 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-xl space-y-2 bg-slate-50/50 dark:bg-slate-900/30">
+          <span class="text-3xl">${currentSchedDef.icon}</span>
+          <p class="text-xs font-bold text-slate-800 dark:text-slate-200">No Medications Assigned for ${currentSchedDef.label}</p>
+          <p class="text-[11px] text-slate-404 max-w-sm mx-auto">
+            You can assign medicines to <strong>${currentSchedDef.label}</strong> by selecting the schedule checkbox when registering a medication or clicking <strong>Edit Batch</strong> in the register below.
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    const totalDoseItems = matchingMeds.reduce((sum, m) => sum + m.doseQty, 0);
+
+    contentContainer.innerHTML = `
+      <div class="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/80 dark:border-blue-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xl">${currentSchedDef.icon}</span>
+            <h4 class="text-sm font-extrabold text-slate-900 dark:text-white">${currentSchedDef.label} Routine</h4>
+            <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+              ${matchingMeds.length} Meds Assigned
+            </span>
+          </div>
+          <p class="text-xs text-slate-600 dark:text-slate-300 mt-1">
+            Total routine intake: <strong class="text-blue-600 dark:text-blue-400 font-bold">${totalDoseItems} total dose units</strong> across active inventory.
+          </p>
+        </div>
+        <button type="button" onclick="window.openConfirmScheduleIntakeModal('${currentSchedDef.id}')" class="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-2 cursor-pointer transition shrink-0">
+          <span>⚡</span> Take All ${currentSchedDef.label} Doses
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        ${matchingMeds.map(m => {
+          const otherSchedules = m.schedules.filter(sid => sid !== currentSchedDef.id);
+          const otherBadges = otherSchedules.map(sid => {
+            const def = window.MEDICINE_SCHEDULES.find(x => x.id === sid);
+            return def ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-medium">${def.icon} ${def.label}</span>` : '';
+          }).join(' ');
+
+          const isLow = m.totalStock <= m.doseQty * 3;
+
+          return `
+            <div class="p-3.5 bg-white dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-2.5 font-medium flex flex-col justify-between">
+              <div>
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <h5 class="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>💊</span> ${window.escapeHtml(m.name)}
+                    </h5>
+                    ${m.reason ? `<p class="text-[10px] text-slate-404 mt-0.5">${window.escapeHtml(m.reason)}</p>` : ''}
+                  </div>
+                  <span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${isLow ? 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200'}">
+                    ${m.totalStock.toFixed(0)} ${m.unit} in stock
+                  </span>
+                </div>
+
+                <div class="mt-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-900/60 text-xs flex items-center justify-between">
+                  <span class="text-slate-404 text-[11px]">Intake Dose:</span>
+                  <span class="font-black text-blue-600 dark:text-blue-400">${m.doseQty} ${m.unit}</span>
+                </div>
+
+                ${otherSchedules.length > 0 ? `
+                  <div class="flex items-center gap-1 mt-1.5 flex-wrap">
+                    <span class="text-[9px] text-slate-404 uppercase font-bold">Also assigned to:</span>
+                    ${otherBadges}
+                  </div>
+                ` : ''}
+              </div>
+
+              <div class="pt-2 border-t border-slate-100 dark:border-slate-700 flex justify-end">
+                <button type="button" onclick="window.consumeSingleScheduleMed(decodeURIComponent('${encodeURIComponent(m.name)}'), ${m.doseQty}, '${currentSchedDef.id}')" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer">
+                  <span>✓</span> Take 1 Dose (${m.doseQty} ${m.unit})
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  };
+
   window.renderPharmacyLedger = function() {
     const container = document.getElementById('pharmacy-clinical-rows');
     if (!container) return;
@@ -3508,6 +3975,10 @@
       const isCritical = totalInStock <= totalThreshold;
       const colorBadge = isCritical ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200';
 
+      const scheds = (Array.isArray(sample.schedules) && sample.schedules.length > 0)
+        ? sample.schedules
+        : window.parseMedicineSchedules(sample);
+
       let cardHTML = `
         <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-4">
           <div class="flex items-start justify-between font-medium">
@@ -3527,9 +3998,22 @@
               <span class="text-slate-404">Dosage Instructions</span>
               <span class="font-extrabold text-slate-900 dark:text-slate-100">${sample.dosage}</span>
             </div>
+            <div class="flex justify-between text-slate-500 dark:text-slate-404">
+              <span>Standard Dose</span>
+              <span class="font-extrabold text-blue-600 dark:text-blue-400">${window.getMedicineDoseQty(sample)} ${unit}</span>
+            </div>
             <div class="flex justify-between">
               <span class="text-slate-404">Clinical Purpose</span>
               <span class="font-extrabold text-slate-900 dark:text-slate-100">${sample.reason}</span>
+            </div>
+            <div class="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
+              <span class="text-slate-404">Routine Schedules</span>
+              <div class="flex flex-wrap gap-1 justify-end">
+                ${scheds.length > 0 ? scheds.map(sid => {
+                  const def = window.MEDICINE_SCHEDULES.find(x => x.id === sid);
+                  return def ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${def.badgeBg}">${def.icon} ${def.label}</span>` : '';
+                }).join('') : '<span class="text-[10px] text-slate-404 italic font-normal">Unscheduled</span>'}
+              </div>
             </div>
           </div>
 
