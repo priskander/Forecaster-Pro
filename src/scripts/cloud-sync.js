@@ -89,33 +89,49 @@
         const remote = data.vault;
 
         if (forceReplace) {
-          // Complete clean database replacement for true account isolation
-          window.transactions = Array.isArray(remote.transactions) ? remote.transactions : [];
-          localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+          const hasRemoteData = (Array.isArray(remote.transactions) && remote.transactions.length > 0) ||
+                                (Array.isArray(remote.stockData) && remote.stockData.length > 0) ||
+                                (Array.isArray(remote.pharmacyData) && remote.pharmacyData.length > 0) ||
+                                (Array.isArray(remote.vehicles) && remote.vehicles.length > 0);
 
-          window.accounts = Array.isArray(remote.accounts) ? remote.accounts : [];
-          localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+          const hasLocalData = (Array.isArray(window.transactions) && window.transactions.length > 0) ||
+                               (Array.isArray(window.stockData) && window.stockData.length > 0) ||
+                               (Array.isArray(window.pharmacyData) && window.pharmacyData.length > 0);
 
-          window.accountTransfers = Array.isArray(remote.accountTransfers) ? remote.accountTransfers : [];
-          localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers));
+          if (!hasRemoteData && hasLocalData) {
+            // Push local data up to remote vault so remote is populated and not empty
+            this.pushVault(vaultId).catch(console.warn);
+          } else {
+            // Complete clean database replacement for true account isolation
+            window.transactions = Array.isArray(remote.transactions) ? remote.transactions : [];
+            localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
 
-          window.budgetLimits = (remote.budgetLimits && typeof remote.budgetLimits === 'object') ? remote.budgetLimits : {};
-          localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
+            if (Array.isArray(remote.accounts) && remote.accounts.length > 0) {
+              window.accounts = remote.accounts;
+              localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+            }
 
-          window.stockData = Array.isArray(remote.stockData) ? remote.stockData : [];
-          localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+            window.accountTransfers = Array.isArray(remote.accountTransfers) ? remote.accountTransfers : [];
+            localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers));
 
-          window.pharmacyData = Array.isArray(remote.pharmacyData) ? remote.pharmacyData : [];
-          localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+            window.budgetLimits = (remote.budgetLimits && typeof remote.budgetLimits === 'object') ? remote.budgetLimits : {};
+            localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
 
-          if (Array.isArray(remote.vehicles)) {
-            localStorage.setItem('pro_vehicles', JSON.stringify(remote.vehicles));
-          }
-          if (Array.isArray(remote.fuels)) {
-            localStorage.setItem('pro_vehicle_fuel', JSON.stringify(remote.fuels));
-          }
-          if (Array.isArray(remote.maint)) {
-            localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(remote.maint));
+            window.stockData = Array.isArray(remote.stockData) ? remote.stockData : [];
+            localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+
+            window.pharmacyData = Array.isArray(remote.pharmacyData) ? remote.pharmacyData : [];
+            localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+
+            if (Array.isArray(remote.vehicles)) {
+              localStorage.setItem('pro_vehicles', JSON.stringify(remote.vehicles));
+            }
+            if (Array.isArray(remote.fuels)) {
+              localStorage.setItem('pro_vehicle_fuel', JSON.stringify(remote.fuels));
+            }
+            if (Array.isArray(remote.maint)) {
+              localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(remote.maint));
+            }
           }
 
           localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
@@ -361,6 +377,39 @@
       }, 30000);
     },
 
+    restoreHistory: async function(showFeedback = true) {
+      try {
+        const vaultId = this.getVaultId();
+        const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
+          ? window.ForecasterAuth.getToken()
+          : (localStorage.getItem('forecaster_auth_token') || '');
+
+        const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch('/api/cloud-sync/restore-history', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ vaultId })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data && data.ok && data.vault) {
+          await this.pullVault(vaultId, true);
+          if (showFeedback && typeof window.triggerToast === 'function') {
+            window.triggerToast('All history, vehicles, routine medication schedules, and audit register restored successfully!', 'success');
+          }
+          return true;
+        }
+      } catch (err) {
+        console.warn('[Forecaster CloudSync] restoreHistory notice:', err);
+        if (showFeedback && typeof window.triggerToast === 'function') {
+          window.triggerToast('Unable to restore cloud history. Check connection.', 'error');
+        }
+        return false;
+      }
+    },
+
     init: function() {
       this.updateUI(false);
       // Run initial cloud pull/sync on startup
@@ -369,6 +418,13 @@
       }, 800);
       this.scheduleAutoSync();
     }
+  };
+
+  window.restoreMasterHistory = function(showFeedback = true) {
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.restoreHistory === 'function') {
+      return window.ForecasterCloudSync.restoreHistory(showFeedback);
+    }
+    return Promise.resolve(false);
   };
 
   // Wire into lifecycle

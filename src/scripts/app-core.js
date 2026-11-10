@@ -62,6 +62,157 @@
     "Fast Food / Work Meals": { pct: 4, color: "#f97316" }
   };
 
+  const DEFAULT_MASTER_STOCK = [
+    { id: 'stk_demo_1', name: 'Olive Oil Extra Virgin', category: 'Groceries', currentStock: 2, minStock: 3, unit: 'Bottle', unitPrice: 180, dailyDepletion: 0.1, expiryDate: '2027-01-01' },
+    { id: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 5, unit: 'bottle', price: 650, threshold: 2, lifespan: 10000, sku: 'OIL-SYN-5W30', consumptionLogs: [] },
+    { id: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 4, unit: 'pcs', price: 200, threshold: 1, lifespan: 10000, sku: 'FLT-OEM-123', consumptionLogs: [] },
+    { id: 'part_brake_pads', name: 'Front Ceramic Brake Pads', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 2, unit: 'set', price: 850, threshold: 1, lifespan: 40000, sku: 'BRK-CER-F', consumptionLogs: [] }
+  ];
+
+  const DEFAULT_MASTER_PHARMACY = [
+    {
+      id: 'phm_med_omega',
+      name: 'Omega-3 Fish Oil 1000mg',
+      category: 'Vitamins & Supplements',
+      currentStock: 60,
+      quantity: 60,
+      minStock: 10,
+      unit: 'capsules',
+      price: 320,
+      unitPrice: 320,
+      threshold: 10,
+      doseQty: 1,
+      dosage: '1 capsule daily after breakfast',
+      schedules: ['after_breakfast'],
+      reason: 'Cardiovascular & cognitive health',
+      prodDate: '2026-09-01',
+      expDate: '2027-12-31',
+      accountId: 'acc_bank_default',
+      consumptionLogs: []
+    },
+    {
+      id: 'phm_med_panadol',
+      name: 'Panadol Extra 500mg',
+      category: 'Analgesics & Antipyretics',
+      currentStock: 24,
+      quantity: 24,
+      minStock: 6,
+      unit: 'tablets',
+      price: 45,
+      unitPrice: 45,
+      threshold: 6,
+      doseQty: 1,
+      dosage: '1 tablet after breakfast and after dinner',
+      schedules: ['after_breakfast', 'after_dinner'],
+      reason: 'Mild headache & joint ache relief',
+      prodDate: '2026-08-15',
+      expDate: '2027-06-30',
+      accountId: 'acc_cash_default',
+      consumptionLogs: []
+    },
+    {
+      id: 'phm_med_magnesium',
+      name: 'Magnesium Glycinate 400mg',
+      category: 'Minerals & Sleep',
+      currentStock: 30,
+      quantity: 30,
+      minStock: 5,
+      unit: 'tablets',
+      price: 280,
+      unitPrice: 280,
+      threshold: 5,
+      doseQty: 1,
+      dosage: '1 tablet after dinner',
+      schedules: ['after_dinner'],
+      reason: 'Muscle relaxation & restorative sleep',
+      prodDate: '2026-09-10',
+      expDate: '2028-01-31',
+      accountId: 'acc_bank_default',
+      consumptionLogs: []
+    },
+    {
+      id: 'phm_med_catafast',
+      name: 'Catafast 50mg',
+      category: 'Analgesics & Anti-inflammatory',
+      currentStock: 10,
+      quantity: 10,
+      minStock: 3,
+      unit: 'sachets',
+      price: 65,
+      unitPrice: 65,
+      threshold: 3,
+      doseQty: 1,
+      dosage: '1 sachet dissolved in water after lunch',
+      schedules: ['after_lunch'],
+      reason: 'Acute joint pain & migraine relief',
+      prodDate: '2026-07-01',
+      expDate: '2027-11-30',
+      accountId: 'acc_cash_default',
+      consumptionLogs: []
+    },
+    {
+      id: 'phm_med_neurobion',
+      name: 'Neurobion B12 Forte',
+      category: 'Vitamins & Injections',
+      currentStock: 6,
+      quantity: 6,
+      minStock: 2,
+      unit: 'ampules',
+      price: 85,
+      unitPrice: 85,
+      threshold: 2,
+      doseQty: 1,
+      dosage: '1 ampule IM injection weekly',
+      schedules: [],
+      reason: 'Peripheral nerve revitalization',
+      prodDate: '2026-08-01',
+      expDate: '2027-10-31',
+      accountId: 'acc_bank_default',
+      consumptionLogs: []
+    },
+    {
+      id: 'phm_med_dolfen',
+      name: 'Dolfen 25mg',
+      category: 'Antipyretic & Analgesic',
+      currentStock: 5,
+      quantity: 5,
+      minStock: 2,
+      unit: 'suppositories',
+      price: 35,
+      unitPrice: 35,
+      threshold: 2,
+      doseQty: 1,
+      dosage: '1 suppository before bedtime as needed',
+      schedules: ['before_bed'],
+      reason: 'Rapid fever reduction',
+      prodDate: '2026-06-01',
+      expDate: '2027-08-31',
+      accountId: 'acc_cash_default',
+      consumptionLogs: []
+    }
+  ];
+
+  const DEFAULT_MASTER_TRANSACTIONS = [
+    { id: 'tx_init_1', date: '2026-10-01', description: 'Direct Deposit Monthly Salary', category: 'Salary', type: 'income', amount: 4500.00, accountId: 'acc_bank_default' },
+    { id: 'tx_init_2', date: '2026-10-02', description: 'Apartment Premium Rental Rent', category: 'Rent', type: 'expense', amount: 1200.00, accountId: 'acc_bank_default' },
+    { id: 'tx_init_3', date: '2026-10-04', description: 'UI/UX Consulting & Systems Architecture', category: 'Freelance', type: 'income', amount: 850.00, accountId: 'acc_cash_default' },
+    { id: 'tx_init_4', date: '2026-10-05', description: 'Electricity & Fiber High-Speed Internet', category: 'Utilities', type: 'expense', amount: 240.00, accountId: 'acc_cash_default' },
+    { id: 'exp_mnt_mnt_toyota_40k', date: '2026-10-15', category: 'Transportation', subcategory: 'Vehicle Maintenance', icon: '🚗', amount: 1300.00, description: 'Vehicle Maintenance: Toyota Corolla (ABC 1234) — 40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs', type: 'expense', accountId: 'acc_bank_default', refType: 'maintenance', refId: 'mnt_toyota_40k' },
+    { id: 'exp_fuel_fuel_toyota_1', date: '2026-10-22', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 595.00, description: 'Vehicle Fuel: Toyota Corolla (ABC 1234) — 42.5L (Full tank - Octane 95)', type: 'expense', accountId: 'acc_bank_default', refType: 'fuel', refId: 'fuel_toyota_1' },
+    { id: 'exp_fuel_fuel_elantra_1', date: '2026-10-25', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 560.00, description: 'Vehicle Fuel: Hyundai Elantra (XYZ 9876) — 40L (Weekly commute refill)', type: 'expense', accountId: 'acc_bank_default', refType: 'fuel', refId: 'fuel_elantra_1' },
+    { id: 'exp_fuel_fuel_toyota_2', date: '2026-10-30', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 532.00, description: 'Vehicle Fuel: Toyota Corolla (ABC 1234) — 38L (Highway & City driving fill-up)', type: 'expense', accountId: 'acc_cash_default', refType: 'fuel', refId: 'fuel_toyota_2' },
+    { id: 'exp_phm_omega', date: '2026-10-10', category: 'Medical', subcategory: 'Prescription Drugs', icon: '💊', amount: 320.00, description: 'Purchase: Omega-3 Fish Oil 1000mg', type: 'expense', accountId: 'acc_bank_default', batchId: 'phm_med_omega' },
+    { id: 'exp_phm_panadol', date: '2026-10-12', category: 'Medical', subcategory: 'Prescription Drugs', icon: '💊', amount: 45.00, description: 'Purchase: Panadol Extra 500mg', type: 'expense', accountId: 'acc_cash_default', batchId: 'phm_med_panadol' },
+    { id: 'exp_phm_magnesium', date: '2026-10-18', category: 'Medical', subcategory: 'Prescription Drugs', icon: '💊', amount: 280.00, description: 'Purchase: Magnesium Glycinate 400mg', type: 'expense', accountId: 'acc_bank_default', batchId: 'phm_med_magnesium' },
+    { id: 'exp_phm_catafast', date: '2026-10-20', category: 'Medical', subcategory: 'Prescription Drugs', icon: '💊', amount: 65.00, description: 'Purchase: Catafast 50mg', type: 'expense', accountId: 'acc_cash_default', batchId: 'phm_med_catafast' }
+  ];
+
+  const DEFAULT_MASTER_ACCOUNTS = [
+    { id: 'acc_cash_default', type: 'cash', label: '💵 Cash Wallet', initialBalance: 3500, createdAt: new Date().toISOString() },
+    { id: 'acc_bank_default', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 28500, createdAt: new Date().toISOString() },
+    { id: 'acc_wallet_default', type: 'wallet', label: '📱 Vodafone Cash', kind: 'Telecom', provider: 'Vodafone Cash', initialBalance: 4200, createdAt: new Date().toISOString() }
+  ];
+
   /* DATABASE LOADING */
   window.loadIntegratedDatabases = function() {
     window.stockData = JSON.parse(localStorage.getItem('pro_stock') || '[]');
@@ -101,14 +252,39 @@
       }
     }
 
+    // Auto-restore complete master history if local database was cleared
+    if ((!window.transactions || window.transactions.length === 0) &&
+        (!window.stockData || window.stockData.length === 0) &&
+        (!window.pharmacyData || window.pharmacyData.length === 0)) {
+      window.stockData = JSON.parse(JSON.stringify(DEFAULT_MASTER_STOCK));
+      window.pharmacyData = JSON.parse(JSON.stringify(DEFAULT_MASTER_PHARMACY));
+      window.transactions = JSON.parse(JSON.stringify(DEFAULT_MASTER_TRANSACTIONS));
+      localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+      localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+      localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+    } else {
+      if (!window.pharmacyData || window.pharmacyData.length === 0) {
+        window.pharmacyData = JSON.parse(JSON.stringify(DEFAULT_MASTER_PHARMACY));
+        localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+      }
+      if (!window.stockData || window.stockData.length === 0) {
+        window.stockData = JSON.parse(JSON.stringify(DEFAULT_MASTER_STOCK));
+        localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+      }
+      if (!window.transactions || window.transactions.length === 0) {
+        window.transactions = JSON.parse(JSON.stringify(DEFAULT_MASTER_TRANSACTIONS));
+        localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+      }
+    }
+
     const storedLimits = localStorage.getItem('pro_budget_limits');
     if (storedLimits) {
       window.budgetLimits = JSON.parse(storedLimits);
     } else {
-      window.budgetLimits = { income: 0, expense: 0 };
+      window.budgetLimits = { income: 4500, expense: 2500 };
     }
 
-    // Load Payment Accounts (100% clean default)
+    // Load Payment Accounts
     const savedAccounts = localStorage.getItem('pro_accounts');
     if (savedAccounts) {
       try {
@@ -119,16 +295,10 @@
     } else {
       window.accounts = [];
     }
-    if (!Array.isArray(window.accounts)) {
-      window.accounts = [];
+    if (!Array.isArray(window.accounts) || window.accounts.length === 0) {
+      window.accounts = JSON.parse(JSON.stringify(DEFAULT_MASTER_ACCOUNTS));
+      localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
     }
-    if (window.accounts.length === 0) {
-      window.accounts = [
-        { id: 'acc_cash_default', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
-        { id: 'acc_bank_default', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
-      ];
-    }
-    localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
 
     // Load Account Transfers
     const savedTransfers = localStorage.getItem('pro_account_transfers');

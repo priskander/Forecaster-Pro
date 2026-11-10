@@ -3,46 +3,456 @@
   "vaults": {
     "shared-main-vault": {
       "vaultId": "shared-main-vault",
-      "updatedAt": "2026-11-10T06:07:18.206Z",
-      "transactions": [],
-      "accounts": [
+      "updatedAt": "2026-11-10T14:08:25.327Z",
+      "transactions": [
         {
-          "id": "acc_cash_main",
-          "type": "cash",
-          "label": "💵 Cash Wallet",
-          "initialBalance": 1500,
-          "createdAt": "2026-07-01T00:00:00.000Z"
+          "id": "tx_init_1",
+          "date": "2026-10-01",
+          "description": "Direct Deposit Monthly Salary",
+          "category": "Salary",
+          "type": "income",
+          "amount": 4500,
+          "accountId": "acc_bank_peter"
         },
         {
-          "id": "acc_bank_cib",
+          "id": "tx_init_2",
+          "date": "2026-10-02",
+          "description": "Apartment Premium Rental Rent",
+          "category": "Rent",
+          "type": "expense",
+          "amount": 1200,
+          "accountId": "acc_bank_peter"
+        },
+        {
+          "id": "tx_init_3",
+          "date": "2026-10-04",
+          "description": "UI/UX Consulting & Systems Architecture",
+          "category": "Freelance",
+          "type": "income",
+          "amount": 850,
+          "accountId": "acc_wallet_peter"
+        },
+        {
+          "id": "tx_init_4",
+          "date": "2026-10-05",
+          "description": "Electricity & Fiber High-Speed Internet",
+          "category": "Utilities",
+          "type": "expense",
+          "amount": 240,
+          "accountId": "acc_cash_peter"
+        },
+        {
+          "id": "exp_mnt_mnt_toyota_40k",
+          "date": "2026-10-15",
+          "category": "Transportation",
+          "subcategory": "Vehicle Maintenance",
+          "icon": "🚗",
+          "amount": 1300,
+          "description": "Vehicle Maintenance: Toyota Corolla (ABC 1234) — 40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs",
+          "type": "expense",
+          "accountId": "acc_bank_peter",
+          "refType": "maintenance",
+          "refId": "mnt_toyota_40k"
+        },
+        {
+          "id": "exp_fuel_fuel_toyota_1",
+          "date": "2026-10-22",
+          "category": "Transportation",
+          "subcategory": "Fuel & Petrol",
+          "icon": "🚗",
+          "amount": 595,
+          "description": "Vehicle Fuel: Toyota Corolla (ABC 1234) — 42.5L (Full tank - Octane 95)",
+          "type": "expense",
+          "accountId": "acc_bank_peter",
+          "refType": "fuel",
+          "refId": "fuel_toyota_1"
+        },
+        {
+          "id": "exp_fuel_fuel_elantra_1",
+          "date": "2026-10-25",
+          "category": "Transportation",
+          "subcategory": "Fuel & Petrol",
+          "icon": "🚗",
+          "amount": 560,
+          "description": "Vehicle Fuel: Hyundai Elantra (XYZ 9876) — 40L (Weekly commute refill)",
+          "type": "expense",
+          "accountId": "acc_bank_peter",
+          "refType": "fuel",
+          "refId": "fuel_elantra_1"
+        },
+        {
+          "id": "exp_fuel_fuel_toyota_2",
+          "date": "2026-10-30",
+          "category": "Transportation",
+          "subcategory": "Fuel & Petrol",
+          "icon": "🚗",
+          "amount": 532,
+          "description": "Vehicle Fuel: Toyota Corolla (ABC 1234) — 38L (Highway & City driving fill-up)",
+          "type": "expense",
+          "accountId": "acc_cash_peter",
+          "refType": "fuel",
+          "refId": "fuel_toyota_2"
+        },
+        {
+          "id": "exp_phm_omega",
+          "date": "2026-10-10",
+          "category": "Medical",
+          "subcategory": "Prescription Drugs",
+          "icon": "💊",
+          "amount": 320,
+          "description": "Purchase: Omega-3 Fish Oil 1000mg",
+          "type": "expense",
+          "accountId": "acc_bank_peter",
+          "batchId": "phm_med_omega"
+        },
+        {
+          "id": "exp_phm_panadol",
+          "date": "2026-10-12",
+          "category": "Medical",
+          "subcategory": "Prescription Drugs",
+          "icon": "💊",
+          "amount": 45,
+          "description": "Purchase: Panadol Extra 500mg",
+          "type": "expense",
+          "accountId": "acc_cash_peter",
+          "batchId": "phm_med_panadol"
+        },
+        {
+          "id": "exp_phm_magnesium",
+          "date": "2026-10-18",
+          "category": "Medical",
+          "subcategory": "Prescription Drugs",
+          "icon": "💊",
+          "amount": 280,
+          "description": "Purchase: Magnesium Glycinate 400mg",
+          "type": "expense",
+          "accountId": "acc_bank_peter",
+          "batchId": "phm_med_magnesium"
+        },
+        {
+          "id": "exp_phm_catafast",
+          "date": "2026-10-20",
+          "category": "Medical",
+          "subcategory": "Prescription Drugs",
+          "icon": "💊",
+          "amount": 65,
+          "description": "Purchase: Catafast 50mg",
+          "type": "expense",
+          "accountId": "acc_cash_peter",
+          "batchId": "phm_med_catafast"
+        }
+      ],
+      "accounts": [
+        {
+          "id": "acc_cash_peter",
+          "type": "cash",
+          "label": "💵 Cash Wallet",
+          "initialBalance": 3500,
+          "createdAt": "2026-11-10T14:08:25.327Z"
+        },
+        {
+          "id": "acc_bank_peter",
           "type": "card",
           "label": "💳 CIB Debit Card",
           "network": "Visa",
           "mode": "Debit",
           "bank": "Commercial International Bank (CIB)",
-          "initialBalance": 12000,
-          "createdAt": "2026-07-01T00:00:00.000Z"
+          "initialBalance": 28500,
+          "createdAt": "2026-11-10T14:08:25.327Z"
         },
         {
-          "id": "acc_wallet_vodafone",
+          "id": "acc_wallet_peter",
           "type": "wallet",
           "label": "📱 Vodafone Cash",
           "kind": "Telecom",
           "provider": "Vodafone Cash",
-          "initialBalance": 2500,
-          "createdAt": "2026-07-01T00:00:00.000Z"
+          "initialBalance": 4200,
+          "createdAt": "2026-11-10T14:08:25.327Z"
         }
       ],
       "accountTransfers": [],
+      "stockData": [
+        {
+          "id": "stk_demo_1",
+          "name": "Olive Oil Extra Virgin",
+          "category": "Groceries",
+          "currentStock": 2,
+          "minStock": 3,
+          "unit": "Bottle",
+          "unitPrice": 180,
+          "dailyDepletion": 0.1,
+          "expiryDate": "2027-01-01"
+        },
+        {
+          "id": "part_engine_oil",
+          "name": "Synthetic Motor Oil 5W-30",
+          "itemType": "vehicle-spare-part",
+          "category": "Spare Parts",
+          "targetVehicleOrUnit": "Toyota Corolla (ABC 1234)",
+          "quantity": 5,
+          "unit": "bottle",
+          "price": 650,
+          "threshold": 2,
+          "lifespan": 10000,
+          "sku": "OIL-SYN-5W30",
+          "consumptionLogs": []
+        },
+        {
+          "id": "part_oil_filter",
+          "name": "OEM Oil Filter Cartridge",
+          "itemType": "vehicle-spare-part",
+          "category": "Spare Parts",
+          "targetVehicleOrUnit": "Toyota Corolla (ABC 1234)",
+          "quantity": 4,
+          "unit": "pcs",
+          "price": 200,
+          "threshold": 1,
+          "lifespan": 10000,
+          "sku": "FLT-OEM-123",
+          "consumptionLogs": []
+        },
+        {
+          "id": "part_brake_pads",
+          "name": "Front Ceramic Brake Pads",
+          "itemType": "vehicle-spare-part",
+          "category": "Spare Parts",
+          "targetVehicleOrUnit": "Toyota Corolla (ABC 1234)",
+          "quantity": 2,
+          "unit": "set",
+          "price": 850,
+          "threshold": 1,
+          "lifespan": 40000,
+          "sku": "BRK-CER-F",
+          "consumptionLogs": []
+        }
+      ],
+      "pharmacyData": [
+        {
+          "id": "phm_med_omega",
+          "name": "Omega-3 Fish Oil 1000mg",
+          "category": "Vitamins & Supplements",
+          "currentStock": 60,
+          "quantity": 60,
+          "minStock": 10,
+          "unit": "capsules",
+          "price": 320,
+          "unitPrice": 320,
+          "threshold": 10,
+          "doseQty": 1,
+          "dosage": "1 capsule daily after breakfast",
+          "schedules": [
+            "after_breakfast"
+          ],
+          "reason": "Cardiovascular & cognitive health",
+          "prodDate": "2026-09-01",
+          "expDate": "2027-12-31",
+          "accountId": "acc_bank_peter",
+          "consumptionLogs": []
+        },
+        {
+          "id": "phm_med_panadol",
+          "name": "Panadol Extra 500mg",
+          "category": "Analgesics & Antipyretics",
+          "currentStock": 24,
+          "quantity": 24,
+          "minStock": 6,
+          "unit": "tablets",
+          "price": 45,
+          "unitPrice": 45,
+          "threshold": 6,
+          "doseQty": 1,
+          "dosage": "1 tablet after breakfast and after dinner",
+          "schedules": [
+            "after_breakfast",
+            "after_dinner"
+          ],
+          "reason": "Mild headache & joint ache relief",
+          "prodDate": "2026-08-15",
+          "expDate": "2027-06-30",
+          "accountId": "acc_cash_peter",
+          "consumptionLogs": []
+        },
+        {
+          "id": "phm_med_magnesium",
+          "name": "Magnesium Glycinate 400mg",
+          "category": "Minerals & Sleep",
+          "currentStock": 30,
+          "quantity": 30,
+          "minStock": 5,
+          "unit": "tablets",
+          "price": 280,
+          "unitPrice": 280,
+          "threshold": 5,
+          "doseQty": 1,
+          "dosage": "1 tablet after dinner",
+          "schedules": [
+            "after_dinner"
+          ],
+          "reason": "Muscle relaxation & restorative sleep",
+          "prodDate": "2026-09-10",
+          "expDate": "2028-01-31",
+          "accountId": "acc_bank_peter",
+          "consumptionLogs": []
+        },
+        {
+          "id": "phm_med_catafast",
+          "name": "Catafast 50mg",
+          "category": "Analgesics & Anti-inflammatory",
+          "currentStock": 10,
+          "quantity": 10,
+          "minStock": 3,
+          "unit": "sachets",
+          "price": 65,
+          "unitPrice": 65,
+          "threshold": 3,
+          "doseQty": 1,
+          "dosage": "1 sachet dissolved in water after lunch",
+          "schedules": [
+            "after_lunch"
+          ],
+          "reason": "Acute joint pain & migraine relief",
+          "prodDate": "2026-07-01",
+          "expDate": "2027-11-30",
+          "accountId": "acc_cash_peter",
+          "consumptionLogs": []
+        },
+        {
+          "id": "phm_med_neurobion",
+          "name": "Neurobion B12 Forte",
+          "category": "Vitamins & Injections",
+          "currentStock": 6,
+          "quantity": 6,
+          "minStock": 2,
+          "unit": "ampules",
+          "price": 85,
+          "unitPrice": 85,
+          "threshold": 2,
+          "doseQty": 1,
+          "dosage": "1 ampule IM injection weekly",
+          "schedules": [],
+          "reason": "Peripheral nerve revitalization",
+          "prodDate": "2026-08-01",
+          "expDate": "2027-10-31",
+          "accountId": "acc_bank_peter",
+          "consumptionLogs": []
+        },
+        {
+          "id": "phm_med_dolfen",
+          "name": "Dolfen 25mg",
+          "category": "Antipyretic & Analgesic",
+          "currentStock": 5,
+          "quantity": 5,
+          "minStock": 2,
+          "unit": "suppositories",
+          "price": 35,
+          "unitPrice": 35,
+          "threshold": 2,
+          "doseQty": 1,
+          "dosage": "1 suppository before bedtime as needed",
+          "schedules": [
+            "before_bed"
+          ],
+          "reason": "Rapid fever reduction",
+          "prodDate": "2026-06-01",
+          "expDate": "2027-08-31",
+          "accountId": "acc_cash_peter",
+          "consumptionLogs": []
+        }
+      ],
+      "vehicles": [
+        {
+          "id": "veh_toyota_corolla",
+          "make": "Toyota",
+          "model": "Corolla",
+          "year": 2024,
+          "plate": "ABC 1234",
+          "odometer": 45250,
+          "nextMaintenanceOdometer": 50000,
+          "createdAt": "2026-08-01T10:00:00.000Z"
+        },
+        {
+          "id": "veh_hyundai_elantra",
+          "make": "Hyundai",
+          "model": "Elantra",
+          "year": 2023,
+          "plate": "XYZ 9876",
+          "odometer": 28400,
+          "nextMaintenanceOdometer": 30000,
+          "createdAt": "2026-08-05T12:00:00.000Z"
+        }
+      ],
+      "fuels": [
+        {
+          "id": "fuel_toyota_1",
+          "vehicleId": "veh_toyota_corolla",
+          "dateTime": "2026-10-22T15:30",
+          "odometer": 44600,
+          "liters": 42.5,
+          "cost": 595,
+          "accountId": "acc_bank_peter",
+          "notes": "Full tank - Octane 95",
+          "transportationType": "Fuel"
+        },
+        {
+          "id": "fuel_elantra_1",
+          "vehicleId": "veh_hyundai_elantra",
+          "dateTime": "2026-10-25T09:15",
+          "odometer": 28400,
+          "liters": 40,
+          "cost": 560,
+          "accountId": "acc_bank_peter",
+          "notes": "Weekly commute refill",
+          "transportationType": "Fuel"
+        },
+        {
+          "id": "fuel_toyota_2",
+          "vehicleId": "veh_toyota_corolla",
+          "dateTime": "2026-10-30T11:45",
+          "odometer": 45250,
+          "liters": 38,
+          "cost": 532,
+          "accountId": "acc_cash_peter",
+          "notes": "Highway & City driving fill-up",
+          "transportationType": "Fuel"
+        }
+      ],
+      "maint": [
+        {
+          "id": "mnt_toyota_40k",
+          "vehicleId": "veh_toyota_corolla",
+          "date": "2026-10-15",
+          "odometer": 40000,
+          "nextMaintenanceOdometer": 50000,
+          "description": "40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs",
+          "laborCost": 450,
+          "partsCost": 850,
+          "totalCost": 1300,
+          "parts": [
+            {
+              "partId": "part_engine_oil",
+              "name": "Synthetic Motor Oil 5W-30",
+              "quantity": 1,
+              "unit": "bottle",
+              "unitCost": 650,
+              "lifespan": 10000
+            },
+            {
+              "partId": "part_oil_filter",
+              "name": "OEM Oil Filter Cartridge",
+              "quantity": 1,
+              "unit": "pcs",
+              "unitCost": 200,
+              "lifespan": 10000
+            }
+          ],
+          "accountId": "acc_bank_peter",
+          "txnId": "exp_mnt_mnt_toyota_40k"
+        }
+      ],
       "budgetLimits": {
-        "income": 3500,
-        "expense": 2427
-      },
-      "stockData": [],
-      "pharmacyData": [],
-      "vehicles": [],
-      "fuels": [],
-      "maint": []
+        "income": 4500,
+        "expense": 2500
+      }
     },
     "vault_usr_1792343003698": {
       "vaultId": "vault_usr_1792343003698",
@@ -98,7 +508,7 @@
     },
     "demo-showcase-vault": {
       "vaultId": "demo-showcase-vault",
-      "updatedAt": "2026-11-10T06:12:14.783Z",
+      "updatedAt": "2026-11-10T14:08:25.326Z",
       "transactions": [
         {
           "id": "tx_demo_1",
@@ -195,7 +605,7 @@
           "type": "cash",
           "label": "💵 Cash Wallet (Demo)",
           "initialBalance": 1500,
-          "createdAt": "2026-11-10T06:12:14.784Z"
+          "createdAt": "2026-11-10T14:08:25.327Z"
         },
         {
           "id": "acc_demo_cib",
@@ -205,7 +615,7 @@
           "mode": "Debit",
           "bank": "Commercial International Bank (CIB)",
           "initialBalance": 12000,
-          "createdAt": "2026-11-10T06:12:14.784Z"
+          "createdAt": "2026-11-10T14:08:25.327Z"
         },
         {
           "id": "acc_demo_wallet",
@@ -214,7 +624,7 @@
           "kind": "Telecom",
           "provider": "Vodafone Cash",
           "initialBalance": 2500,
-          "createdAt": "2026-11-10T06:12:14.784Z"
+          "createdAt": "2026-11-10T14:08:25.327Z"
         }
       ],
       "accountTransfers": [],
@@ -438,6 +848,51 @@
       },
       "stockData": [],
       "pharmacyData": []
+    },
+    "vault_usr_1794319717476": {
+      "vaultId": "vault_usr_1794319717476",
+      "updatedAt": "2026-11-10T14:08:37.585Z",
+      "transactions": [
+        {
+          "id": "tx_owner_valid",
+          "amount": 120,
+          "description": "Office Supplies"
+        }
+      ],
+      "accounts": [],
+      "accountTransfers": [],
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      },
+      "stockData": [],
+      "pharmacyData": []
+    },
+    "vault_usr_1794319717626": {
+      "vaultId": "vault_usr_1794319717626",
+      "updatedAt": "2026-11-10T14:08:37.626Z",
+      "transactions": [],
+      "accounts": [],
+      "accountTransfers": [],
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      },
+      "stockData": [],
+      "pharmacyData": []
+    },
+    "vault_usr_1794319717747": {
+      "vaultId": "vault_usr_1794319717747",
+      "updatedAt": "2026-11-10T14:08:37.747Z",
+      "transactions": [],
+      "accounts": [],
+      "accountTransfers": [],
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      },
+      "stockData": [],
+      "pharmacyData": []
     }
   },
   "users": {
@@ -445,11 +900,11 @@
       "id": "usr_peter_badir",
       "name": "Peter W. Badir",
       "email": "peter.w.badir@gmail.com",
-      "passwordHash": "8f581928df746622fafe240abe6066f12ee11edc05ab879ef5d270644a2f32ac5101d0006723e3e5b32907bcca2cacd70f310f365a287f0f3f08c5047a529607",
-      "salt": "fd58d4f5ccfbc136f206203bd1b768e5",
+      "passwordHash": "701d3dba95ca3ca4f8f9ed2e1604d1db766a54288b2cf1a62462373dc4dbd1a86cb8182fc016781dbd62e6da0d36089993bb49aff863d689937c8ee4cb07476f",
+      "salt": "b081fb1fa9b6cf83d3903996f01feec3",
       "tier": "Master Admin Suite",
       "createdAt": "2026-10-18T17:03:16.856Z",
-      "lastLogin": "2026-11-10T06:12:54.348Z",
+      "lastLogin": "2026-11-10T14:08:37.390Z",
       "role": "main_admin",
       "isPrimary": true,
       "vaultId": "shared-main-vault",
@@ -683,6 +1138,83 @@
       "mustChangePassword": false,
       "createdAt": "2026-11-10T06:12:54.690Z",
       "lastLogin": "2026-11-10T06:12:54.778Z"
+    },
+    "usr_1794319717476": {
+      "id": "usr_1794319717476",
+      "name": "Owner One",
+      "email": "owner1_1794319717436@testcorp.com",
+      "passwordHash": "ba20a08f4a8252e763c304c7160f3ff1796775c8e41d9c21a388049be91cf6760b28ccf660264c4851770f3f8b11bf009142ba169dcaed035f1a881358e72828",
+      "salt": "f6a2c8da3fbe797844dba2d16cc87a85",
+      "tier": "Free Tier",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1794319717476",
+      "propertyRole": "landlord",
+      "mustChangePassword": false,
+      "createdAt": "2026-11-10T14:08:37.476Z",
+      "lastLogin": "2026-11-10T14:08:37.476Z"
+    },
+    "usr_sub_1794319717520": {
+      "id": "usr_sub_1794319717520",
+      "name": "Auditor Viewer",
+      "email": "viewer_1794319717478@testcorp.com",
+      "passwordHash": "0d4f76a110101446a9d54a3e1708f1760c4ab1d224c095f79c0f66e72b3a88717c37d070a7ad0655a00baa0cfdcedaa632d98fd39b42520beef328caa8944a6c",
+      "salt": "9c30cb643543a898197eeaedce8fd44b",
+      "tier": "Free Tier",
+      "role": "viewer",
+      "isPrimary": false,
+      "parentId": "usr_1794319717476",
+      "vaultId": "vault_usr_1794319717476",
+      "mustChangePassword": true,
+      "temporaryPassword": "Temp-GXPG484!",
+      "createdAt": "2026-11-10T14:08:37.520Z",
+      "lastLogin": "2026-11-10T14:08:37.564Z"
+    },
+    "usr_1794319717626": {
+      "id": "usr_1794319717626",
+      "name": "Owner Two",
+      "email": "owner2_1794319717586@competitor.com",
+      "passwordHash": "c34ff90dfde2b2bd49a00928677db6ae627613a04c98f56a5c0e956e0db35db4b1ccebc12c37ada0f46e1878f9e684ff36c3d14463b3340ae7b4f72f745692a5",
+      "salt": "db246ed9f76ad8ae8e95bd453227b627",
+      "tier": "Free Tier",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1794319717626",
+      "propertyRole": "tenant",
+      "mustChangePassword": false,
+      "createdAt": "2026-11-10T14:08:37.626Z",
+      "lastLogin": "2026-11-10T14:08:37.626Z"
+    },
+    "usr_sub_1794319717688": {
+      "id": "usr_sub_1794319717688",
+      "name": "Competitor Member",
+      "email": "sub2_1794319717628@competitor.com",
+      "passwordHash": "56763fccbdfb9a877f14987f080ad1056ff22d7a88f76edfbad2b52f26c3f2fd03008700eacf402ad8dd33b512cc393d8ad19e00b5997cebf75f5c00076115ab",
+      "salt": "46808b261762d833f1aec0ef5327a3a6",
+      "tier": "Free Tier",
+      "role": "member",
+      "isPrimary": false,
+      "parentId": "usr_1794319717626",
+      "vaultId": "vault_usr_1794319717626",
+      "mustChangePassword": true,
+      "temporaryPassword": "Temp-WQKT265!",
+      "createdAt": "2026-11-10T14:08:37.688Z",
+      "lastLogin": ""
+    },
+    "usr_1794319717747": {
+      "id": "usr_1794319717747",
+      "name": "Session User",
+      "email": "session_1794319717707@test.com",
+      "passwordHash": "1a1def06c9f5253d45fd372dfc4ea4e227b0ef72a600c13fdbf192483114cc9b20484835bebaf1910c74ed4d244a85f96fcc2f6a3247ca69845d2054e21f0a66",
+      "salt": "87c89b375470e9d46bc16c3187951167",
+      "tier": "Free Tier",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1794319717747",
+      "propertyRole": "tenant",
+      "mustChangePassword": false,
+      "createdAt": "2026-11-10T14:08:37.747Z",
+      "lastLogin": "2026-11-10T14:08:37.831Z"
     }
   },
   "tokens": {
@@ -707,16 +1239,6 @@
       "userId": "usr_demo_showcase",
       "expiresAt": 1796300507678
     },
-    "tok_dd9e5963081d6709cb2fac67e187c40bcdb200039bb8267e": {
-      "userId": "usr_peter_badir",
-      "createdAt": 1794291174302,
-      "expiresAt": 1794895974302
-    },
-    "tok_7fe4f78508ef579e2b43bd7f3d9cad89793f74eb240115ff": {
-      "userId": "usr_peter_badir",
-      "createdAt": 1794291174348,
-      "expiresAt": 1794895974348
-    },
     "tok_137266e45dda721b743bc13b126a53e907939d73fb95ca60": {
       "userId": "usr_1794291174432",
       "createdAt": 1794291174432,
@@ -731,9 +1253,68 @@
       "userId": "usr_1794291174586",
       "createdAt": 1794291174586,
       "expiresAt": 1794895974586
+    },
+    "tok_cb628cca95f5548c84a6506e80061b1afaa0ded6ce313af8": {
+      "userId": "usr_peter_badir",
+      "createdAt": 1794319717343,
+      "expiresAt": 1794924517343
+    },
+    "tok_09ded34a2293da4637a4be7d963aa6972737add6d37aa083": {
+      "userId": "usr_peter_badir",
+      "createdAt": 1794319717390,
+      "expiresAt": 1794924517390
+    },
+    "tok_e899c8cdb35ae7dd042ea8f5bad44c4f8e0e86c4ed560c2f": {
+      "userId": "usr_1794319717476",
+      "createdAt": 1794319717476,
+      "expiresAt": 1794924517476
+    },
+    "tok_1c5c4e28be87b94afae575e32883c789b4e83e9e52be2fbb": {
+      "userId": "usr_sub_1794319717520",
+      "createdAt": 1794319717564,
+      "expiresAt": 1794924517564
+    },
+    "tok_fad032fa8a6530a63f7e9a7b8155103f2eff17524c8bd5be": {
+      "userId": "usr_1794319717626",
+      "createdAt": 1794319717626,
+      "expiresAt": 1794924517626
     }
   },
   "outbox": [
+    {
+      "id": "mail_1794319717688_58d1f6",
+      "to": "sub2_1794319717628@competitor.com",
+      "toName": "Competitor Member",
+      "subject": "Welcome to Forecaster Pro - Your MEMBER Account Credentials",
+      "body": "Hello Competitor Member,\n\nYou have been granted access as a MEMBER to the Forecaster Pro workspace by Owner Two (owner2_1794319717586@competitor.com).\n\nAccount Credentials:\n• Login Email: sub2_1794319717628@competitor.com\n• Temporary Password: Temp-WQKT265!\n• Assigned Role: MEMBER\n\nRole Privileges:\nOperational access to log daily expenses, income, transfers, inventory usage, and fleet records.\n\nSECURITY REQUIREMENT:\nThis temporary password was generated automatically. For your security, you are required to change your password immediately upon your first login. The system will automatically prompt you to create your new personal password upon sign-in.\n\nSign in to Forecaster Pro:\nhttps://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\n\nBest regards,\nForecaster Pro Team",
+      "htmlBody": "\n<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;\">\n  <div style=\"background: linear-gradient(135deg, #1d4ed8, #2563eb); padding: 24px; color: #ffffff;\">\n    <h1 style=\"margin: 0; font-size: 20px; font-weight: 800;\">Forecaster Pro</h1>\n    <p style=\"margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;\">Role-Based Workspace Invitation</p>\n  </div>\n  <div style=\"padding: 24px;\">\n    <h2 style=\"margin: 0 0 12px 0; font-size: 17px; color: #0f172a;\">Hello Competitor Member,</h2>\n    <p style=\"font-size: 13.5px; line-height: 1.5; color: #334155;\">\n      <strong>Owner Two</strong> has created a sub-user account for you in the Forecaster Pro ledger with the role of \n      <span style=\"display: inline-block; padding: 2px 8px; background: #eff6ff; color: #1d4ed8; font-weight: bold; border-radius: 6px; font-size: 11px; text-transform: uppercase;\">member</span>.\n    </p>\n\n    <div style=\"background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;\">\n      <h3 style=\"margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;\">Your Account Credentials</h3>\n      <table style=\"width: 100%; font-size: 13px; border-collapse: collapse;\">\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b; width: 140px;\">Login Email:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a;\">sub2_1794319717628@competitor.com</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Temporary Password:</td>\n          <td style=\"padding: 5px 0;\"><code style=\"background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;\">Temp-WQKT265!</code></td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Assigned Role:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a; text-transform: capitalize;\">member</td>\n        </tr>\n      </table>\n    </div>\n\n    <div style=\"background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px;\">\n      <p style=\"margin: 0; font-size: 12px; color: #92400e; font-weight: 600;\">\n        ⚠️ Required on First Login: This password is temporary. You will be prompted to create your own new permanent password as soon as you sign in.\n      </p>\n    </div>\n\n    <p style=\"font-size: 12.5px; color: #64748b; line-height: 1.5;\">\n      <strong>Role Privileges:</strong> Operational access to log daily expenses, income, transfers, inventory usage, and fleet records.\n    </p>\n\n    <div style=\"margin-top: 24px; text-align: center;\">\n      <a href=\"https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\" style=\"display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;\">Sign In to Your Account</a>\n    </div>\n  </div>\n  <div style=\"background: #f1f5f9; padding: 12px 24px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;\">\n    Forecaster Pro • Unified Financial &amp; Multi-Role Ledger\n  </div>\n</div>",
+      "sentAt": "2026-11-10T14:08:37.688Z",
+      "status": "delivered",
+      "metadata": {
+        "userId": "usr_sub_1794319717688",
+        "role": "member",
+        "temporaryPassword": "Temp-WQKT265!",
+        "senderId": "usr_1794319717626",
+        "senderEmail": "owner2_1794319717586@competitor.com"
+      }
+    },
+    {
+      "id": "mail_1794319717520_751c9a",
+      "to": "viewer_1794319717478@testcorp.com",
+      "toName": "Auditor Viewer",
+      "subject": "Welcome to Forecaster Pro - Your VIEWER Account Credentials",
+      "body": "Hello Auditor Viewer,\n\nYou have been granted access as a VIEWER to the Forecaster Pro workspace by Owner One (owner1_1794319717436@testcorp.com).\n\nAccount Credentials:\n• Login Email: viewer_1794319717478@testcorp.com\n• Temporary Password: Temp-GXPG484!\n• Assigned Role: VIEWER\n\nRole Privileges:\nRead-only access to view charts, financial summaries, transaction logs, inventory, and vehicle reports.\n\nSECURITY REQUIREMENT:\nThis temporary password was generated automatically. For your security, you are required to change your password immediately upon your first login. The system will automatically prompt you to create your new personal password upon sign-in.\n\nSign in to Forecaster Pro:\nhttps://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\n\nBest regards,\nForecaster Pro Team",
+      "htmlBody": "\n<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;\">\n  <div style=\"background: linear-gradient(135deg, #1d4ed8, #2563eb); padding: 24px; color: #ffffff;\">\n    <h1 style=\"margin: 0; font-size: 20px; font-weight: 800;\">Forecaster Pro</h1>\n    <p style=\"margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;\">Role-Based Workspace Invitation</p>\n  </div>\n  <div style=\"padding: 24px;\">\n    <h2 style=\"margin: 0 0 12px 0; font-size: 17px; color: #0f172a;\">Hello Auditor Viewer,</h2>\n    <p style=\"font-size: 13.5px; line-height: 1.5; color: #334155;\">\n      <strong>Owner One</strong> has created a sub-user account for you in the Forecaster Pro ledger with the role of \n      <span style=\"display: inline-block; padding: 2px 8px; background: #eff6ff; color: #1d4ed8; font-weight: bold; border-radius: 6px; font-size: 11px; text-transform: uppercase;\">viewer</span>.\n    </p>\n\n    <div style=\"background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;\">\n      <h3 style=\"margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;\">Your Account Credentials</h3>\n      <table style=\"width: 100%; font-size: 13px; border-collapse: collapse;\">\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b; width: 140px;\">Login Email:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a;\">viewer_1794319717478@testcorp.com</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Temporary Password:</td>\n          <td style=\"padding: 5px 0;\"><code style=\"background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;\">Temp-GXPG484!</code></td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Assigned Role:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a; text-transform: capitalize;\">viewer</td>\n        </tr>\n      </table>\n    </div>\n\n    <div style=\"background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px;\">\n      <p style=\"margin: 0; font-size: 12px; color: #92400e; font-weight: 600;\">\n        ⚠️ Required on First Login: This password is temporary. You will be prompted to create your own new permanent password as soon as you sign in.\n      </p>\n    </div>\n\n    <p style=\"font-size: 12.5px; color: #64748b; line-height: 1.5;\">\n      <strong>Role Privileges:</strong> Read-only access to view charts, financial summaries, transaction logs, inventory, and vehicle reports.\n    </p>\n\n    <div style=\"margin-top: 24px; text-align: center;\">\n      <a href=\"https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\" style=\"display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;\">Sign In to Your Account</a>\n    </div>\n  </div>\n  <div style=\"background: #f1f5f9; padding: 12px 24px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;\">\n    Forecaster Pro • Unified Financial &amp; Multi-Role Ledger\n  </div>\n</div>",
+      "sentAt": "2026-11-10T14:08:37.521Z",
+      "status": "delivered",
+      "metadata": {
+        "userId": "usr_sub_1794319717520",
+        "role": "viewer",
+        "temporaryPassword": "Temp-GXPG484!",
+        "senderId": "usr_1794319717476",
+        "senderEmail": "owner1_1794319717436@testcorp.com"
+      }
+    },
     {
       "id": "mail_1794291174631_f7f30e",
       "to": "sub2_1794291174587@competitor.com",
@@ -855,6 +1436,22 @@
     }
   ],
   "auditLog": [
+    {
+      "id": "log_1794319717831_q4di0",
+      "timestamp": "2026-11-10T14:08:37.831Z",
+      "adminEmail": "session_1794319717707@test.com",
+      "action": "PASSWORD_CHANGED",
+      "category": "security",
+      "details": "Password successfully changed by user session_1794319717707@test.com"
+    },
+    {
+      "id": "log_1794319717343_ynb1z",
+      "timestamp": "2026-11-10T14:08:37.343Z",
+      "adminEmail": "peter.w.badir@gmail.com",
+      "action": "PASSWORD_CHANGED",
+      "category": "security",
+      "details": "Password successfully changed by user peter.w.badir@gmail.com"
+    },
     {
       "id": "log_1794291174778_c964o",
       "timestamp": "2026-11-10T06:12:54.778Z",
