@@ -3,7 +3,7 @@
   "vaults": {
     "shared-main-vault": {
       "vaultId": "shared-main-vault",
-      "updatedAt": "2026-11-04T11:25:48.566Z",
+      "updatedAt": "2026-11-10T06:07:18.206Z",
       "transactions": [],
       "accounts": [
         {
@@ -98,7 +98,7 @@
     },
     "demo-showcase-vault": {
       "vaultId": "demo-showcase-vault",
-      "updatedAt": "2026-11-04T11:28:42.546Z",
+      "updatedAt": "2026-11-10T06:12:14.783Z",
       "transactions": [
         {
           "id": "tx_demo_1",
@@ -195,7 +195,7 @@
           "type": "cash",
           "label": "💵 Cash Wallet (Demo)",
           "initialBalance": 1500,
-          "createdAt": "2026-11-04T11:28:42.546Z"
+          "createdAt": "2026-11-10T06:12:14.784Z"
         },
         {
           "id": "acc_demo_cib",
@@ -205,7 +205,7 @@
           "mode": "Debit",
           "bank": "Commercial International Bank (CIB)",
           "initialBalance": 12000,
-          "createdAt": "2026-11-04T11:28:42.546Z"
+          "createdAt": "2026-11-10T06:12:14.784Z"
         },
         {
           "id": "acc_demo_wallet",
@@ -214,7 +214,7 @@
           "kind": "Telecom",
           "provider": "Vodafone Cash",
           "initialBalance": 2500,
-          "createdAt": "2026-11-04T11:28:42.546Z"
+          "createdAt": "2026-11-10T06:12:14.784Z"
         }
       ],
       "accountTransfers": [],
@@ -380,6 +380,64 @@
         "income": 3500,
         "expense": 2000
       }
+    },
+    "vault_usr_1794290972416": {
+      "vaultId": "vault_usr_1794290972416",
+      "updatedAt": "2026-11-10T06:09:32.416Z",
+      "transactions": [],
+      "accounts": [],
+      "accountTransfers": [],
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      },
+      "stockData": [],
+      "pharmacyData": []
+    },
+    "vault_usr_1794291174432": {
+      "vaultId": "vault_usr_1794291174432",
+      "updatedAt": "2026-11-10T06:12:54.542Z",
+      "transactions": [
+        {
+          "id": "tx_owner_valid",
+          "amount": 120,
+          "description": "Office Supplies"
+        }
+      ],
+      "accounts": [],
+      "accountTransfers": [],
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      },
+      "stockData": [],
+      "pharmacyData": []
+    },
+    "vault_usr_1794291174586": {
+      "vaultId": "vault_usr_1794291174586",
+      "updatedAt": "2026-11-10T06:12:54.586Z",
+      "transactions": [],
+      "accounts": [],
+      "accountTransfers": [],
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      },
+      "stockData": [],
+      "pharmacyData": []
+    },
+    "vault_usr_1794291174690": {
+      "vaultId": "vault_usr_1794291174690",
+      "updatedAt": "2026-11-10T06:12:54.690Z",
+      "transactions": [],
+      "accounts": [],
+      "accountTransfers": [],
+      "budgetLimits": {
+        "income": 0,
+        "expense": 0
+      },
+      "stockData": [],
+      "pharmacyData": []
     }
   },
   "users": {
@@ -387,18 +445,17 @@
       "id": "usr_peter_badir",
       "name": "Peter W. Badir",
       "email": "peter.w.badir@gmail.com",
-      "passwordHash": "e5ebde08cf42fffc93da31f709ea5d72934b204bd388ae8487662b35025ae819e0493762a27b29dc4ba58d10e9c01f34cc9d0e1f472cb4348615297434a30c40",
-      "salt": "f931a8924f18227d949cbb3eafa27e02",
+      "passwordHash": "8f581928df746622fafe240abe6066f12ee11edc05ab879ef5d270644a2f32ac5101d0006723e3e5b32907bcca2cacd70f310f365a287f0f3f08c5047a529607",
+      "salt": "fd58d4f5ccfbc136f206203bd1b768e5",
       "tier": "Master Admin Suite",
       "createdAt": "2026-10-18T17:03:16.856Z",
-      "lastLogin": "2026-11-03T12:21:47.767Z",
+      "lastLogin": "2026-11-10T06:12:54.348Z",
       "role": "main_admin",
       "isPrimary": true,
       "vaultId": "shared-main-vault",
       "isMainAdmin": true,
       "status": "active",
-      "mustChangePassword": true,
-      "temporaryPassword": "Password123!",
+      "mustChangePassword": false,
       "propertyRole": "both",
       "avatarUrl": ""
     },
@@ -534,68 +591,109 @@
       "mustChangePassword": false,
       "createdAt": "2026-11-03T12:18:48.633Z",
       "lastLogin": "2026-11-03T12:21:47.678Z"
+    },
+    "usr_1794290972416": {
+      "id": "usr_1794290972416",
+      "name": "Owner One",
+      "email": "owner1_1794290972367@testcorp.com",
+      "passwordHash": "9affc0ee0c54def572955c904bc1f97c350b6d8930e3c6ae51bb54934f1550a020ea567e370d217a7c561655bee989c3f14481a7ab037d35ffc28fce3fc03c04",
+      "salt": "e83179dcbde1f73c4ed6ca1358d39c72",
+      "tier": "Free Tier",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1794290972416",
+      "propertyRole": "landlord",
+      "mustChangePassword": false,
+      "createdAt": "2026-11-10T06:09:32.416Z",
+      "lastLogin": "2026-11-10T06:09:32.416Z"
+    },
+    "usr_1794291174432": {
+      "id": "usr_1794291174432",
+      "name": "Owner One",
+      "email": "owner1_1794291174392@testcorp.com",
+      "passwordHash": "10c524dee640b72134953c912ad1dca9ba6283d5034364d3ba7ea45e7d3aad95c825205b9b6bcbb0158d5d4571b8a78f23f8c620c54cc1a3bd936fc18d2fcdc8",
+      "salt": "3eed6b9da0bdcac609bf9fbfe4da0d9a",
+      "tier": "Free Tier",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1794291174432",
+      "propertyRole": "landlord",
+      "mustChangePassword": false,
+      "createdAt": "2026-11-10T06:12:54.432Z",
+      "lastLogin": "2026-11-10T06:12:54.432Z"
+    },
+    "usr_sub_1794291174478": {
+      "id": "usr_sub_1794291174478",
+      "name": "Auditor Viewer",
+      "email": "viewer_1794291174435@testcorp.com",
+      "passwordHash": "183275767e32f7b4611d3e65e9d0a65cce0b7daaf31a60dc69d08bbe613821ea282c7a2c3e90055ec4232c0771654a4e4b4492153baa1de56e439fbc5d728a32",
+      "salt": "882fdafa6f5beb2e380cc663e9bad9d8",
+      "tier": "Free Tier",
+      "role": "viewer",
+      "isPrimary": false,
+      "parentId": "usr_1794291174432",
+      "vaultId": "vault_usr_1794291174432",
+      "mustChangePassword": true,
+      "temporaryPassword": "Temp-HVDP829!",
+      "createdAt": "2026-11-10T06:12:54.478Z",
+      "lastLogin": "2026-11-10T06:12:54.522Z"
+    },
+    "usr_1794291174586": {
+      "id": "usr_1794291174586",
+      "name": "Owner Two",
+      "email": "owner2_1794291174544@competitor.com",
+      "passwordHash": "4b9fa6b9b191a9f6f1a29bb5590d143d113a93372ab7c4d9f58937943659cc996148ac22e92071daf5fd884844829c77ea306f40d3f1410b0e27ebed8405a9ef",
+      "salt": "89f14839a23b2d8658805bdfb5173424",
+      "tier": "Free Tier",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1794291174586",
+      "propertyRole": "tenant",
+      "mustChangePassword": false,
+      "createdAt": "2026-11-10T06:12:54.586Z",
+      "lastLogin": "2026-11-10T06:12:54.586Z"
+    },
+    "usr_sub_1794291174631": {
+      "id": "usr_sub_1794291174631",
+      "name": "Competitor Member",
+      "email": "sub2_1794291174587@competitor.com",
+      "passwordHash": "55015f3fd245b93847b9b52f2ea9a6dfae542e3ad01fa9aac8e202c1a4189b8e994e947f7f50dfe36dfa892f7340127be62e1fd1e07c6da38abb93f5296702c1",
+      "salt": "1fae2dd44f50f4a39eaf1fdd44b61fdd",
+      "tier": "Free Tier",
+      "role": "member",
+      "isPrimary": false,
+      "parentId": "usr_1794291174586",
+      "vaultId": "vault_usr_1794291174586",
+      "mustChangePassword": true,
+      "temporaryPassword": "Temp-SAVA863!",
+      "createdAt": "2026-11-10T06:12:54.631Z",
+      "lastLogin": ""
+    },
+    "usr_1794291174690": {
+      "id": "usr_1794291174690",
+      "name": "Session User",
+      "email": "session_1794291174648@test.com",
+      "passwordHash": "da94dbe598335586fd6aa1d82615ebf1c01bdbf059c66bf19eb0df0dc84c77f8deb9fa0ee4690f519b86a48f83bbbfc3130b2d67e1ab5396fe181a16889fee3d",
+      "salt": "460c976e58621e48a5aea75ac87b52f3",
+      "tier": "Free Tier",
+      "role": "owner",
+      "isPrimary": true,
+      "vaultId": "vault_usr_1794291174690",
+      "propertyRole": "tenant",
+      "mustChangePassword": false,
+      "createdAt": "2026-11-10T06:12:54.690Z",
+      "lastLogin": "2026-11-10T06:12:54.778Z"
     }
   },
   "tokens": {
-    "tok_a454ead800e8824f72858e988f3d4f9ac7fb6d1667bc15dc": "usr_peter_badir",
     "tok_6595e63c396f52950e76854179be8a71b51f8aabd71a8a7f": "usr_1792343003698",
-    "tok_916b2b9549ce3c69043be0cd7b44e1246b8239e64870a3fa": "usr_peter_badir",
-    "tok_d093d07c06abea917370d6b2c46a84a550a3c8780b8baf72": "usr_peter_badir",
-    "tok_0cb1d627822f6ee367d34b7f5347f81620bb1483e04259b1": "usr_peter_badir",
     "tok_bbec3ac1109dc325ee6ccca447f878a61ef59c499aa8f3ee": "usr_sub_1792349769922",
     "tok_a95d9d55fb1b9ccc176a71cc09e4c0ed66505bb1cc759b55": "usr_sub_1792349769922",
     "tok_8159663a56bf1106f2aed799f8cbdbfef9b0bbc4dc7ebbbb": "usr_sub_1792349774634",
     "tok_1ef418cd1c42a9ec71c33e765f44ab01c4d79a62f4368334": "usr_sub_1792349774634",
-    "tok_b4b41afd5fa9ab7aefae0a4e4576aceb4fb24b65fd2bd3fa": "usr_peter_badir",
-    "tok_a76070ecaf474405cd992b05ff9a8881c5b1df1d67444ead": "usr_peter_badir",
     "tok_a9aa5264d311c8d47270fa85e07e467c052cd37ac6ee19ab": "usr_1792497387408",
     "tok_a57c0e195aa3b41c71ece26de1fbd9c7dc331bf9da0acef1": "usr_sub_1792497387355",
     "tok_2724aa2ab1711dad12c8685fb8cc3da19861567e15722f3a": "usr_1792497420289",
-    "tok_1b84764f0f306066922586047a1fd412aa48ffd01273cff2": "usr_peter_badir",
-    "tok_a283f18d2369d96c6b9d7214110eee8fe5fbd6a2e7813663": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1793614115706
-    },
-    "tok_10bced201d3a88fe8be051d3e940a33c372a5a4d7a16146c": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1793614123885
-    },
-    "tok_92769c150d3e37bc9f2b5d1159c1d5d66b3606b96784308c": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1793614127327
-    },
-    "tok_1ad8930aa3df48da06987ed4bbe75fc171ff9f8967f0e998": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1793614131675
-    },
-    "tok_5696cfedf3fdcd99ab0c5032512f4022029f98dba6670ad7": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1793615160879
-    },
-    "tok_f55a87839b1442dd6888447165f57b38dfc5c353899e17c9": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1793615170555
-    },
-    "tok_839a1647a6874b86b55d4290dc847aa692c5a2d2172d9d62": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1793615170667
-    },
-    "tok_e6ecab5e6ff613a5e3dea5381bf4bca30f9b773439ed326a": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1793615175577
-    },
-    "tok_59ae4db0c356a5afa6536c44d55b4be04ff5aa7fb206ee91": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1793615175645
-    },
-    "tok_ae57ec5e70cde3b0daf7ea21624ea38b4e9ae82db0cfae5f": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1794016372615
-    },
-    "tok_6d4b60720e1fc55b13ed9210ad1a73486381f8c0a7c968bb": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1794016441992
-    },
     "tok_3712b0f82f1be2b525e1aac3c8361e64548f71af4d4cd488": "usr_1793411649916",
     "tok_demo_eabd0cfcabeb92e2fc12da64a8168dd7a6a6f56727c0ddb3": {
       "userId": "usr_demo_showcase",
@@ -605,32 +703,71 @@
       "userId": "usr_demo_showcase",
       "expiresAt": 1796300435286
     },
-    "tok_f36d72b15e105533164e8c65967e4c7d6f5a7e4fe0c52571": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1794313242012
-    },
-    "tok_55339ae9c856d8a1e12a7595b4faa8eb4011ffd29cea290b": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1794313262133
-    },
-    "tok_02f37df7484b432e2c7379544631a4b28f417d784fbbdd40": {
-      "userId": "usr_peter_badir",
-      "expiresAt": 1794313274111
-    },
     "tok_demo_ca5d553d5776da063df6fc6702027464b2c665f71b68d7b4": {
       "userId": "usr_demo_showcase",
       "expiresAt": 1796300507678
     },
-    "tok_e5a91b331883c323ccdf732216adba0260066389e1a427bd": {
+    "tok_dd9e5963081d6709cb2fac67e187c40bcdb200039bb8267e": {
       "userId": "usr_peter_badir",
-      "expiresAt": 1794313307767
+      "createdAt": 1794291174302,
+      "expiresAt": 1794895974302
     },
-    "tok_314acfa841811b7e83b45ff086bd3ca98fb890fa3dd1b556": {
+    "tok_7fe4f78508ef579e2b43bd7f3d9cad89793f74eb240115ff": {
       "userId": "usr_peter_badir",
-      "expiresAt": 1796383723471
+      "createdAt": 1794291174348,
+      "expiresAt": 1794895974348
+    },
+    "tok_137266e45dda721b743bc13b126a53e907939d73fb95ca60": {
+      "userId": "usr_1794291174432",
+      "createdAt": 1794291174432,
+      "expiresAt": 1794895974432
+    },
+    "tok_e601b38f0e270b97f10eefc996eda304645d778c48e08d6e": {
+      "userId": "usr_sub_1794291174478",
+      "createdAt": 1794291174522,
+      "expiresAt": 1794895974522
+    },
+    "tok_99a602cafcec280c7cc6e668e5ed8243199c6b72992d8ea9": {
+      "userId": "usr_1794291174586",
+      "createdAt": 1794291174586,
+      "expiresAt": 1794895974586
     }
   },
   "outbox": [
+    {
+      "id": "mail_1794291174631_f7f30e",
+      "to": "sub2_1794291174587@competitor.com",
+      "toName": "Competitor Member",
+      "subject": "Welcome to Forecaster Pro - Your MEMBER Account Credentials",
+      "body": "Hello Competitor Member,\n\nYou have been granted access as a MEMBER to the Forecaster Pro workspace by Owner Two (owner2_1794291174544@competitor.com).\n\nAccount Credentials:\n• Login Email: sub2_1794291174587@competitor.com\n• Temporary Password: Temp-SAVA863!\n• Assigned Role: MEMBER\n\nRole Privileges:\nOperational access to log daily expenses, income, transfers, inventory usage, and fleet records.\n\nSECURITY REQUIREMENT:\nThis temporary password was generated automatically. For your security, you are required to change your password immediately upon your first login. The system will automatically prompt you to create your new personal password upon sign-in.\n\nSign in to Forecaster Pro:\nhttps://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\n\nBest regards,\nForecaster Pro Team",
+      "htmlBody": "\n<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;\">\n  <div style=\"background: linear-gradient(135deg, #1d4ed8, #2563eb); padding: 24px; color: #ffffff;\">\n    <h1 style=\"margin: 0; font-size: 20px; font-weight: 800;\">Forecaster Pro</h1>\n    <p style=\"margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;\">Role-Based Workspace Invitation</p>\n  </div>\n  <div style=\"padding: 24px;\">\n    <h2 style=\"margin: 0 0 12px 0; font-size: 17px; color: #0f172a;\">Hello Competitor Member,</h2>\n    <p style=\"font-size: 13.5px; line-height: 1.5; color: #334155;\">\n      <strong>Owner Two</strong> has created a sub-user account for you in the Forecaster Pro ledger with the role of \n      <span style=\"display: inline-block; padding: 2px 8px; background: #eff6ff; color: #1d4ed8; font-weight: bold; border-radius: 6px; font-size: 11px; text-transform: uppercase;\">member</span>.\n    </p>\n\n    <div style=\"background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;\">\n      <h3 style=\"margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;\">Your Account Credentials</h3>\n      <table style=\"width: 100%; font-size: 13px; border-collapse: collapse;\">\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b; width: 140px;\">Login Email:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a;\">sub2_1794291174587@competitor.com</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Temporary Password:</td>\n          <td style=\"padding: 5px 0;\"><code style=\"background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;\">Temp-SAVA863!</code></td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Assigned Role:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a; text-transform: capitalize;\">member</td>\n        </tr>\n      </table>\n    </div>\n\n    <div style=\"background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px;\">\n      <p style=\"margin: 0; font-size: 12px; color: #92400e; font-weight: 600;\">\n        ⚠️ Required on First Login: This password is temporary. You will be prompted to create your own new permanent password as soon as you sign in.\n      </p>\n    </div>\n\n    <p style=\"font-size: 12.5px; color: #64748b; line-height: 1.5;\">\n      <strong>Role Privileges:</strong> Operational access to log daily expenses, income, transfers, inventory usage, and fleet records.\n    </p>\n\n    <div style=\"margin-top: 24px; text-align: center;\">\n      <a href=\"https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\" style=\"display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;\">Sign In to Your Account</a>\n    </div>\n  </div>\n  <div style=\"background: #f1f5f9; padding: 12px 24px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;\">\n    Forecaster Pro • Unified Financial &amp; Multi-Role Ledger\n  </div>\n</div>",
+      "sentAt": "2026-11-10T06:12:54.631Z",
+      "status": "delivered",
+      "metadata": {
+        "userId": "usr_sub_1794291174631",
+        "role": "member",
+        "temporaryPassword": "Temp-SAVA863!",
+        "senderId": "usr_1794291174586",
+        "senderEmail": "owner2_1794291174544@competitor.com"
+      }
+    },
+    {
+      "id": "mail_1794291174478_ab5c7a",
+      "to": "viewer_1794291174435@testcorp.com",
+      "toName": "Auditor Viewer",
+      "subject": "Welcome to Forecaster Pro - Your VIEWER Account Credentials",
+      "body": "Hello Auditor Viewer,\n\nYou have been granted access as a VIEWER to the Forecaster Pro workspace by Owner One (owner1_1794291174392@testcorp.com).\n\nAccount Credentials:\n• Login Email: viewer_1794291174435@testcorp.com\n• Temporary Password: Temp-HVDP829!\n• Assigned Role: VIEWER\n\nRole Privileges:\nRead-only access to view charts, financial summaries, transaction logs, inventory, and vehicle reports.\n\nSECURITY REQUIREMENT:\nThis temporary password was generated automatically. For your security, you are required to change your password immediately upon your first login. The system will automatically prompt you to create your new personal password upon sign-in.\n\nSign in to Forecaster Pro:\nhttps://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\n\nBest regards,\nForecaster Pro Team",
+      "htmlBody": "\n<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;\">\n  <div style=\"background: linear-gradient(135deg, #1d4ed8, #2563eb); padding: 24px; color: #ffffff;\">\n    <h1 style=\"margin: 0; font-size: 20px; font-weight: 800;\">Forecaster Pro</h1>\n    <p style=\"margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;\">Role-Based Workspace Invitation</p>\n  </div>\n  <div style=\"padding: 24px;\">\n    <h2 style=\"margin: 0 0 12px 0; font-size: 17px; color: #0f172a;\">Hello Auditor Viewer,</h2>\n    <p style=\"font-size: 13.5px; line-height: 1.5; color: #334155;\">\n      <strong>Owner One</strong> has created a sub-user account for you in the Forecaster Pro ledger with the role of \n      <span style=\"display: inline-block; padding: 2px 8px; background: #eff6ff; color: #1d4ed8; font-weight: bold; border-radius: 6px; font-size: 11px; text-transform: uppercase;\">viewer</span>.\n    </p>\n\n    <div style=\"background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;\">\n      <h3 style=\"margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;\">Your Account Credentials</h3>\n      <table style=\"width: 100%; font-size: 13px; border-collapse: collapse;\">\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b; width: 140px;\">Login Email:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a;\">viewer_1794291174435@testcorp.com</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Temporary Password:</td>\n          <td style=\"padding: 5px 0;\"><code style=\"background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;\">Temp-HVDP829!</code></td>\n        </tr>\n        <tr>\n          <td style=\"padding: 5px 0; color: #64748b;\">Assigned Role:</td>\n          <td style=\"padding: 5px 0; font-weight: 700; color: #0f172a; text-transform: capitalize;\">viewer</td>\n        </tr>\n      </table>\n    </div>\n\n    <div style=\"background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px;\">\n      <p style=\"margin: 0; font-size: 12px; color: #92400e; font-weight: 600;\">\n        ⚠️ Required on First Login: This password is temporary. You will be prompted to create your own new permanent password as soon as you sign in.\n      </p>\n    </div>\n\n    <p style=\"font-size: 12.5px; color: #64748b; line-height: 1.5;\">\n      <strong>Role Privileges:</strong> Read-only access to view charts, financial summaries, transaction logs, inventory, and vehicle reports.\n    </p>\n\n    <div style=\"margin-top: 24px; text-align: center;\">\n      <a href=\"https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app\" style=\"display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;\">Sign In to Your Account</a>\n    </div>\n  </div>\n  <div style=\"background: #f1f5f9; padding: 12px 24px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;\">\n    Forecaster Pro • Unified Financial &amp; Multi-Role Ledger\n  </div>\n</div>",
+      "sentAt": "2026-11-10T06:12:54.478Z",
+      "status": "delivered",
+      "metadata": {
+        "userId": "usr_sub_1794291174478",
+        "role": "viewer",
+        "temporaryPassword": "Temp-HVDP829!",
+        "senderId": "usr_1794291174432",
+        "senderEmail": "owner1_1794291174392@testcorp.com"
+      }
+    },
     {
       "id": "mail_reset_1793009319452_fb92bf",
       "to": "peter.w.badir@gmail.com",
@@ -718,6 +855,30 @@
     }
   ],
   "auditLog": [
+    {
+      "id": "log_1794291174778_c964o",
+      "timestamp": "2026-11-10T06:12:54.778Z",
+      "adminEmail": "session_1794291174648@test.com",
+      "action": "PASSWORD_CHANGED",
+      "category": "security",
+      "details": "Password successfully changed by user session_1794291174648@test.com"
+    },
+    {
+      "id": "log_1794291174302_s2gi4",
+      "timestamp": "2026-11-10T06:12:54.303Z",
+      "adminEmail": "peter.w.badir@gmail.com",
+      "action": "PASSWORD_CHANGED",
+      "category": "security",
+      "details": "Password successfully changed by user peter.w.badir@gmail.com"
+    },
+    {
+      "id": "log_1794290972267_ohglf",
+      "timestamp": "2026-11-10T06:09:32.267Z",
+      "adminEmail": "peter.w.badir@gmail.com",
+      "action": "PASSWORD_CHANGED",
+      "category": "security",
+      "details": "Password successfully changed by user peter.w.badir@gmail.com"
+    },
     {
       "id": "log_1793010370667_l4wq4",
       "timestamp": "2026-10-26T10:26:10.667Z",
@@ -825,7 +986,7 @@
     },
     "telemetry": {
       "serverStartedAt": "2026-10-20T12:36:39.995Z",
-      "totalApiRequests": 44
+      "totalApiRequests": 53
     }
   }
 }

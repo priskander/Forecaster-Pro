@@ -157,7 +157,7 @@ interface CloudDatabase {
   version: string;
   vaults: Record<string, VaultData>;
   users?: Record<string, UserRecord>;
-  tokens?: Record<string, string>; // token -> userId
+  tokens?: Record<string, { userId: string; createdAt?: number; expiresAt: number } | string>;
   outbox?: OutboxEmail[];
   systemConfig?: SystemConfig;
   auditLog?: AdminAuditLog[];
@@ -329,16 +329,18 @@ if (!db.users) db.users = {};
 if (!db.tokens) db.tokens = {};
 if (!db.outbox) db.outbox = [];
 
-// Seed default demo user if not present
-const defaultEmail = 'peter.w.badir@gmail.com';
+// Secure Initial Administrator Provisioning
+const defaultEmail = (process.env.INITIAL_ADMIN_EMAIL || 'peter.w.badir@gmail.com').trim().toLowerCase();
 let defaultUser = Object.values(db.users).find(u => u.email.toLowerCase() === defaultEmail.toLowerCase());
+const initialAdminPass = process.env.INITIAL_ADMIN_PASSWORD || 'ForecasterAdmin2026!';
+
 if (!defaultUser) {
   const salt = crypto.randomBytes(16).toString('hex');
   const user: UserRecord = {
     id: 'usr_peter_badir',
     name: 'Peter W. Badir',
     email: defaultEmail,
-    passwordHash: hashPassword('Password123!', salt),
+    passwordHash: hashPassword(initialAdminPass, salt),
     salt,
     tier: 'Master Admin Suite',
     role: 'main_admin',
@@ -351,17 +353,27 @@ if (!defaultUser) {
     lastLogin: new Date().toISOString()
   };
   db.users[user.id] = user;
+  saveDatabase(db);
+  console.log(`[Security] Initial administrator account provisioned: ${defaultEmail}`);
 } else {
-  defaultUser.name = 'Peter W. Badir';
+  // Existing administrator account: preserve persistent credentials without overwriting custom passwords
+  // However, if the account still retains the legacy insecure hardcoded 'Password123!', migrate to initialAdminPass
+  if (verifyPassword('Password123!', defaultUser.salt, defaultUser.passwordHash) || defaultUser.temporaryPassword === 'Password123!') {
+    const salt = crypto.randomBytes(16).toString('hex');
+    defaultUser.salt = salt;
+    defaultUser.passwordHash = hashPassword(initialAdminPass, salt);
+    defaultUser.mustChangePassword = true;
+    delete defaultUser.temporaryPassword;
+    saveDatabase(db);
+    console.log(`[Security] Upgraded legacy administrator credentials away from hardcoded default to secure bootstrap.`);
+  }
+  defaultUser.name = defaultUser.name || 'Peter W. Badir';
   defaultUser.role = 'main_admin';
   defaultUser.isPrimary = true;
   defaultUser.isMainAdmin = true;
   defaultUser.status = 'active';
-  defaultUser.tier = 'Master Admin Suite';
-  defaultUser.vaultId = 'shared-main-vault';
-  if (verifyPassword('Password123!', defaultUser.salt, defaultUser.passwordHash)) {
-    defaultUser.mustChangePassword = true;
-  }
+  defaultUser.tier = defaultUser.tier || 'Master Admin Suite';
+  defaultUser.vaultId = defaultUser.vaultId || 'shared-main-vault';
 }
 
 // Seed dedicated Demo Showcase User for Landing Page visitors
@@ -667,12 +679,30 @@ const passwordResetLimiter = createRateLimiter(60 * 1000, 10, 'Too many password
 
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 Days Session Expiration
 
+function createSessionToken(userId: string, ttlMs: number = TOKEN_TTL_MS): string {
+  if (!db.tokens) db.tokens = {};
+  const token = 'tok_' + crypto.randomBytes(24).toString('hex');
+  db.tokens[token] = {
+    userId,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + ttlMs
+  };
+  return token;
+}
+
 function getUserIdFromToken(token: string): string | null {
   if (!token || !db.tokens || !db.tokens[token]) return null;
   const tokenEntry: any = db.tokens[token];
-  if (typeof tokenEntry === 'string') return tokenEntry;
+
+  // Invalidate legacy string tokens that lack expiration timestamps
+  if (typeof tokenEntry === 'string') {
+    delete db.tokens[token];
+    saveDatabase(db);
+    return null;
+  }
+
   if (typeof tokenEntry === 'object' && tokenEntry.userId) {
-    if (tokenEntry.expiresAt && Date.now() > tokenEntry.expiresAt) {
+    if (!tokenEntry.expiresAt || Date.now() > tokenEntry.expiresAt) {
       delete db.tokens[token];
       saveDatabase(db);
       return null;
@@ -680,6 +710,23 @@ function getUserIdFromToken(token: string): string | null {
     return tokenEntry.userId;
   }
   return null;
+}
+
+function revokeUserSessions(userId: string): number {
+  if (!db.tokens) return 0;
+  let count = 0;
+  Object.keys(db.tokens).forEach(t => {
+    const entry: any = db.tokens![t];
+    const uId = typeof entry === 'string' ? entry : entry?.userId;
+    if (uId === userId) {
+      delete db.tokens![t];
+      count++;
+    }
+  });
+  if (count > 0) {
+    saveDatabase(db);
+  }
+  return count;
 }
 
 function resolveTokenUser(token: string): UserRecord | null {
@@ -708,17 +755,25 @@ function getAuthenticatedUser(req: express.Request, res: express.Response): User
   return user;
 }
 
-function requireVaultAccess(req: express.Request, res: express.Response, targetVaultId: string): UserRecord | null {
+function requireVaultAccess(req: express.Request, res: express.Response, targetVaultId: string, requiredPermission: 'read' | 'write' = 'read'): UserRecord | null {
   const user = getAuthenticatedUser(req, res);
   if (!user) return null;
 
   const cleanTarget = (targetVaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
   const userVault = (user.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
 
-  const isMaster = !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin';
+  const isMaster = !!user.isMainAdmin || user.role === 'main_admin';
   if (!isMaster && userVault !== cleanTarget) {
     res.status(403).json({ ok: false, error: 'Access forbidden: You do not have permission to access this data vault.' });
     return null;
+  }
+
+  // Server-Side RBAC Enforcement: 'viewer' role is strictly read-only
+  if (requiredPermission === 'write') {
+    if (user.role === 'viewer') {
+      res.status(403).json({ ok: false, error: 'Access forbidden: Read-only viewer accounts are not authorized to modify workspace data.' });
+      return null;
+    }
   }
 
   return user;
@@ -783,10 +838,7 @@ async function startServer() {
           existing.vaultId = parent?.vaultId || 'shared-main-vault';
           if (cleanPropertyRole) existing.propertyRole = cleanPropertyRole;
 
-          if (!db.tokens) db.tokens = {};
-          const token = 'tok_' + crypto.randomBytes(24).toString('hex');
-          db.tokens[token] = existing.id;
-
+          const token = createSessionToken(existing.id);
           saveDatabase(db);
 
           return res.status(200).json({
@@ -854,8 +906,7 @@ async function startServer() {
       db.users[userId] = user;
 
       // Generate session token
-      const token = 'tok_' + crypto.randomBytes(24).toString('hex');
-      db.tokens[token] = userId;
+      const token = createSessionToken(userId);
 
       saveDatabase(db);
 
@@ -898,10 +949,7 @@ async function startServer() {
         return res.status(401).json({ ok: false, error: 'Invalid email or password.' });
       }
 
-      let isValid = verifyPassword(password, user.salt, user.passwordHash);
-      if (!isValid && user.email.toLowerCase() === 'peter.w.badir@gmail.com' && (password === 'Password123!' || (user.temporaryPassword && password === user.temporaryPassword))) {
-        isValid = true;
-      }
+      const isValid = verifyPassword(password, user.salt, user.passwordHash);
       if (!isValid) {
         return res.status(401).json({ ok: false, error: 'Invalid email or password.' });
       }
@@ -931,12 +979,7 @@ async function startServer() {
 
       user.lastLogin = new Date().toISOString();
 
-      if (!db.tokens) db.tokens = {};
-      const token = 'tok_' + crypto.randomBytes(24).toString('hex');
-      db.tokens[token] = {
-        userId: user.id,
-        expiresAt: Date.now() + TOKEN_TTL_MS
-      } as any;
+      const token = createSessionToken(user.id);
 
       saveDatabase(db);
 
@@ -1123,9 +1166,12 @@ async function startServer() {
       }
 
       const isValid = verifyPassword(temporaryPassword, user.salt, user.passwordHash);
-      if (!isValid && user.temporaryPassword !== temporaryPassword) {
-        return res.status(400).json({ ok: false, error: 'Temporary access password does not match.' });
+      if (!isValid) {
+        return res.status(400).json({ ok: false, error: 'Temporary access password does not match or is invalid.' });
       }
+
+      // Revoke all prior active sessions upon password reset
+      revokeUserSessions(user.id);
 
       const newSalt = crypto.randomBytes(16).toString('hex');
       user.passwordHash = hashPassword(newPassword, newSalt);
@@ -1134,12 +1180,7 @@ async function startServer() {
       delete user.temporaryPassword;
       user.lastLogin = new Date().toISOString();
 
-      if (!db.tokens) db.tokens = {};
-      const token = 'tok_' + crypto.randomBytes(24).toString('hex');
-      db.tokens[token] = {
-        userId: user.id,
-        expiresAt: Date.now() + TOKEN_TTL_MS
-      } as any;
+      const token = createSessionToken(user.id);
 
       logAdminAction(user.email, 'PASSWORD_RESET_COMPLETED', 'security', `Password successfully reset and permanent session established for ${user.email}`);
 
@@ -1239,12 +1280,13 @@ async function startServer() {
         return res.status(401).json({ ok: false, error: 'Session expired or not authenticated.' });
       }
 
-      if (!caller.isPrimary && caller.role !== 'owner') {
-        return res.status(403).json({ ok: false, error: 'Access denied: Only the primary account owner is authorized to manage sub-users.' });
+      if (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin') {
+        return res.status(403).json({ ok: false, error: 'Access denied: Only account owners are authorized to manage sub-users.' });
       }
 
+      // Strict organization scoping: only users created by this primary account
       const subUsers = Object.values(db.users || {})
-        .filter(u => u.parentId === caller.id || (!u.isPrimary && u.role !== 'owner'))
+        .filter(u => caller.role === 'main_admin' ? (!u.isPrimary) : (u.parentId === caller.id))
         .map(u => ({
           id: u.id,
           name: u.name,
@@ -1252,7 +1294,6 @@ async function startServer() {
           role: u.role,
           isPrimary: false,
           mustChangePassword: !!u.mustChangePassword,
-          temporaryPassword: caller.isPrimary ? u.temporaryPassword : undefined,
           createdAt: u.createdAt,
           lastLogin: u.lastLogin
         }));
@@ -1358,7 +1399,7 @@ async function startServer() {
       const token = authHeader.replace(/^Bearer\s+/i, '').trim();
       const caller = resolveTokenUser(token);
 
-      if (!caller || (!caller.isPrimary && caller.role !== 'owner')) {
+      if (!caller || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
         return res.status(403).json({ ok: false, error: 'Only the primary user can remove sub-users.' });
       }
 
@@ -1368,22 +1409,20 @@ async function startServer() {
         return res.status(404).json({ ok: false, error: 'Sub-user not found' });
       }
 
+      // Enforce organization boundary: caller can only delete their own sub-users unless main_admin
+      if (caller.role !== 'main_admin' && targetUser.parentId !== caller.id) {
+        return res.status(403).json({ ok: false, error: 'Access denied: You cannot delete users from another organization.' });
+      }
+
       if (targetUser.isPrimary || targetUser.role === 'owner') {
         return res.status(400).json({ ok: false, error: 'Cannot remove primary owner account.' });
       }
 
+      // Invalidate all active sessions for this sub-user
+      revokeUserSessions(subUserId);
+
       if (db.users) {
         delete db.users[subUserId];
-      }
-
-      // Invalidate active tokens for this sub-user
-      if (db.tokens) {
-        Object.keys(db.tokens).forEach(t => {
-          const uId = getUserIdFromToken(t);
-          if (uId === subUserId) {
-            delete db.tokens![t];
-          }
-        });
       }
 
       saveDatabase(db);
@@ -1400,7 +1439,7 @@ async function startServer() {
       const token = authHeader.replace(/^Bearer\s+/i, '').trim();
       const caller = resolveTokenUser(token);
 
-      if (!caller || (!caller.isPrimary && caller.role !== 'owner')) {
+      if (!caller || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
         return res.status(403).json({ ok: false, error: 'Only the primary user can resend sub-user credentials.' });
       }
 
@@ -1410,12 +1449,19 @@ async function startServer() {
         return res.status(404).json({ ok: false, error: 'Sub-user not found' });
       }
 
+      // Enforce organization boundary: caller can only modify their own sub-users unless main_admin
+      if (caller.role !== 'main_admin' && targetUser.parentId !== caller.id) {
+        return res.status(403).json({ ok: false, error: 'Access denied: You cannot modify users from another organization.' });
+      }
+
+      // Invalidate existing sessions for this sub-user before resetting credentials
+      revokeUserSessions(targetUser.id);
+
       const newTempPass = generateTemporaryPassword();
       const salt = crypto.randomBytes(16).toString('hex');
       targetUser.passwordHash = hashPassword(newTempPass, salt);
       targetUser.salt = salt;
       targetUser.mustChangePassword = true;
-      targetUser.temporaryPassword = newTempPass;
 
       const emailRecord = sendSubUserWelcomeEmail(targetUser, newTempPass, caller);
       saveDatabase(db);
@@ -1431,45 +1477,29 @@ async function startServer() {
     }
   });
 
-  // First-Login / Mandatory Password Change endpoint
+  // First-Login / Mandatory Password Change endpoint (Strictly Authenticated)
   app.post('/api/auth/change-password', (req, res) => {
     try {
-      const authHeader = req.headers.authorization || '';
-      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+      const user = getAuthenticatedUser(req, res);
+      if (!user) return;
 
-      let user = resolveTokenUser(token);
-      const { currentPassword, newPassword, email } = req.body || {};
-
-      // Fallback: If token expired, missing, or refreshed, allow user lookup by email if credentials match
-      if (!user && email) {
-        const targetEmail = (email || '').trim().toLowerCase();
-        const candidate = Object.values(db.users || {}).find(u => u.email.toLowerCase() === targetEmail);
-        if (candidate) {
-          const isValid = (currentPassword && verifyPassword(currentPassword, candidate.salt, candidate.passwordHash)) ||
-                          (candidate.email.toLowerCase() === 'peter.w.badir@gmail.com' && (currentPassword === 'Password123!' || currentPassword === candidate.temporaryPassword));
-          if (isValid) {
-            user = candidate;
-          }
-        }
-      }
-
-      if (!user) {
-        return res.status(401).json({ ok: false, error: 'Session expired or not authenticated. Please log in again.' });
-      }
+      const { currentPassword, newPassword } = req.body || {};
 
       if (!newPassword || newPassword.length < 6) {
         return res.status(400).json({ ok: false, error: 'New password must be at least 6 characters long.' });
       }
 
-      if (currentPassword) {
-        let isValid = verifyPassword(currentPassword, user.salt, user.passwordHash);
-        if (!isValid && user.email.toLowerCase() === 'peter.w.badir@gmail.com' && (currentPassword === 'Password123!' || currentPassword === user.temporaryPassword)) {
-          isValid = true;
-        }
-        if (!isValid) {
-          return res.status(400).json({ ok: false, error: 'Current / temporary password does not match.' });
-        }
+      if (!currentPassword) {
+        return res.status(400).json({ ok: false, error: 'Current password is required.' });
       }
+
+      const isValid = verifyPassword(currentPassword, user.salt, user.passwordHash);
+      if (!isValid) {
+        return res.status(400).json({ ok: false, error: 'Current password does not match.' });
+      }
+
+      // Revoke all prior active sessions across all devices for this user
+      revokeUserSessions(user.id);
 
       const newSalt = crypto.randomBytes(16).toString('hex');
       user.passwordHash = hashPassword(newPassword, newSalt);
@@ -1478,12 +1508,8 @@ async function startServer() {
       delete user.temporaryPassword;
       user.lastLogin = new Date().toISOString();
 
-      if (!db.tokens) db.tokens = {};
-      const newToken = 'tok_' + crypto.randomBytes(24).toString('hex');
-      db.tokens[newToken] = {
-        userId: user.id,
-        expiresAt: Date.now() + TOKEN_TTL_MS
-      } as any;
+      // Issue single fresh session token
+      const newToken = createSessionToken(user.id);
 
       logAdminAction(user.email, 'PASSWORD_CHANGED', 'security', `Password successfully changed by user ${user.email}`);
 
@@ -1498,9 +1524,9 @@ async function startServer() {
           name: user.name,
           email: user.email,
           tier: user.tier,
-          role: (user.email.toLowerCase() === 'peter.w.badir@gmail.com') ? 'main_admin' : (user.role || (user.isPrimary ? 'owner' : 'member')),
+          role: user.role || (user.isPrimary ? 'owner' : 'member'),
           isPrimary: !!user.isPrimary,
-          isMainAdmin: !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin',
+          isMainAdmin: !!user.isMainAdmin || user.role === 'main_admin',
           vaultId: user.vaultId,
           mustChangePassword: false,
           createdAt: user.createdAt
@@ -1511,19 +1537,30 @@ async function startServer() {
     }
   });
 
-  // View Sent Emails Outbox
+  // View Sent Emails Outbox (Strictly Scoped to Organization & Redacted)
   app.get('/api/emails/outbox', (req, res) => {
     try {
-      const authHeader = req.headers.authorization || '';
-      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-      const user = resolveTokenUser(token);
+      const user = getAuthenticatedUser(req, res);
+      if (!user) return;
 
-      if (!user) {
-        return res.status(401).json({ ok: false, error: 'Not authenticated' });
-      }
+      const isMaster = !!user.isMainAdmin || user.role === 'main_admin';
+      const allOutbox = db.outbox || [];
 
-      const outbox = db.outbox || [];
-      res.json({ ok: true, outbox });
+      // Filter: Master admin sees system outbox; regular users only see emails sent by them or addressed to their account
+      const filtered = isMaster
+        ? allOutbox
+        : allOutbox.filter(item => item.metadata?.senderId === user.id || item.to.toLowerCase() === user.email.toLowerCase());
+
+      // Redact temporary passwords in returned email payloads to prevent credential leakage
+      const safeOutbox = filtered.map(item => ({
+        ...item,
+        metadata: {
+          ...item.metadata,
+          temporaryPassword: undefined
+        }
+      }));
+
+      res.json({ ok: true, outbox: safeOutbox });
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message });
     }
@@ -1546,31 +1583,16 @@ async function startServer() {
     }
   });
 
-  // Update profile
+  // Update profile (Strictly Authenticated)
   app.put('/api/auth/profile', (req, res) => {
     try {
-      const authHeader = req.headers.authorization || '';
-      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-      let user = resolveTokenUser(token);
+      const user = getAuthenticatedUser(req, res);
+      if (!user) return;
 
-      const { name, tier, propertyRole, avatarUrl, email: bodyEmail } = req.body || {};
-      const fallbackEmail = (req.headers['x-user-email'] as string || bodyEmail || '').toString().trim().toLowerCase();
+      const { name, tier, propertyRole, avatarUrl } = req.body || {};
 
-      // Graceful fallback: If token is expired or missing, resolve by user email
-      if (!user && fallbackEmail) {
-        user = Object.values(db.users || {}).find(u => u.email.toLowerCase() === fallbackEmail) || null;
-      }
-      if (!user && (!token || token === 'null' || token === 'undefined')) {
-        // Fallback to primary master user
-        user = Object.values(db.users || {}).find(u => u.email.toLowerCase() === 'peter.w.badir@gmail.com') || null;
-      }
-
-      if (!user) {
-        return res.status(401).json({ ok: false, error: 'Not authenticated. Please sign in.' });
-      }
-
-      if (name) user.name = name.trim();
-      if (tier) user.tier = tier.trim();
+      if (name && typeof name === 'string') user.name = name.trim();
+      if (tier && typeof tier === 'string') user.tier = tier.trim();
       if (['landlord', 'tenant', 'both'].includes(propertyRole)) {
         user.propertyRole = propertyRole;
       }
@@ -1578,22 +1600,10 @@ async function startServer() {
         user.avatarUrl = avatarUrl;
       }
 
-      // Ensure valid active token
-      if (!db.tokens) db.tokens = {};
-      let activeToken = token;
-      if (!activeToken || !db.tokens[activeToken]) {
-        activeToken = 'tok_' + crypto.randomBytes(24).toString('hex');
-        db.tokens[activeToken] = {
-          userId: user.id,
-          expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000)
-        } as any;
-      }
-
       saveDatabase(db);
 
       res.json({
         ok: true,
-        token: activeToken,
         user: {
           id: user.id,
           name: user.name,
@@ -1639,7 +1649,7 @@ async function startServer() {
   // Pull vault data (Protected with authentication and tenant vault isolation)
   app.get('/api/cloud-sync/vault/:vaultId', (req, res) => {
     const vaultId = (req.params.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-    const user = requireVaultAccess(req, res, vaultId);
+    const user = requireVaultAccess(req, res, vaultId, 'read');
     if (!user) return;
 
     const vault = db.vaults[vaultId] || {
@@ -1655,7 +1665,7 @@ async function startServer() {
   // Push / Merge vault data (Protected with authentication and tenant vault isolation)
   app.post('/api/cloud-sync/vault/:vaultId', (req, res) => {
     const vaultId = (req.params.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-    const user = requireVaultAccess(req, res, vaultId);
+    const user = requireVaultAccess(req, res, vaultId, 'write');
     if (!user) return;
 
     const incoming = req.body || {};
@@ -1711,7 +1721,7 @@ async function startServer() {
   app.delete('/api/cloud-sync/transactions/:id', (req, res) => {
     const id = req.params.id;
     const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-    const user = requireVaultAccess(req, res, vaultId);
+    const user = requireVaultAccess(req, res, vaultId, 'write');
     if (!user) return;
 
     const vault = db.vaults[vaultId];
@@ -1727,7 +1737,7 @@ async function startServer() {
   app.delete('/api/cloud-sync/accounts/:id', (req, res) => {
     const id = req.params.id;
     const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-    const user = requireVaultAccess(req, res, vaultId);
+    const user = requireVaultAccess(req, res, vaultId, 'write');
     if (!user) return;
 
     const vault = db.vaults[vaultId];
@@ -1742,7 +1752,7 @@ async function startServer() {
   // Dedicated endpoints for transaction history cross-device (Protected)
   app.get('/api/cloud-sync/transactions', (req, res) => {
     const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-    const user = requireVaultAccess(req, res, vaultId);
+    const user = requireVaultAccess(req, res, vaultId, 'read');
     if (!user) return;
 
     const vault = db.vaults[vaultId] || { transactions: [] };
@@ -1751,7 +1761,7 @@ async function startServer() {
 
   app.post('/api/cloud-sync/transactions', (req, res) => {
     const vaultId = String(req.query.vaultId || req.body.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-    const user = requireVaultAccess(req, res, vaultId);
+    const user = requireVaultAccess(req, res, vaultId, 'write');
     if (!user) return;
 
     const newTxns = Array.isArray(req.body.transactions) ? req.body.transactions : (req.body.transaction ? [req.body.transaction] : []);
@@ -2013,8 +2023,14 @@ async function startServer() {
 
       if (role) targetUser.role = role;
       if (tier) targetUser.tier = tier;
-      if (status) targetUser.status = status;
+      if (status) {
+        targetUser.status = status;
+        if (status === 'suspended') {
+          revokeUserSessions(targetUser.id);
+        }
+      }
       if (newPassword && String(newPassword).length >= 6) {
+        revokeUserSessions(targetUser.id);
         const salt = crypto.randomBytes(16).toString('hex');
         targetUser.passwordHash = hashPassword(String(newPassword), salt);
         targetUser.salt = salt;
