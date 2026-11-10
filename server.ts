@@ -566,7 +566,126 @@ db.vaults[DEMO_VAULT_ID] = {
     { id: 'part_brake_pads', name: 'Front Ceramic Brake Pads', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 2, unit: 'set', price: 850, threshold: 1, lifespan: 40000, sku: 'BRK-CER-F', consumptionLogs: [] }
   ],
   pharmacyData: [
-    { id: 'phm_demo_1', name: 'Panadol Extra 500mg', category: 'Analgesics', currentStock: 5, minStock: 10, unit: 'Strip', unitPrice: 45, dailyDepletion: 0.2, expiryDate: '2027-06-30' }
+    {
+      id: 'phm_demo_omega',
+      name: 'Omega-3 Fish Oil 1000mg',
+      category: 'Vitamins & Supplements',
+      currentStock: 60,
+      quantity: 60,
+      minStock: 10,
+      unit: 'capsules',
+      price: 320,
+      unitPrice: 320,
+      threshold: 10,
+      doseQty: 1,
+      dosage: '1 capsule daily after breakfast',
+      schedules: ['after_breakfast'],
+      reason: 'Cardiovascular & cognitive health',
+      prodDate: '2026-09-01',
+      expDate: '2027-12-31',
+      accountId: 'acc_demo_cib',
+      consumptionLogs: []
+    },
+    {
+      id: 'phm_demo_panadol',
+      name: 'Panadol Extra 500mg',
+      category: 'Analgesics & Antipyretics',
+      currentStock: 24,
+      quantity: 24,
+      minStock: 6,
+      unit: 'tablets',
+      price: 45,
+      unitPrice: 45,
+      threshold: 6,
+      doseQty: 1,
+      dosage: '1 tablet after breakfast and after dinner',
+      schedules: ['after_breakfast', 'after_dinner'],
+      reason: 'Mild headache & joint ache relief',
+      prodDate: '2026-08-15',
+      expDate: '2027-06-30',
+      accountId: 'acc_demo_cash',
+      consumptionLogs: []
+    },
+    {
+      id: 'phm_demo_magnesium',
+      name: 'Magnesium Glycinate 400mg',
+      category: 'Minerals & Sleep',
+      currentStock: 30,
+      quantity: 30,
+      minStock: 5,
+      unit: 'tablets',
+      price: 280,
+      unitPrice: 280,
+      threshold: 5,
+      doseQty: 1,
+      dosage: '1 tablet after dinner',
+      schedules: ['after_dinner'],
+      reason: 'Muscle relaxation & restorative sleep',
+      prodDate: '2026-09-10',
+      expDate: '2028-01-31',
+      accountId: 'acc_demo_cib',
+      consumptionLogs: []
+    },
+    {
+      id: 'phm_demo_catafast',
+      name: 'Catafast 50mg',
+      category: 'Analgesics & Anti-inflammatory',
+      currentStock: 10,
+      quantity: 10,
+      minStock: 3,
+      unit: 'sachets',
+      price: 65,
+      unitPrice: 65,
+      threshold: 3,
+      doseQty: 1,
+      dosage: '1 sachet dissolved in water after lunch',
+      schedules: ['after_lunch'],
+      reason: 'Acute joint pain & migraine relief',
+      prodDate: '2026-07-01',
+      expDate: '2027-11-30',
+      accountId: 'acc_demo_cash',
+      consumptionLogs: []
+    },
+    {
+      id: 'phm_demo_neurobion',
+      name: 'Neurobion B12 Forte',
+      category: 'Vitamins & Injections',
+      currentStock: 6,
+      quantity: 6,
+      minStock: 2,
+      unit: 'ampules',
+      price: 85,
+      unitPrice: 85,
+      threshold: 2,
+      doseQty: 1,
+      dosage: '1 ampule IM injection weekly',
+      schedules: [],
+      reason: 'Peripheral nerve revitalization',
+      prodDate: '2026-08-01',
+      expDate: '2027-10-31',
+      accountId: 'acc_demo_cib',
+      consumptionLogs: []
+    },
+    {
+      id: 'phm_demo_dolfen',
+      name: 'Dolfen 25mg',
+      category: 'Antipyretic & Analgesic',
+      currentStock: 5,
+      quantity: 5,
+      minStock: 2,
+      unit: 'suppositories',
+      price: 35,
+      unitPrice: 35,
+      threshold: 2,
+      doseQty: 1,
+      dosage: '1 suppository before bedtime as needed',
+      schedules: ['before_bed'],
+      reason: 'Rapid fever reduction',
+      prodDate: '2026-06-01',
+      expDate: '2027-08-31',
+      accountId: 'acc_demo_cash',
+      consumptionLogs: []
+    }
   ],
   vehicles: [
     { id: 'veh_toyota_corolla', make: 'Toyota', model: 'Corolla', year: 2024, plate: 'ABC 1234', odometer: 45250, nextMaintenanceOdometer: 50000, createdAt: '2026-08-01T10:00:00.000Z' },
@@ -599,218 +718,25 @@ db.vaults[DEMO_VAULT_ID] = {
   budgetLimits: { income: 3500, expense: 2000 }
 };
 
-// 2. Default & Master Administrator Vault (shared-main-vault) for Peter W. Badir
+// 2. Default & Master Administrator Vault (shared-main-vault) for Peter W. Badir (100% Clean First-Time Use Account)
 const DEFAULT_VAULT_ID = 'shared-main-vault';
 
-const MASTER_ACCOUNTS = [
-  { id: 'acc_cash_peter', type: 'cash', label: '💵 Cash Wallet', initialBalance: 3500, createdAt: new Date().toISOString() },
-  { id: 'acc_bank_peter', type: 'card', label: '💳 CIB Debit Card', network: 'Visa', mode: 'Debit', bank: 'Commercial International Bank (CIB)', initialBalance: 28500, createdAt: new Date().toISOString() },
-  { id: 'acc_wallet_peter', type: 'wallet', label: '📱 Vodafone Cash', kind: 'Telecom', provider: 'Vodafone Cash', initialBalance: 4200, createdAt: new Date().toISOString() }
-];
-
-const MASTER_VEHICLES = [
-  { id: 'veh_toyota_corolla', make: 'Toyota', model: 'Corolla', year: 2024, plate: 'ABC 1234', odometer: 45250, nextMaintenanceOdometer: 50000, createdAt: '2026-08-01T10:00:00.000Z' },
-  { id: 'veh_hyundai_elantra', make: 'Hyundai', model: 'Elantra', year: 2023, plate: 'XYZ 9876', odometer: 28400, nextMaintenanceOdometer: 30000, createdAt: '2026-08-05T12:00:00.000Z' }
-];
-
-const MASTER_FUELS = [
-  { id: 'fuel_toyota_1', vehicleId: 'veh_toyota_corolla', dateTime: '2026-10-22T15:30', odometer: 44600, liters: 42.5, cost: 595, accountId: 'acc_bank_peter', notes: 'Full tank - Octane 95', transportationType: 'Fuel' },
-  { id: 'fuel_elantra_1', vehicleId: 'veh_hyundai_elantra', dateTime: '2026-10-25T09:15', odometer: 28400, liters: 40, cost: 560, accountId: 'acc_bank_peter', notes: 'Weekly commute refill', transportationType: 'Fuel' },
-  { id: 'fuel_toyota_2', vehicleId: 'veh_toyota_corolla', dateTime: '2026-10-30T11:45', odometer: 45250, liters: 38, cost: 532, accountId: 'acc_cash_peter', notes: 'Highway & City driving fill-up', transportationType: 'Fuel' }
-];
-
-const MASTER_MAINT = [
-  {
-    id: 'mnt_toyota_40k',
-    vehicleId: 'veh_toyota_corolla',
-    date: '2026-10-15',
-    odometer: 40000,
-    nextMaintenanceOdometer: 50000,
-    description: '40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs',
-    laborCost: 450,
-    partsCost: 850,
-    totalCost: 1300,
-    parts: [
-      { partId: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', quantity: 1, unit: 'bottle', unitCost: 650, lifespan: 10000 },
-      { partId: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', quantity: 1, unit: 'pcs', unitCost: 200, lifespan: 10000 }
-    ],
-    accountId: 'acc_bank_peter',
-    txnId: 'exp_mnt_mnt_toyota_40k'
-  }
-];
-
-const MASTER_STOCK = [
-  { id: 'stk_demo_1', name: 'Olive Oil Extra Virgin', category: 'Groceries', currentStock: 2, minStock: 3, unit: 'Bottle', unitPrice: 180, dailyDepletion: 0.1, expiryDate: '2027-01-01' },
-  { id: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 5, unit: 'bottle', price: 650, threshold: 2, lifespan: 10000, sku: 'OIL-SYN-5W30', consumptionLogs: [] },
-  { id: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 4, unit: 'pcs', price: 200, threshold: 1, lifespan: 10000, sku: 'FLT-OEM-123', consumptionLogs: [] },
-  { id: 'part_brake_pads', name: 'Front Ceramic Brake Pads', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 2, unit: 'set', price: 850, threshold: 1, lifespan: 40000, sku: 'BRK-CER-F', consumptionLogs: [] }
-];
-
-const MASTER_PHARMACY = [
-  {
-    id: 'phm_med_omega',
-    name: 'Omega-3 Fish Oil 1000mg',
-    category: 'Vitamins & Supplements',
-    currentStock: 60,
-    quantity: 60,
-    minStock: 10,
-    unit: 'capsules',
-    price: 320,
-    unitPrice: 320,
-    threshold: 10,
-    doseQty: 1,
-    dosage: '1 capsule daily after breakfast',
-    schedules: ['after_breakfast'],
-    reason: 'Cardiovascular & cognitive health',
-    prodDate: '2026-09-01',
-    expDate: '2027-12-31',
-    accountId: 'acc_bank_peter',
-    consumptionLogs: []
-  },
-  {
-    id: 'phm_med_panadol',
-    name: 'Panadol Extra 500mg',
-    category: 'Analgesics & Antipyretics',
-    currentStock: 24,
-    quantity: 24,
-    minStock: 6,
-    unit: 'tablets',
-    price: 45,
-    unitPrice: 45,
-    threshold: 6,
-    doseQty: 1,
-    dosage: '1 tablet after breakfast and after dinner',
-    schedules: ['after_breakfast', 'after_dinner'],
-    reason: 'Mild headache & joint ache relief',
-    prodDate: '2026-08-15',
-    expDate: '2027-06-30',
-    accountId: 'acc_cash_peter',
-    consumptionLogs: []
-  },
-  {
-    id: 'phm_med_magnesium',
-    name: 'Magnesium Glycinate 400mg',
-    category: 'Minerals & Sleep',
-    currentStock: 30,
-    quantity: 30,
-    minStock: 5,
-    unit: 'tablets',
-    price: 280,
-    unitPrice: 280,
-    threshold: 5,
-    doseQty: 1,
-    dosage: '1 tablet after dinner',
-    schedules: ['after_dinner'],
-    reason: 'Muscle relaxation & restorative sleep',
-    prodDate: '2026-09-10',
-    expDate: '2028-01-31',
-    accountId: 'acc_bank_peter',
-    consumptionLogs: []
-  },
-  {
-    id: 'phm_med_catafast',
-    name: 'Catafast 50mg',
-    category: 'Analgesics & Anti-inflammatory',
-    currentStock: 10,
-    quantity: 10,
-    minStock: 3,
-    unit: 'sachets',
-    price: 65,
-    unitPrice: 65,
-    threshold: 3,
-    doseQty: 1,
-    dosage: '1 sachet dissolved in water after lunch',
-    schedules: ['after_lunch'],
-    reason: 'Acute joint pain & migraine relief',
-    prodDate: '2026-07-01',
-    expDate: '2027-11-30',
-    accountId: 'acc_cash_peter',
-    consumptionLogs: []
-  },
-  {
-    id: 'phm_med_neurobion',
-    name: 'Neurobion B12 Forte',
-    category: 'Vitamins & Injections',
-    currentStock: 6,
-    quantity: 6,
-    minStock: 2,
-    unit: 'ampules',
-    price: 85,
-    unitPrice: 85,
-    threshold: 2,
-    doseQty: 1,
-    dosage: '1 ampule IM injection weekly',
-    schedules: [],
-    reason: 'Peripheral nerve revitalization',
-    prodDate: '2026-08-01',
-    expDate: '2027-10-31',
-    accountId: 'acc_bank_peter',
-    consumptionLogs: []
-  },
-  {
-    id: 'phm_med_dolfen',
-    name: 'Dolfen 25mg',
-    category: 'Antipyretic & Analgesic',
-    currentStock: 5,
-    quantity: 5,
-    minStock: 2,
-    unit: 'suppositories',
-    price: 35,
-    unitPrice: 35,
-    threshold: 2,
-    doseQty: 1,
-    dosage: '1 suppository before bedtime as needed',
-    schedules: ['before_bed'],
-    reason: 'Rapid fever reduction',
-    prodDate: '2026-06-01',
-    expDate: '2027-08-31',
-    accountId: 'acc_cash_peter',
-    consumptionLogs: []
-  }
-];
-
-const MASTER_TRANSACTIONS = [
-  { id: 'tx_init_1', date: '2026-10-01', description: 'Direct Deposit Monthly Salary', category: 'Salary', type: 'income', amount: 4500.00, accountId: 'acc_bank_peter' },
-  { id: 'tx_init_2', date: '2026-10-02', description: 'Apartment Premium Rental Rent', category: 'Rent', type: 'expense', amount: 1200.00, accountId: 'acc_bank_peter' },
-  { id: 'tx_init_3', date: '2026-10-04', description: 'UI/UX Consulting & Systems Architecture', category: 'Freelance', type: 'income', amount: 850.00, accountId: 'acc_wallet_peter' },
-  { id: 'tx_init_4', date: '2026-10-05', description: 'Electricity & Fiber High-Speed Internet', category: 'Utilities', type: 'expense', amount: 240.00, accountId: 'acc_cash_peter' },
-  { id: 'exp_mnt_mnt_toyota_40k', date: '2026-10-15', category: 'Transportation', subcategory: 'Vehicle Maintenance', icon: '🚗', amount: 1300.00, description: 'Vehicle Maintenance: Toyota Corolla (ABC 1234) — 40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs', type: 'expense', accountId: 'acc_bank_peter', refType: 'maintenance', refId: 'mnt_toyota_40k' },
-  { id: 'exp_fuel_fuel_toyota_1', date: '2026-10-22', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 595.00, description: 'Vehicle Fuel: Toyota Corolla (ABC 1234) — 42.5L (Full tank - Octane 95)', type: 'expense', accountId: 'acc_bank_peter', refType: 'fuel', refId: 'fuel_toyota_1' },
-  { id: 'exp_fuel_fuel_elantra_1', date: '2026-10-25', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 560.00, description: 'Vehicle Fuel: Hyundai Elantra (XYZ 9876) — 40L (Weekly commute refill)', type: 'expense', accountId: 'acc_bank_peter', refType: 'fuel', refId: 'fuel_elantra_1' },
-  { id: 'exp_fuel_fuel_toyota_2', date: '2026-10-30', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 532.00, description: 'Vehicle Fuel: Toyota Corolla (ABC 1234) — 38L (Highway & City driving fill-up)', type: 'expense', accountId: 'acc_cash_peter', refType: 'fuel', refId: 'fuel_toyota_2' },
-  { id: 'exp_phm_omega', date: '2026-10-10', category: 'Medical', subcategory: 'Prescription Drugs', icon: '💊', amount: 320.00, description: 'Purchase: Omega-3 Fish Oil 1000mg', type: 'expense', accountId: 'acc_bank_peter', batchId: 'phm_med_omega' },
-  { id: 'exp_phm_panadol', date: '2026-10-12', category: 'Medical', subcategory: 'Prescription Drugs', icon: '💊', amount: 45.00, description: 'Purchase: Panadol Extra 500mg', type: 'expense', accountId: 'acc_cash_peter', batchId: 'phm_med_panadol' },
-  { id: 'exp_phm_magnesium', date: '2026-10-18', category: 'Medical', subcategory: 'Prescription Drugs', icon: '💊', amount: 280.00, description: 'Purchase: Magnesium Glycinate 400mg', type: 'expense', accountId: 'acc_bank_peter', batchId: 'phm_med_magnesium' },
-  { id: 'exp_phm_catafast', date: '2026-10-20', category: 'Medical', subcategory: 'Prescription Drugs', icon: '💊', amount: 65.00, description: 'Purchase: Catafast 50mg', type: 'expense', accountId: 'acc_cash_peter', batchId: 'phm_med_catafast' }
-];
-
-// Restore or Initialize shared-main-vault with the complete dataset
-const mainVault = db.vaults[DEFAULT_VAULT_ID];
-if (!mainVault || (mainVault.transactions.length === 0 && (!mainVault.pharmacyData || mainVault.pharmacyData.length === 0))) {
-  db.vaults[DEFAULT_VAULT_ID] = {
-    vaultId: DEFAULT_VAULT_ID,
-    updatedAt: new Date().toISOString(),
-    transactions: MASTER_TRANSACTIONS,
-    accounts: MASTER_ACCOUNTS,
-    accountTransfers: [],
-    stockData: MASTER_STOCK,
-    pharmacyData: MASTER_PHARMACY,
-    vehicles: MASTER_VEHICLES,
-    fuels: MASTER_FUELS,
-    maint: MASTER_MAINT,
-    budgetLimits: { income: 4500, expense: 2500 }
-  };
-  console.log(`[Database] Restored complete history, vehicles, pharmacy schedules, and audit register in ${DEFAULT_VAULT_ID}`);
-} else {
-  // If accounts are missing or vehicles missing, ensure complete records
-  if (!mainVault.accounts || mainVault.accounts.length === 0) mainVault.accounts = MASTER_ACCOUNTS;
-  if (!mainVault.vehicles || mainVault.vehicles.length === 0) mainVault.vehicles = MASTER_VEHICLES;
-  if (!mainVault.fuels || mainVault.fuels.length === 0) mainVault.fuels = MASTER_FUELS;
-  if (!mainVault.maint || mainVault.maint.length === 0) mainVault.maint = MASTER_MAINT;
-  if (!mainVault.stockData || mainVault.stockData.length === 0) mainVault.stockData = MASTER_STOCK;
-  if (!mainVault.pharmacyData || mainVault.pharmacyData.length === 0) mainVault.pharmacyData = MASTER_PHARMACY;
-  if (!mainVault.transactions || mainVault.transactions.length === 0) mainVault.transactions = MASTER_TRANSACTIONS;
-}
+db.vaults[DEFAULT_VAULT_ID] = {
+  vaultId: DEFAULT_VAULT_ID,
+  updatedAt: new Date().toISOString(),
+  transactions: [],
+  accounts: [
+    { id: 'acc_cash_peter', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
+    { id: 'acc_bank_peter', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
+  ],
+  accountTransfers: [],
+  stockData: [],
+  pharmacyData: [],
+  vehicles: [],
+  fuels: [],
+  maint: [],
+  budgetLimits: { income: 0, expense: 0 }
+};
 saveDatabase(db);
 
 // Rate Limiting Storage & Middleware
