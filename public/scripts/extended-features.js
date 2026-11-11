@@ -893,16 +893,89 @@
 
   const isDemoUser = () => {
     try {
+      if (typeof window.isDemoUser === 'function') return window.isDemoUser();
       if (localStorage.getItem('forecaster_is_demo') === 'true') return true;
       const u = JSON.parse(localStorage.getItem('forecaster_auth_user') || 'null');
-      if (u && (u.isDemo || u.email === 'demo@forecasterpro.com')) return true;
+      if (u && (u.isDemo || u.email === 'demo@forecasterpro.com' || u.vaultId === 'demo-showcase-vault')) return true;
+      const vaultId = localStorage.getItem('forecaster_active_vault_id') || '';
+      if (vaultId === 'demo-showcase-vault') return true;
     } catch (e) {}
     return false;
   };
 
   window.cleanDemoDataIfNonDemo = function() {
-    // Preserves legitimate user history, master admin records, and restored vehicle fleet
-    return;
+    if (isDemoUser()) return;
+    const demoVehIds = new Set(['veh_toyota_corolla', 'veh_hyundai_elantra']);
+    const demoPartIds = new Set(['part_engine_oil', 'part_oil_filter', 'part_brake_pads', 'stk_demo_1']);
+    const demoPharmacyIds = new Set(['phm_med_omega', 'phm_med_panadol', 'phm_med_magnesium', 'phm_med_catafast', 'phm_med_neurobion', 'phm_med_dolfen', 'stk_panadol']);
+    const demoTxnIds = new Set([
+      'tx_init_1', 'tx_init_2', 'tx_init_3', 'tx_init_4',
+      'tx_demo_1', 'tx_demo_2', 'tx_demo_3', 'tx_demo_4',
+      'exp_mnt_mnt_toyota_40k', 'exp_fuel_fuel_toyota_1', 'exp_fuel_fuel_toyota_2', 'exp_fuel_fuel_elantra_1',
+      'exp_phm_omega', 'exp_phm_panadol', 'exp_phm_magnesium', 'exp_phm_catafast'
+    ]);
+    const demoAccIds = new Set(['acc_cash_default', 'acc_bank_default', 'acc_wallet_default']);
+
+    let vehChanged = false;
+    if (Array.isArray(vehicles) && vehicles.some(v => v && demoVehIds.has(v.id))) {
+      vehicles = vehicles.filter(v => v && !demoVehIds.has(v.id));
+      vehChanged = true;
+    }
+    if (Array.isArray(fuels) && fuels.some(f => f && (f.id === 'fuel_toyota_1' || f.id === 'fuel_toyota_2' || f.id === 'fuel_elantra_1' || demoVehIds.has(f.vehicleId)))) {
+      fuels = fuels.filter(f => f && f.id !== 'fuel_toyota_1' && f.id !== 'fuel_toyota_2' && f.id !== 'fuel_elantra_1' && !demoVehIds.has(f.vehicleId));
+      vehChanged = true;
+    }
+    if (Array.isArray(maint) && maint.some(m => m && (m.id === 'mnt_toyota_40k' || demoVehIds.has(m.vehicleId)))) {
+      maint = maint.filter(m => m && m.id !== 'mnt_toyota_40k' && !demoVehIds.has(m.vehicleId));
+      vehChanged = true;
+    }
+    if (vehChanged) {
+      save();
+    }
+
+    let anyChanged = vehChanged;
+
+    if (Array.isArray(window.stockData) && window.stockData.some(p => p && demoPartIds.has(p.id))) {
+      window.stockData = window.stockData.filter(p => p && !demoPartIds.has(p.id));
+      localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+      anyChanged = true;
+    }
+
+    if (Array.isArray(window.pharmacyData) && window.pharmacyData.some(p => p && demoPharmacyIds.has(p.id))) {
+      window.pharmacyData = window.pharmacyData.filter(p => p && !demoPharmacyIds.has(p.id));
+      localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+      anyChanged = true;
+    }
+
+    if (Array.isArray(window.transactions) && window.transactions.some(t => t && (demoTxnIds.has(t.id) || demoVehIds.has(t.refId) || t.refId === 'mnt_toyota_40k' || t.refId === 'fuel_toyota_1' || t.refId === 'fuel_toyota_2' || t.refId === 'fuel_elantra_1'))) {
+      window.transactions = window.transactions.filter(t => t && !demoTxnIds.has(t.id) && !demoVehIds.has(t.refId) && t.refId !== 'mnt_toyota_40k' && t.refId !== 'fuel_toyota_1' && t.refId !== 'fuel_toyota_2' && t.refId !== 'fuel_elantra_1');
+      localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+      anyChanged = true;
+    }
+
+    if (Array.isArray(window.accounts) && window.accounts.some(a => a && demoAccIds.has(a.id))) {
+      window.accounts = window.accounts.filter(a => a && !demoAccIds.has(a.id));
+      if (window.accounts.length === 0) {
+        window.accounts = [
+          { id: 'acc_cash_clean', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
+          { id: 'acc_bank_clean', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
+        ];
+      }
+      localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+      anyChanged = true;
+    }
+
+    if (anyChanged) {
+      if (typeof window.populateAccountSelects === 'function') {
+        try { window.populateAccountSelects(); } catch (e) {}
+      }
+      if (typeof window.renderVehicleManagement === 'function') {
+        try { window.renderVehicleManagement(); } catch (e) {}
+      }
+      if (typeof window.renderAllViews === 'function') {
+        try { window.renderAllViews(); } catch (e) {}
+      }
+    }
   };
 
   const load = () => {
@@ -910,15 +983,19 @@
     try { fuels = JSON.parse(localStorage.getItem(VFU) || '[]'); } catch (e) { fuels = []; }
     try { maint = JSON.parse(localStorage.getItem(VMN) || '[]'); } catch (e) { maint = []; }
     
-    if (vehicles.length === 0) {
-      window.restoreRegisteredVehicles(false);
-    } else if (Array.isArray(window.stockData)) {
-      SEED_PARTS.forEach(sp => {
-        const existing = window.stockData.find(p => p.id === sp.id || (p.name && p.name.toLowerCase() === sp.name.toLowerCase()));
-        if (existing && !existing.lifespan) {
-          existing.lifespan = sp.lifespan;
-        }
-      });
+    if (isDemoUser()) {
+      if (vehicles.length === 0) {
+        window.restoreRegisteredVehicles(false);
+      } else if (Array.isArray(window.stockData)) {
+        SEED_PARTS.forEach(sp => {
+          const existing = window.stockData.find(p => p.id === sp.id || (p.name && p.name.toLowerCase() === sp.name.toLowerCase()));
+          if (existing && !existing.lifespan) {
+            existing.lifespan = sp.lifespan;
+          }
+        });
+      }
+    } else {
+      window.cleanDemoDataIfNonDemo();
     }
   };
   window.loadVehicleDatabase = load;

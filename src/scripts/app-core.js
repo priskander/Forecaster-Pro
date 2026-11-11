@@ -7,6 +7,18 @@
 (function() {
   'use strict';
 
+  // Global Demo Detection
+  window.isDemoUser = function() {
+    try {
+      if (localStorage.getItem('forecaster_is_demo') === 'true') return true;
+      const u = JSON.parse(localStorage.getItem('forecaster_auth_user') || 'null');
+      if (u && (u.isDemo === true || u.email === 'demo@forecasterpro.com' || u.vaultId === 'demo-showcase-vault')) return true;
+      const vaultId = localStorage.getItem('forecaster_active_vault_id') || '';
+      if (vaultId === 'demo-showcase-vault') return true;
+    } catch (e) {}
+    return false;
+  };
+
   // Core Data Stores
   window.transactions = [];
   window.stockData = [];
@@ -252,28 +264,29 @@
       }
     }
 
-    // Auto-restore complete master history if local database was cleared
-    if ((!window.transactions || window.transactions.length === 0) &&
-        (!window.stockData || window.stockData.length === 0) &&
-        (!window.pharmacyData || window.pharmacyData.length === 0)) {
-      window.stockData = JSON.parse(JSON.stringify(DEFAULT_MASTER_STOCK));
-      window.pharmacyData = JSON.parse(JSON.stringify(DEFAULT_MASTER_PHARMACY));
-      window.transactions = JSON.parse(JSON.stringify(DEFAULT_MASTER_TRANSACTIONS));
-      localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
-      localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
-      localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
-    } else {
-      if (!window.pharmacyData || window.pharmacyData.length === 0) {
-        window.pharmacyData = JSON.parse(JSON.stringify(DEFAULT_MASTER_PHARMACY));
-        localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
-      }
-      if (!window.stockData || window.stockData.length === 0) {
+    const isDemo = (typeof window.isDemoUser === 'function' ? window.isDemoUser() : false);
+
+    if (isDemo) {
+      // Auto-restore complete master history ONLY if running in interactive demo mode
+      if ((!window.transactions || window.transactions.length === 0) &&
+          (!window.stockData || window.stockData.length === 0) &&
+          (!window.pharmacyData || window.pharmacyData.length === 0)) {
         window.stockData = JSON.parse(JSON.stringify(DEFAULT_MASTER_STOCK));
-        localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
-      }
-      if (!window.transactions || window.transactions.length === 0) {
+        window.pharmacyData = JSON.parse(JSON.stringify(DEFAULT_MASTER_PHARMACY));
         window.transactions = JSON.parse(JSON.stringify(DEFAULT_MASTER_TRANSACTIONS));
+        localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+        localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
         localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+      }
+    } else {
+      // Clean non-demo accounts: Never auto-seed forged demo records into a real user workspace!
+      if (!Array.isArray(window.transactions)) window.transactions = [];
+      if (!Array.isArray(window.stockData)) window.stockData = [];
+      if (!Array.isArray(window.pharmacyData)) window.pharmacyData = [];
+
+      // Automatically purge any demo data that might have leaked into non-demo localStorage
+      if (typeof window.cleanDemoDataIfNonDemo === 'function') {
+        window.cleanDemoDataIfNonDemo();
       }
     }
 
@@ -281,7 +294,7 @@
     if (storedLimits) {
       window.budgetLimits = JSON.parse(storedLimits);
     } else {
-      window.budgetLimits = { income: 4500, expense: 2500 };
+      window.budgetLimits = isDemo ? { income: 4500, expense: 2500 } : { income: 0, expense: 0 };
     }
 
     // Load Payment Accounts
@@ -296,7 +309,14 @@
       window.accounts = [];
     }
     if (!Array.isArray(window.accounts) || window.accounts.length === 0) {
-      window.accounts = JSON.parse(JSON.stringify(DEFAULT_MASTER_ACCOUNTS));
+      if (isDemo) {
+        window.accounts = JSON.parse(JSON.stringify(DEFAULT_MASTER_ACCOUNTS));
+      } else {
+        window.accounts = [
+          { id: 'acc_cash_clean', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
+          { id: 'acc_bank_clean', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
+        ];
+      }
       localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
     }
 

@@ -806,22 +806,45 @@ db.vaults[DEMO_VAULT_ID] = {
 // 2. Default & Master Administrator Vault (shared-main-vault) for Peter W. Badir (100% Clean First-Time Use Account)
 const DEFAULT_VAULT_ID = 'shared-main-vault';
 
-db.vaults[DEFAULT_VAULT_ID] = {
-  vaultId: DEFAULT_VAULT_ID,
-  updatedAt: new Date().toISOString(),
-  transactions: [],
-  accounts: [
-    { id: 'acc_cash_peter', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
-    { id: 'acc_bank_peter', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
-  ],
-  accountTransfers: [],
-  stockData: [],
-  pharmacyData: [],
-  vehicles: [],
-  fuels: [],
-  maint: [],
-  budgetLimits: { income: 0, expense: 0 }
-};
+const DEMO_SEED_IDS = new Set([
+  'veh_toyota_corolla', 'veh_hyundai_elantra',
+  'fuel_toyota_1', 'fuel_toyota_2', 'fuel_elantra_1',
+  'mnt_toyota_40k',
+  'part_engine_oil', 'part_oil_filter', 'part_brake_pads', 'stk_demo_1',
+  'phm_med_omega', 'phm_med_panadol', 'phm_med_magnesium', 'phm_med_catafast', 'phm_med_neurobion', 'phm_med_dolfen', 'stk_panadol',
+  'tx_init_1', 'tx_init_2', 'tx_init_3', 'tx_init_4', 'tx_init_5', 'tx_init_6', 'tx_init_7', 'tx_init_8',
+  'tx_demo_1', 'tx_demo_2', 'tx_demo_3', 'tx_demo_4',
+  'exp_mnt_mnt_toyota_40k', 'exp_fuel_fuel_toyota_1', 'exp_fuel_fuel_toyota_2', 'exp_fuel_fuel_elantra_1',
+  'exp_phm_omega', 'exp_phm_panadol', 'exp_phm_magnesium', 'exp_phm_catafast'
+]);
+
+if (!db.vaults[DEFAULT_VAULT_ID]) {
+  db.vaults[DEFAULT_VAULT_ID] = {
+    vaultId: DEFAULT_VAULT_ID,
+    updatedAt: new Date().toISOString(),
+    transactions: [],
+    accounts: [
+      { id: 'acc_cash_peter', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
+      { id: 'acc_bank_peter', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
+    ],
+    accountTransfers: [],
+    stockData: [],
+    pharmacyData: [],
+    vehicles: [],
+    fuels: [],
+    maint: [],
+    budgetLimits: { income: 0, expense: 0 }
+  };
+} else {
+  // Ensure non-demo primary vault never retains forged demo records
+  const v = db.vaults[DEFAULT_VAULT_ID];
+  if (Array.isArray(v.transactions)) v.transactions = v.transactions.filter((t: any) => t && !DEMO_SEED_IDS.has(t.id));
+  if (Array.isArray(v.vehicles)) v.vehicles = v.vehicles.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
+  if (Array.isArray(v.fuels)) v.fuels = v.fuels.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
+  if (Array.isArray(v.maint)) v.maint = v.maint.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
+  if (Array.isArray(v.stockData)) v.stockData = v.stockData.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
+  if (Array.isArray(v.pharmacyData)) v.pharmacyData = v.pharmacyData.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
+}
 saveDatabase(db);
 
 // Rate Limiting Storage & Middleware
@@ -1969,12 +1992,36 @@ async function startServer() {
     }
 
     // Authoritative sync from active client state so deletions persist
+    const isDemoVault = vaultId === 'demo-showcase-vault';
+    const sanitizeNonDemo = <T extends { id?: string; refId?: string; vehicleId?: string }>(items: T[]): T[] => {
+      if (isDemoVault || !Array.isArray(items)) return items;
+      return items.filter(item => {
+        if (!item) return false;
+        if (item.id && DEMO_SEED_IDS.has(item.id)) return false;
+        if (item.refId && (DEMO_SEED_IDS.has(item.refId) || item.refId === 'mnt_toyota_40k' || item.refId === 'veh_toyota_corolla' || item.refId === 'veh_hyundai_elantra')) return false;
+        if (item.vehicleId && DEMO_SEED_IDS.has(item.vehicleId)) return false;
+        return true;
+      });
+    };
+
     if (Array.isArray(incoming.transactions)) {
-      current.transactions = incoming.transactions;
+      current.transactions = sanitizeNonDemo(incoming.transactions);
     }
 
     if (Array.isArray(incoming.accounts)) {
-      current.accounts = incoming.accounts;
+      if (isDemoVault) {
+        current.accounts = incoming.accounts;
+      } else {
+        const demoAccIds = new Set(['acc_cash_default', 'acc_bank_default', 'acc_wallet_default']);
+        let filtered = incoming.accounts.filter((a: any) => a && !demoAccIds.has(a.id));
+        if (filtered.length === 0) {
+          filtered = [
+            { id: 'acc_cash_clean', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
+            { id: 'acc_bank_clean', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
+          ];
+        }
+        current.accounts = filtered;
+      }
     }
 
     if (Array.isArray(incoming.accountTransfers)) {
@@ -1986,11 +2033,11 @@ async function startServer() {
     if (incoming.allocationsMonth !== undefined) current.allocationsMonth = incoming.allocationsMonth;
     if (Array.isArray(incoming.customCategories)) current.customCategories = incoming.customCategories;
     if (Array.isArray(incoming.customSubcategories)) current.customSubcategories = incoming.customSubcategories;
-    if (Array.isArray(incoming.stockData)) current.stockData = incoming.stockData;
-    if (Array.isArray(incoming.pharmacyData)) current.pharmacyData = incoming.pharmacyData;
-    if (Array.isArray(incoming.vehicles)) current.vehicles = incoming.vehicles;
-    if (Array.isArray(incoming.fuels)) current.fuels = incoming.fuels;
-    if (Array.isArray(incoming.maint)) current.maint = incoming.maint;
+    if (Array.isArray(incoming.stockData)) current.stockData = sanitizeNonDemo(incoming.stockData);
+    if (Array.isArray(incoming.pharmacyData)) current.pharmacyData = sanitizeNonDemo(incoming.pharmacyData);
+    if (Array.isArray(incoming.vehicles)) current.vehicles = sanitizeNonDemo(incoming.vehicles);
+    if (Array.isArray(incoming.fuels)) current.fuels = sanitizeNonDemo(incoming.fuels);
+    if (Array.isArray(incoming.maint)) current.maint = sanitizeNonDemo(incoming.maint);
     if (Array.isArray(incoming.rentalProperties)) current.rentalProperties = incoming.rentalProperties;
     if (Array.isArray(incoming.rentalContracts)) current.rentalContracts = incoming.rentalContracts;
     if (Array.isArray(incoming.rentalNotifications)) current.rentalNotifications = incoming.rentalNotifications;

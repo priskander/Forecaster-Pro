@@ -588,6 +588,9 @@
     },
 
     init: function() {
+      if (typeof window.cleanDemoDataIfNonDemo === 'function') {
+        window.cleanDemoDataIfNonDemo();
+      }
       this.updateUI(false);
       // Run initial cloud pull/sync on startup
       setTimeout(() => {
