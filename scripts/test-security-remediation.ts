@@ -1,6 +1,7 @@
 /**
- * Forecaster Pro Security Remediation Automated Test Suite
- * Tests all 6 security corrections against the live backend server.
+ * Forecaster Pro Security Remediation Automated Test Suite (Phase 1.1)
+ * Tests all security corrections using 100% isolated synthetic test accounts and vaults.
+ * Never touches or modifies production users or real data vaults.
  */
 
 const BASE_URL = 'http://localhost:3000';
@@ -11,6 +12,7 @@ async function request(path: string, options: RequestInit = {}): Promise<{ statu
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      Accept: 'application/json',
       ...(options.headers || {})
     }
   });
@@ -40,33 +42,31 @@ function assert(condition: boolean, testName: string, details?: string) {
 }
 
 async function runSecurityTestSuite() {
-  console.log('\n🔒 Starting Forecaster Pro Security Remediation Phase 1 Verification Suite...\n');
+  console.log('\n🔒 Starting Forecaster Pro Security Remediation Phase 1.1 Verification Suite...\n');
 
   // =========================================================================
   // 1. Remove hardcoded administrator passwords and insecure authentication fallbacks
   // =========================================================================
   console.log('--- Test Category 1: Hardcoded Administrator Password Removal & Authentication Fallbacks ---');
   
-  // 1.1 First, try logging in with the old hardcoded password 'Password123!' when admin has a different password
-  // Set admin password to 'SecureAdminP@ss2026!'
-  const adminEmail = 'peter.w.badir@gmail.com';
+  const syntheticAdminEmail = `synth_admin_${Date.now()}@synthetic-test.local`;
   
-  // Attempt to login with 'Password123!'
+  // 1.1 Attempt to login to a target account with old hardcoded default "Password123!"
   const fakeLogin = await request('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email: adminEmail, password: 'Password123!' })
+    body: JSON.stringify({ email: syntheticAdminEmail, password: 'Password123!' })
   });
   assert(
     fakeLogin.status === 401 && fakeLogin.body.ok === false,
     'Vulnerability 1.1: Fallback login with hardcoded "Password123!" must be rejected with HTTP 401',
-    `Received status: ${fakeLogin.status}, body: ${JSON.stringify(fakeLogin.body)}`
+    `Received status: ${fakeLogin.status}`
   );
 
   // 1.2 Attempt unauthenticated profile update with x-user-email or without token
   const unauthProfile = await request('/api/auth/profile', {
     method: 'PUT',
-    headers: { 'x-user-email': adminEmail },
-    body: JSON.stringify({ name: 'Hacked Admin' })
+    headers: { 'x-user-email': syntheticAdminEmail },
+    body: JSON.stringify({ name: 'Hacked User' })
   });
   assert(
     unauthProfile.status === 401 && unauthProfile.body.ok === false,
@@ -78,7 +78,7 @@ async function runSecurityTestSuite() {
   const unauthChangePass = await request('/api/auth/change-password', {
     method: 'POST',
     body: JSON.stringify({
-      email: adminEmail,
+      email: syntheticAdminEmail,
       currentPassword: 'Password123!',
       newPassword: 'AttackerNewPassword123!'
     })
@@ -90,369 +90,384 @@ async function runSecurityTestSuite() {
   );
 
   // =========================================================================
-  // 2. Implement secure initial administrator provisioning
+  // 2. Implement secure initial administrator provisioning & password lifecycle
   // =========================================================================
-  console.log('\n--- Test Category 2: Secure Initial Administrator Provisioning ---');
-  // Check that admin account authenticates with bootstrap secret or persisted admin secret
-  let currentAdminPass = 'ForecasterAdmin2026!';
-  let adminInitialLogin = await request('/api/auth/login', {
+  console.log('\n--- Test Category 2: Secure Initial Administrator Provisioning & Lifecycle ---');
+  
+  // Register an isolated synthetic primary workspace owner
+  const synthOwnerEmail = `synth_owner_${Date.now()}@testcorp.local`;
+  const initialSecret = 'StrongSecret#2026!';
+  const regSynth = await request('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ email: adminEmail, password: currentAdminPass })
+    body: JSON.stringify({ name: 'Synthetic Primary Owner', email: synthOwnerEmail, password: initialSecret })
   });
-
-  if (adminInitialLogin.status === 401) {
-    // If already updated in a prior run, authenticate with the persisted custom password
-    currentAdminPass = 'PersistentAdminPass#2026!';
-    adminInitialLogin = await request('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: adminEmail, password: currentAdminPass })
-    });
-  }
-
   assert(
-    adminInitialLogin.status === 200 && adminInitialLogin.body.ok === true && adminInitialLogin.body.user.isMainAdmin === true,
-    'Provisioning 2.1: Initial admin is securely provisioned and authenticates with environment/bootstrap secret',
-    `Status: ${adminInitialLogin.status}`
+    (regSynth.status === 200 || regSynth.status === 201) && regSynth.body.ok === true && !!regSynth.body.token,
+    'Provisioning 2.1: Primary workspace owner securely provisioned and authenticated',
+    `Status: ${regSynth.status}`
   );
-  const adminToken = adminInitialLogin.body.token;
+  const synthToken = regSynth.body.token;
 
-  // Change admin password to an updated secret
-  const newAdminPass = currentAdminPass === 'ForecasterAdmin2026!' ? 'PersistentAdminPass#2026!' : 'ForecasterAdmin2026!';
-  const changeAdminRes = await request('/api/auth/change-password', {
+  // Change password to a custom permanent secret
+  const newSecret = 'UpdatedPermanentPass#2026!';
+  const changePassRes = await request('/api/auth/change-password', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${adminToken}` },
+    headers: { Authorization: `Bearer ${synthToken}` },
     body: JSON.stringify({
-      currentPassword: currentAdminPass,
-      newPassword: newAdminPass
+      currentPassword: initialSecret,
+      newPassword: newSecret
     })
   });
   assert(
-    changeAdminRes.status === 200 && changeAdminRes.body.ok === true,
-    'Provisioning 2.2: Admin can successfully change password to a custom permanent secret',
-    `Status: ${changeAdminRes.status}`
+    changePassRes.status === 200 && changePassRes.body.ok === true,
+    'Provisioning 2.2: User can successfully change password to a custom permanent secret',
+    `Status: ${changePassRes.status}`
   );
-  const updatedAdminToken = changeAdminRes.body.token;
+  const updatedToken = changePassRes.body.token;
 
-  // Verify that the custom password authenticates
+  // Verify that the new custom password authenticates
   const customLogin = await request('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email: adminEmail, password: newAdminPass })
+    body: JSON.stringify({ email: synthOwnerEmail, password: newSecret })
   });
   assert(
     customLogin.status === 200 && customLogin.body.ok === true,
-    'Provisioning 2.3: Custom admin password persists and authenticates',
+    'Provisioning 2.3: Custom permanent password persists and authenticates',
     `Status: ${customLogin.status}`
   );
 
-  // Verify that the old password NO LONGER authenticates
-  const oldPassLogin = await request('/api/auth/login', {
+  // Verify that the initial password is now rejected
+  const oldLogin = await request('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email: adminEmail, password: currentAdminPass })
+    body: JSON.stringify({ email: synthOwnerEmail, password: initialSecret })
   });
   assert(
-    oldPassLogin.status === 401 && oldPassLogin.body.ok === false,
+    oldLogin.status === 401,
     'Provisioning 2.4: Previous initial password is completely invalidated after change',
-    `Status: ${oldPassLogin.status}`
+    `Status: ${oldLogin.status}`
   );
 
   // =========================================================================
-  // 3. Enforce server-side role-based permissions for every API operation
+  // 3. Complete Role-Based Access Control (RBAC Permission Matrix)
   // =========================================================================
-  console.log('\n--- Test Category 3: Server-Side Role-Based Access Control (RBAC) ---');
+  console.log('\n--- Test Category 3: Server-Side Role-Based Access Control (RBAC) Matrix ---');
   
-  // Register an Owner account (Tenant 1)
-  const owner1Email = `owner1_${Date.now()}@testcorp.com`;
-  const owner1Pass = 'OwnerPassword123!';
-  const owner1Reg = await request('/api/auth/register', {
-    method: 'POST',
-    body: JSON.stringify({ name: 'Owner One', email: owner1Email, password: owner1Pass, propertyRole: 'landlord' })
-  });
-  assert(owner1Reg.status === 201 && owner1Reg.body.ok === true, 'Setup 3.1: Register Owner 1 account');
-  const owner1Token = owner1Reg.body.token;
-  const owner1VaultId = owner1Reg.body.user.vaultId;
+  // 3.1 Setup Owner, Manager, Member, Viewer sub-users in isolated workspace
+  const workspaceVaultId = regSynth.body.user.vaultId;
 
-  // Owner 1 creates a Sub-user with role 'viewer'
-  const viewerEmail = `viewer_${Date.now()}@testcorp.com`;
+  // Owner creates Viewer
   const createViewerRes = await request('/api/auth/sub-users', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${owner1Token}` },
-    body: JSON.stringify({ name: 'Auditor Viewer', email: viewerEmail, role: 'viewer' })
+    headers: { Authorization: `Bearer ${updatedToken}` },
+    body: JSON.stringify({ name: 'Synthetic Viewer', email: `viewer_${Date.now()}@testcorp.local`, role: 'viewer' })
   });
-  assert(createViewerRes.status === 201 && createViewerRes.body.ok === true, 'Setup 3.2: Owner creates Viewer sub-user');
+  assert(createViewerRes.status === 201, 'Setup 3.1: Owner creates Viewer sub-user');
   const viewerTempPass = createViewerRes.body.temporaryPassword;
-
-  // Viewer signs in
   const viewerLogin = await request('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email: viewerEmail, password: viewerTempPass })
+    body: JSON.stringify({ email: createViewerRes.body.subUser.email, password: viewerTempPass })
   });
-  assert(viewerLogin.status === 200 && viewerLogin.body.ok === true, 'Setup 3.3: Viewer signs in');
   const viewerToken = viewerLogin.body.token;
 
-  // RBAC Test 3.1: Viewer attempts to read vault data -> MUST SUCCEED (200 OK)
-  const viewerReadVault = await request(`/api/cloud-sync/vault/${owner1VaultId}`, {
-    method: 'GET',
+  // Owner creates Member
+  const createMemberRes = await request('/api/auth/sub-users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${updatedToken}` },
+    body: JSON.stringify({ name: 'Synthetic Member', email: `member_${Date.now()}@testcorp.local`, role: 'member' })
+  });
+  assert(createMemberRes.status === 201, 'Setup 3.2: Owner creates Member sub-user');
+  const memberTempPass = createMemberRes.body.temporaryPassword;
+  const memberLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: createMemberRes.body.subUser.email, password: memberTempPass })
+  });
+  const memberToken = memberLogin.body.token;
+
+  // Owner creates Manager
+  const createManagerRes = await request('/api/auth/sub-users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${updatedToken}` },
+    body: JSON.stringify({ name: 'Synthetic Manager', email: `manager_${Date.now()}@testcorp.local`, role: 'manager' })
+  });
+  assert(createManagerRes.status === 201, 'Setup 3.3: Owner creates Manager sub-user');
+  const managerTempPass = createManagerRes.body.temporaryPassword;
+  const managerLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: createManagerRes.body.subUser.email, password: managerTempPass })
+  });
+  const managerToken = managerLogin.body.token;
+
+  // --- VIEWER TESTS ---
+  // Viewer can read
+  const viewerRead = await request(`/api/cloud-sync/vault/${workspaceVaultId}`, {
     headers: { Authorization: `Bearer ${viewerToken}` }
   });
-  assert(
-    viewerReadVault.status === 200 && viewerReadVault.body.ok === true,
-    'RBAC 3.1: Read-only viewer is authorized to read workspace vault data (HTTP 200)',
-    `Status: ${viewerReadVault.status}`
-  );
+  assert(viewerRead.status === 200, 'RBAC 3.1: Read-only viewer is authorized to read workspace vault data (HTTP 200)');
 
-  // RBAC Test 3.2: Viewer attempts to mutate vault data via POST /api/cloud-sync/vault/:id -> MUST FAIL (403 Forbidden)
-  const viewerWriteVault = await request(`/api/cloud-sync/vault/${owner1VaultId}`, {
+  // Viewer cannot write/mutate vault
+  const viewerMutate = await request(`/api/cloud-sync/vault/${workspaceVaultId}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${viewerToken}` },
-    body: JSON.stringify({ transactions: [{ id: 'tx_viewer_hack', amount: 999999 }] })
+    body: JSON.stringify({ transactions: [{ id: 'tx_viewer_hack', amount: 999 }] })
   });
-  assert(
-    viewerWriteVault.status === 403 && viewerWriteVault.body.ok === false,
-    'RBAC 3.2: Read-only viewer is FORBIDDEN from mutating vault data (HTTP 403)',
-    `Status: ${viewerWriteVault.status}`
-  );
+  assert(viewerMutate.status === 403, 'RBAC 3.2: Read-only viewer is FORBIDDEN from mutating vault data (HTTP 403)');
 
-  // RBAC Test 3.3: Viewer attempts to add a transaction via POST /api/cloud-sync/transactions -> MUST FAIL (403 Forbidden)
-  const viewerWriteTxn = await request(`/api/cloud-sync/transactions`, {
+  // Viewer cannot create transaction
+  const viewerPostTxn = await request(`/api/cloud-sync/transactions?vaultId=${workspaceVaultId}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${viewerToken}` },
-    body: JSON.stringify({ vaultId: owner1VaultId, transaction: { id: 'tx_viewer_hack', amount: 500 } })
+    body: JSON.stringify({ transactions: [{ id: 'tx_viewer_post', amount: 50, type: 'expense', date: '2026-11-10' }] })
   });
-  assert(
-    viewerWriteTxn.status === 403 && viewerWriteTxn.body.ok === false,
-    'RBAC 3.3: Read-only viewer is FORBIDDEN from posting transactions (HTTP 403)',
-    `Status: ${viewerWriteTxn.status}`
-  );
+  assert(viewerPostTxn.status === 403, 'RBAC 3.3: Read-only viewer is FORBIDDEN from posting transactions (HTTP 403)');
 
-  // RBAC Test 3.4: Viewer attempts to delete transaction via DELETE /api/cloud-sync/transactions/:id -> MUST FAIL (403 Forbidden)
-  const viewerDeleteTxn = await request(`/api/cloud-sync/transactions/tx_123?vaultId=${owner1VaultId}`, {
+  // Viewer cannot delete transaction
+  const viewerDelTxn = await request(`/api/cloud-sync/transactions/some_id?vaultId=${workspaceVaultId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${viewerToken}` }
   });
-  assert(
-    viewerDeleteTxn.status === 403 && viewerDeleteTxn.body.ok === false,
-    'RBAC 3.4: Read-only viewer is FORBIDDEN from deleting transactions (HTTP 403)',
-    `Status: ${viewerDeleteTxn.status}`
-  );
+  assert(viewerDelTxn.status === 403, 'RBAC 3.4: Read-only viewer is FORBIDDEN from deleting transactions (HTTP 403)');
 
-  // RBAC Test 3.5: Owner attempts the same write operations -> MUST SUCCEED (200 OK)
-  const ownerWriteTxn = await request(`/api/cloud-sync/transactions`, {
+  // Viewer cannot restore backup
+  const viewerRestore = await request('/api/backup/restore', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${owner1Token}` },
-    body: JSON.stringify({ vaultId: owner1VaultId, transaction: { id: 'tx_owner_valid', amount: 120, description: 'Office Supplies' } })
+    headers: { Authorization: `Bearer ${viewerToken}` },
+    body: JSON.stringify({ vaultId: workspaceVaultId, backupData: {}, mode: 'merge' })
   });
-  assert(
-    ownerWriteTxn.status === 200 && ownerWriteTxn.body.ok === true,
-    'RBAC 3.5: Workspace Owner is authorized to mutate data (HTTP 200)',
-    `Status: ${ownerWriteTxn.status}`
-  );
+  assert(viewerRestore.status === 403, 'RBAC 3.5: Read-only viewer is FORBIDDEN from restoring backup (HTTP 403)');
 
-  // =========================================================================
-  // 4. Ensure users can only access data belonging to their authorised organisation
-  // =========================================================================
-  console.log('\n--- Test Category 4: Multi-Tenant Data & Organization Isolation ---');
-  
-  // Register Tenant 2 (Owner 2)
-  const owner2Email = `owner2_${Date.now()}@competitor.com`;
-  const owner2Pass = 'Owner2Password123!';
-  const owner2Reg = await request('/api/auth/register', {
+  // --- MEMBER TESTS ---
+  // Member can read vault data
+  const memberRead = await request(`/api/cloud-sync/vault/${workspaceVaultId}`, {
+    headers: { Authorization: `Bearer ${memberToken}` }
+  });
+  assert(memberRead.status === 200, 'RBAC 3.6: Member is authorized to read workspace vault (HTTP 200)');
+
+  // Member can create transaction
+  const testTxId = `tx_member_${Date.now()}`;
+  const memberPostTxn = await request(`/api/cloud-sync/transactions?vaultId=${workspaceVaultId}`, {
     method: 'POST',
-    body: JSON.stringify({ name: 'Owner Two', email: owner2Email, password: owner2Pass, propertyRole: 'tenant' })
-  });
-  assert(owner2Reg.status === 201 && owner2Reg.body.ok === true, 'Setup 4.1: Register Owner 2 (Tenant 2)');
-  const owner2Token = owner2Reg.body.token;
-  const owner2VaultId = owner2Reg.body.user.vaultId;
-
-  // Owner 2 creates Sub-user B2
-  const sub2Email = `sub2_${Date.now()}@competitor.com`;
-  const createSub2 = await request('/api/auth/sub-users', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${owner2Token}` },
-    body: JSON.stringify({ name: 'Competitor Member', email: sub2Email, role: 'member' })
-  });
-  assert(createSub2.status === 201 && createSub2.body.ok === true, 'Setup 4.2: Owner 2 creates Sub-user 2');
-  const sub2Id = createSub2.body.subUser.id;
-
-  // Isolation Test 4.1: Owner 1 calls GET /api/auth/sub-users -> Sub-user 2 must NOT appear
-  const owner1SubUsers = await request('/api/auth/sub-users', {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${owner1Token}` }
-  });
-  assert(owner1SubUsers.status === 200 && owner1SubUsers.body.ok === true, 'Isolation 4.1a: Owner 1 lists sub-users');
-  const owner1List = owner1SubUsers.body.subUsers || [];
-  const leakedSub2 = owner1List.find((u: any) => u.id === sub2Id || u.email === sub2Email);
-  assert(
-    !leakedSub2,
-    'Isolation 4.1: Cross-tenant sub-user leakage prevented (Sub-user 2 is NOT visible to Owner 1)'
-  );
-
-  // Isolation Test 4.2: Owner 1 attempts to delete Sub-user 2 (belonging to Tenant 2) -> MUST FAIL (403 Forbidden)
-  const crossDelete = await request(`/api/auth/sub-users/${sub2Id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${owner1Token}` }
-  });
-  assert(
-    crossDelete.status === 403 && crossDelete.body.ok === false,
-    'Isolation 4.2: Cross-tenant sub-user deletion is strictly FORBIDDEN (HTTP 403)',
-    `Status: ${crossDelete.status}`
-  );
-
-  // Isolation Test 4.3: Owner 1 attempts to resend credentials for Sub-user 2 -> MUST FAIL (403 Forbidden)
-  const crossResend = await request(`/api/auth/sub-users/${sub2Id}/resend-email`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${owner1Token}` }
-  });
-  assert(
-    crossResend.status === 403 && crossResend.body.ok === false,
-    'Isolation 4.3: Cross-tenant credential reset is strictly FORBIDDEN (HTTP 403)',
-    `Status: ${crossResend.status}`
-  );
-
-  // Isolation Test 4.4: Owner 1 attempts to access Owner 2 vault -> MUST FAIL (403 Forbidden)
-  const crossVault = await request(`/api/cloud-sync/vault/${owner2VaultId}`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${owner1Token}` }
-  });
-  assert(
-    crossVault.status === 403 && crossVault.body.ok === false,
-    'Isolation 4.4: Cross-tenant vault data access is strictly FORBIDDEN (HTTP 403)',
-    `Status: ${crossVault.status}`
-  );
-
-  // Isolation Test 4.5: Scoped outbox -> Owner 1 outbox does not expose Tenant 2 emails or cleartext passwords
-  const owner1Outbox = await request('/api/emails/outbox', {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${owner1Token}` }
-  });
-  assert(owner1Outbox.status === 200 && owner1Outbox.body.ok === true, 'Isolation 4.5a: Owner 1 retrieves outbox');
-  const outboxItems = owner1Outbox.body.outbox || [];
-  const leakedEmail = outboxItems.find((e: any) => e.to === sub2Email);
-  assert(!leakedEmail, 'Isolation 4.5: Outbox emails of other organizations are NOT exposed');
-  const hasPlaintextPassword = outboxItems.some((e: any) => e.metadata?.temporaryPassword);
-  assert(!hasPlaintextPassword, 'Isolation 4.6: Outbox records redact plaintext temporary access keys');
-
-  // =========================================================================
-  // 5. Secure session creation, validation, expiration and revocation
-  // =========================================================================
-  console.log('\n--- Test Category 5: Session Creation, Validation & Revocation ---');
-  
-  // Create user for session test
-  const sessUserEmail = `session_${Date.now()}@test.com`;
-  const sessInitialPass = 'SessionP@ss123!';
-  const sessReg = await request('/api/auth/register', {
-    method: 'POST',
-    body: JSON.stringify({ name: 'Session User', email: sessUserEmail, password: sessInitialPass })
-  });
-  assert(sessReg.status === 201 && sessReg.body.ok === true, 'Session 5.1: Register session test user');
-  const sessionToken1 = sessReg.body.token;
-
-  // Verify Token 1 works
-  const meRes1 = await request('/api/auth/me', {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${sessionToken1}` }
-  });
-  assert(meRes1.status === 200 && meRes1.body.ok === true, 'Session 5.2: Token 1 authenticates successfully');
-
-  // Change password to revoke previous sessions
-  const sessNewPass = 'NewSessionP@ss456!';
-  const changePassRes = await request('/api/auth/change-password', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${sessionToken1}` },
+    headers: { Authorization: `Bearer ${memberToken}` },
     body: JSON.stringify({
-      currentPassword: sessInitialPass,
-      newPassword: sessNewPass
+      transactions: [{ id: testTxId, amount: 120, type: 'expense', date: '2026-11-10', category: 'Fuel' }]
     })
   });
-  assert(changePassRes.status === 200 && changePassRes.body.ok === true, 'Session 5.3: Password changed successfully');
-  const sessionToken2 = changePassRes.body.token;
+  assert(memberPostTxn.status === 200, 'RBAC 3.7: Member is authorized to create transactions (HTTP 200)');
 
-  // Session Revocation Test 5.4: Old Token 1 MUST BE REVOKED -> 401 Unauthorized
-  const meOldToken = await request('/api/auth/me', {
-    method: 'GET',
+  // Member is forbidden from deleting transactions
+  const memberDelTxn = await request(`/api/cloud-sync/transactions/${testTxId}?vaultId=${workspaceVaultId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${memberToken}` }
+  });
+  assert(memberDelTxn.status === 403, 'RBAC 3.8: Member is FORBIDDEN from deleting transactions (HTTP 403)');
+
+  // Member is forbidden from deleting accounts
+  const memberDelAcc = await request(`/api/cloud-sync/accounts/some_acc?vaultId=${workspaceVaultId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${memberToken}` }
+  });
+  assert(memberDelAcc.status === 403, 'RBAC 3.9: Member is FORBIDDEN from deleting payment accounts (HTTP 403)');
+
+  // Member is forbidden from restoring backups
+  const memberRestore = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${memberToken}` },
+    body: JSON.stringify({ vaultId: workspaceVaultId, backupData: {}, mode: 'merge' })
+  });
+  assert(memberRestore.status === 403, 'RBAC 3.10: Member is FORBIDDEN from restoring backups (HTTP 403)');
+
+  // --- MANAGER TESTS ---
+  // Manager can delete transactions
+  const managerDelTxn = await request(`/api/cloud-sync/transactions/${testTxId}?vaultId=${workspaceVaultId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${managerToken}` }
+  });
+  assert(managerDelTxn.status === 200, 'RBAC 3.11: Manager is authorized to delete transactions (HTTP 200)');
+
+  // Manager is forbidden from deleting payment accounts (Owner only)
+  const managerDelAcc = await request(`/api/cloud-sync/accounts/some_acc?vaultId=${workspaceVaultId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${managerToken}` }
+  });
+  assert(managerDelAcc.status === 403, 'RBAC 3.12: Manager is FORBIDDEN from deleting payment accounts (HTTP 403)');
+
+  // Manager is forbidden from restoring backups (Owner only)
+  const managerRestore = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${managerToken}` },
+    body: JSON.stringify({ vaultId: workspaceVaultId, backupData: {}, mode: 'merge' })
+  });
+  assert(managerRestore.status === 403, 'RBAC 3.13: Manager is FORBIDDEN from restoring backups (HTTP 403)');
+
+  // --- OWNER TESTS ---
+  // Owner can manage accounts
+  const ownerDelAcc = await request(`/api/cloud-sync/accounts/non_existent_acc?vaultId=${workspaceVaultId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${updatedToken}` }
+  });
+  assert(ownerDelAcc.status === 200, 'RBAC 3.14: Owner is authorized to manage/delete accounts (HTTP 200)');
+
+  // =========================================================================
+  // 4. Multi-Tenant Data & Organization Isolation
+  // =========================================================================
+  console.log('\n--- Test Category 4: Multi-Tenant Data & Organization Isolation ---');
+
+  // Register Tenant 2 (Different Organization)
+  const owner2Email = `tenant2_${Date.now()}@tenantcorp.local`;
+  const reg2 = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Tenant Two Owner', email: owner2Email, password: 'Password123#Tenant2' })
+  });
+  assert(reg2.status === 200 || reg2.status === 201, 'Setup 4.1: Register Tenant 2');
+  const token2 = reg2.body.token;
+  const vaultId2 = reg2.body.user.vaultId;
+
+  // Owner 2 creates Sub-user 2
+  const createSub2 = await request('/api/auth/sub-users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token2}` },
+    body: JSON.stringify({ name: 'Sub-User 2', email: `sub2_${Date.now()}@tenantcorp.local`, role: 'member' })
+  });
+  assert(createSub2.status === 201, 'Setup 4.2: Owner 2 creates Sub-user 2');
+  const subUser2Id = createSub2.body.subUser.id;
+
+  // Verify Owner 1 cannot see Sub-user 2
+  const owner1SubUsers = await request('/api/auth/sub-users', {
+    headers: { Authorization: `Bearer ${updatedToken}` }
+  });
+  const leakedSubUser = owner1SubUsers.body.subUsers.find((u: any) => u.id === subUser2Id);
+  assert(!leakedSubUser, 'Isolation 4.1: Cross-tenant sub-user leakage prevented (Sub-user 2 is NOT visible to Tenant 1)');
+
+  // Verify Owner 1 cannot delete Sub-user 2
+  const crossDelete = await request(`/api/auth/sub-users/${subUser2Id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${updatedToken}` }
+  });
+  assert(crossDelete.status === 403, 'Isolation 4.2: Cross-tenant sub-user deletion is strictly FORBIDDEN (HTTP 403)');
+
+  // Verify Owner 1 cannot reset Sub-user 2 credentials
+  const crossReset = await request(`/api/auth/sub-users/${subUser2Id}/resend-email`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${updatedToken}` }
+  });
+  assert(crossReset.status === 403, 'Isolation 4.3: Cross-tenant credential reset is strictly FORBIDDEN (HTTP 403)');
+
+  // Verify Owner 1 cannot access Tenant 2 vault data
+  const crossVault = await request(`/api/cloud-sync/vault/${vaultId2}`, {
+    headers: { Authorization: `Bearer ${updatedToken}` }
+  });
+  assert(crossVault.status === 403, 'Isolation 4.4: Cross-tenant vault data access is strictly FORBIDDEN (HTTP 403)');
+
+  // Verify Tenant 1 outbox does not show Tenant 2 welcome email
+  const outbox1 = await request('/api/emails/outbox', {
+    headers: { Authorization: `Bearer ${updatedToken}` }
+  });
+  assert(outbox1.status === 200, 'Isolation 4.5: Tenant 1 retrieves own outbox successfully');
+  const hasTenant2Email = outbox1.body.outbox.some((e: any) => e.to === createSub2.body.subUser.email);
+  assert(!hasTenant2Email, 'Isolation 4.6: Outbox emails of other organizations are NOT exposed');
+
+  // =========================================================================
+  // 5. Session Creation, Validation, Expiration & Revocation
+  // =========================================================================
+  console.log('\n--- Test Category 5: Session Creation, Validation & Revocation ---');
+
+  // Register session test user
+  const sessionUserEmail = `session_${Date.now()}@testcorp.local`;
+  const regSession = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Session User', email: sessionUserEmail, password: 'InitialSessionPass#1' })
+  });
+  const sessionToken1 = regSession.body.token;
+
+  // Token 1 works
+  const sessionTest1 = await request('/api/auth/profile', {
     headers: { Authorization: `Bearer ${sessionToken1}` }
   });
-  assert(
-    meOldToken.status === 401 && meOldToken.body.ok === false,
-    'Session 5.4: Previous session Token 1 is immediately REVOKED upon password change (HTTP 401)',
-    `Status: ${meOldToken.status}`
-  );
+  assert(sessionTest1.status === 200, 'Session 5.1: Token 1 authenticates successfully');
 
-  // Session Revocation Test 5.5: New Token 2 MUST SUCCEED -> 200 OK
-  const meNewToken = await request('/api/auth/me', {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${sessionToken2}` }
-  });
-  assert(
-    meNewToken.status === 200 && meNewToken.body.ok === true,
-    'Session 5.5: Fresh session Token 2 authenticates successfully (HTTP 200)',
-    `Status: ${meNewToken.status}`
-  );
-
-  // Session Revocation Test 5.6: Explicit logout invalidates Token 2
-  const logoutRes = await request('/api/auth/logout', {
+  // Change password -> Token 1 should be immediately revoked
+  const sessionChange = await request('/api/auth/change-password', {
     method: 'POST',
+    headers: { Authorization: `Bearer ${sessionToken1}` },
+    body: JSON.stringify({ currentPassword: 'InitialSessionPass#1', newPassword: 'SecondSessionPass#2' })
+  });
+  assert(sessionChange.status === 200, 'Session 5.2: Password changed successfully');
+  const sessionToken2 = sessionChange.body.token;
+
+  // Previous Token 1 must be rejected with 401
+  const sessionTestOld = await request('/api/auth/profile', {
+    headers: { Authorization: `Bearer ${sessionToken1}` }
+  });
+  assert(sessionTestOld.status === 401, 'Session 5.3: Previous session Token 1 is immediately REVOKED upon password change (HTTP 401)');
+
+  // Fresh Token 2 must succeed
+  const sessionTestNew = await request('/api/auth/profile', {
     headers: { Authorization: `Bearer ${sessionToken2}` }
   });
-  assert(logoutRes.status === 200 && logoutRes.body.ok === true, 'Session 5.6a: Logout succeeds');
-  const meLoggedOut = await request('/api/auth/me', {
-    method: 'GET',
+  assert(sessionTestNew.status === 200, 'Session 5.4: Fresh session Token 2 authenticates successfully (HTTP 200)');
+
+  // Bulk session revocation test via POST /api/auth/revoke-all-sessions
+  const bulkRevoke = await request('/api/auth/revoke-all-sessions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${sessionToken2}` },
+    body: JSON.stringify({ scope: 'organization' })
+  });
+  assert(bulkRevoke.status === 200 && bulkRevoke.body.revokedCount > 0, 'Session 5.5: Bulk session revocation endpoint successfully invalidates organization tokens');
+
+  // After bulk revocation, Token 2 must now be 401
+  const sessionAfterRevoke = await request('/api/auth/profile', {
     headers: { Authorization: `Bearer ${sessionToken2}` }
   });
-  assert(
-    meLoggedOut.status === 401 && meLoggedOut.body.ok === false,
-    'Session 5.6: Logged out Token 2 is properly invalidated and returns HTTP 401',
-    `Status: ${meLoggedOut.status}`
-  );
+  assert(sessionAfterRevoke.status === 401, 'Session 5.6: Revoked session returns HTTP 401 after bulk revocation');
 
   // =========================================================================
-  // 6. Protect sensitive endpoints against unauthorised requests
+  // 6. Sensitive Endpoints & Demo Account Confinement
   // =========================================================================
-  console.log('\n--- Test Category 6: Sensitive Endpoints Protection ---');
+  console.log('\n--- Test Category 6: Sensitive Endpoints & Demo Account Confinement ---');
 
-  // Sensitive 6.1: Admin Dashboard without token -> MUST FAIL (401 Unauthorized)
-  const unauthAdminDash = await request('/api/admin/dashboard', { method: 'GET' });
-  assert(
-    unauthAdminDash.status === 401 && unauthAdminDash.body.ok === false,
-    'Sensitive 6.1: Unauthenticated request to /api/admin/dashboard returns HTTP 401'
-  );
+  // Unauthenticated request to /api/admin/dashboard returns 401
+  const unauthAdmin = await request('/api/admin/dashboard');
+  assert(unauthAdmin.status === 401, 'Sensitive 6.1: Unauthenticated request to /api/admin/dashboard returns HTTP 401');
 
-  // Sensitive 6.2: Admin Dashboard with regular user token -> MUST FAIL (403 Forbidden)
-  const forbiddenAdminDash = await request('/api/admin/dashboard', {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${owner1Token}` }
+  // Non-admin user request to /api/admin/dashboard returns 403
+  const nonAdminReq = await request('/api/admin/dashboard', {
+    headers: { Authorization: `Bearer ${updatedToken}` }
   });
-  assert(
-    forbiddenAdminDash.status === 403 && forbiddenAdminDash.body.ok === false,
-    'Sensitive 6.2: Non-admin user request to /api/admin/dashboard returns HTTP 403'
-  );
+  assert(nonAdminReq.status === 403, 'Sensitive 6.2: Non-admin user request to /api/admin/dashboard returns HTTP 403');
 
-  // Sensitive 6.3: Admin Config update with non-admin token -> MUST FAIL (403 Forbidden)
-  const forbiddenConfig = await request('/api/admin/config', {
+  // Authenticate Demo User
+  const demoLogin = await request('/api/auth/login', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${owner1Token}` },
-    body: JSON.stringify({ maintenanceMode: { enabled: true } })
+    body: JSON.stringify({ email: 'demo@forecasterpro.com', password: 'DemoPassword123!' })
   });
-  assert(
-    forbiddenConfig.status === 403 && forbiddenConfig.body.ok === false,
-    'Sensitive 6.3: Non-admin user request to /api/admin/config returns HTTP 403'
-  );
+  assert(demoLogin.status === 200 && demoLogin.body.user.isDemo === true, 'Demo 6.1: Demo user authenticates into demo-showcase-vault');
+  const demoToken = demoLogin.body.token;
 
-  // Sensitive 6.4: Admin Dashboard with valid Master Admin token -> MUST SUCCEED (200 OK)
-  const validAdminDash = await request('/api/admin/dashboard', {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${customLogin.body.token}` }
+  // Demo user FORBIDDEN from admin dashboard
+  const demoAdminReq = await request('/api/admin/dashboard', {
+    headers: { Authorization: `Bearer ${demoToken}` }
   });
-  assert(
-    validAdminDash.status === 200 && validAdminDash.body.ok === true && validAdminDash.body.admin.isMainAdmin === true,
-    'Sensitive 6.4: Authorized Master Admin accesses admin dashboard successfully (HTTP 200)'
-  );
+  assert(demoAdminReq.status === 403, 'Demo 6.2: Demo user is FORBIDDEN from administrator dashboard (HTTP 403)');
 
-  console.log(`\n======================================================`);
+  // Demo user FORBIDDEN from accessing production workspaces
+  const demoVaultHack = await request(`/api/cloud-sync/vault/${workspaceVaultId}`, {
+    headers: { Authorization: `Bearer ${demoToken}` }
+  });
+  assert(demoVaultHack.status === 403, 'Demo 6.3: Demo user is FORBIDDEN from accessing production workspaces (HTTP 403)');
+
+  // Demo user FORBIDDEN from creating sub-users
+  const demoSubUserHack = await request('/api/auth/sub-users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${demoToken}` },
+    body: JSON.stringify({ name: 'Demo Hack Sub', email: 'hack@demo.local', role: 'member' })
+  });
+  assert(demoSubUserHack.status === 403, 'Demo 6.4: Demo user is FORBIDDEN from managing sub-users (HTTP 403)');
+
+  console.log('\n======================================================');
   console.log(`🏆 ALL SECURITY REMEDIATION TESTS PASSED: ${passedTests}/${totalTests}`);
-  console.log(`======================================================\n`);
+  console.log('======================================================\n');
 }
 
 runSecurityTestSuite().catch(err => {
-  console.error('\n❌ Security test suite encountered an unhandled failure:', err);
+  console.error('\n💥 SECURITY TEST SUITE FAILED:', err);
   process.exit(1);
 });

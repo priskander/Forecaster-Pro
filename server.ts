@@ -419,41 +419,37 @@ if (!db.outbox) db.outbox = [];
 // Secure Initial Administrator Provisioning
 const defaultEmail = (process.env.INITIAL_ADMIN_EMAIL || 'peter.w.badir@gmail.com').trim().toLowerCase();
 let defaultUser = Object.values(db.users).find(u => u.email.toLowerCase() === defaultEmail.toLowerCase());
-const initialAdminPass = process.env.INITIAL_ADMIN_PASSWORD || 'ForecasterAdmin2026!';
+const initialAdminSecret = process.env.INITIAL_ADMIN_PASSWORD ? process.env.INITIAL_ADMIN_PASSWORD.trim() : '';
 
 if (!defaultUser) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const user: UserRecord = {
-    id: 'usr_peter_badir',
-    name: 'Peter W. Badir',
-    email: defaultEmail,
-    passwordHash: hashPassword(initialAdminPass, salt),
-    salt,
-    tier: 'Master Admin Suite',
-    role: 'main_admin',
-    isPrimary: true,
-    isMainAdmin: true,
-    status: 'active',
-    vaultId: 'shared-main-vault',
-    mustChangePassword: true,
-    createdAt: new Date().toISOString(),
-    lastLogin: new Date().toISOString()
-  };
-  db.users[user.id] = user;
-  saveDatabase(db);
-  console.log(`[Security] Initial administrator account provisioned: ${defaultEmail}`);
-} else {
-  // Existing administrator account: preserve persistent credentials without overwriting custom passwords
-  // However, if the account still retains the legacy insecure hardcoded 'Password123!', migrate to initialAdminPass
-  if (verifyPassword('Password123!', defaultUser.salt, defaultUser.passwordHash) || defaultUser.temporaryPassword === 'Password123!') {
+  if (!initialAdminSecret) {
+    console.warn('[Security] Administrator bootstrap skipped: INITIAL_ADMIN_PASSWORD environment variable is not configured. Set INITIAL_ADMIN_PASSWORD to bootstrap the initial administrator.');
+  } else if (initialAdminSecret.length < 10) {
+    console.warn('[Security] Administrator bootstrap skipped: INITIAL_ADMIN_PASSWORD must be at least 10 characters.');
+  } else {
     const salt = crypto.randomBytes(16).toString('hex');
-    defaultUser.salt = salt;
-    defaultUser.passwordHash = hashPassword(initialAdminPass, salt);
-    defaultUser.mustChangePassword = true;
-    delete defaultUser.temporaryPassword;
+    const user: UserRecord = {
+      id: 'usr_peter_badir',
+      name: 'Peter W. Badir',
+      email: defaultEmail,
+      passwordHash: hashPassword(initialAdminSecret, salt),
+      salt,
+      tier: 'Master Admin Suite',
+      role: 'main_admin',
+      isPrimary: true,
+      isMainAdmin: true,
+      status: 'active',
+      vaultId: 'shared-main-vault',
+      mustChangePassword: true,
+      createdAt: new Date().toISOString(),
+      lastLogin: new Date().toISOString()
+    };
+    db.users[user.id] = user;
     saveDatabase(db);
-    console.log(`[Security] Upgraded legacy administrator credentials away from hardcoded default to secure bootstrap.`);
+    console.log(`[Security] Initial administrator account provisioned securely: ${defaultEmail}`);
   }
+} else {
+  // Existing administrator account: NEVER overwrite or reset custom credentials on server restart
   defaultUser.name = defaultUser.name || 'Peter W. Badir';
   defaultUser.role = 'main_admin';
   defaultUser.isPrimary = true;
@@ -478,6 +474,7 @@ if (!demoUser) {
     role: 'manager',
     isPrimary: true,
     isDemo: true,
+    isMainAdmin: false,
     status: 'active',
     vaultId: 'demo-showcase-vault',
     mustChangePassword: false,
@@ -487,6 +484,7 @@ if (!demoUser) {
   db.users[user.id] = user;
 } else {
   demoUser.isDemo = true;
+  demoUser.isMainAdmin = false;
   demoUser.vaultId = 'demo-showcase-vault';
   demoUser.name = 'Demo Showcase Explorer';
 }
@@ -936,23 +934,59 @@ function getAuthenticatedUser(req: express.Request, res: express.Response): User
   return user;
 }
 
-function requireVaultAccess(req: express.Request, res: express.Response, targetVaultId: string, requiredPermission: 'read' | 'write' = 'read'): UserRecord | null {
+function requireVaultAccess(
+  req: express.Request,
+  res: express.Response,
+  targetVaultId: string,
+  requiredPermission: 'read' | 'write' | 'delete' | 'manage' | 'restore' = 'read'
+): UserRecord | null {
   const user = getAuthenticatedUser(req, res);
   if (!user) return null;
+
+  // Demo user confinement: demo accounts are strictly restricted to demo-showcase-vault
+  if (user.isDemo) {
+    if (targetVaultId !== 'demo-showcase-vault') {
+      res.status(403).json({ ok: false, error: 'Access forbidden: Demo accounts cannot access production workspaces.' });
+      return null;
+    }
+  }
 
   const cleanTarget = (targetVaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
   const userVault = (user.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
 
-  const isMaster = !!user.isMainAdmin || user.role === 'main_admin';
+  const isMaster = (!!user.isMainAdmin || user.role === 'main_admin') && !user.isDemo;
   if (!isMaster && userVault !== cleanTarget) {
     res.status(403).json({ ok: false, error: 'Access forbidden: You do not have permission to access this data vault.' });
     return null;
   }
 
-  // Server-Side RBAC Enforcement: 'viewer' role is strictly read-only
-  if (requiredPermission === 'write') {
-    if (user.role === 'viewer') {
-      res.status(403).json({ ok: false, error: 'Access forbidden: Read-only viewer accounts are not authorized to modify workspace data.' });
+  // Server-Side Role-Based Access Control (RBAC):
+  // 1. 'viewer' role is strictly read-only across all modules
+  if (requiredPermission !== 'read' && user.role === 'viewer') {
+    res.status(403).json({ ok: false, error: 'Access forbidden: Read-only viewer accounts are not authorized to modify workspace data.' });
+    return null;
+  }
+
+  // 2. 'restore' permission: Only workspace owners and system master admins can restore backups
+  if (requiredPermission === 'restore') {
+    if (user.role !== 'owner' && !user.isPrimary && !isMaster) {
+      res.status(403).json({ ok: false, error: 'Access forbidden: Only workspace owners can restore database backups.' });
+      return null;
+    }
+  }
+
+  // 3. 'manage' permission: Only workspace owners and master admins can delete payment accounts or alter org structure
+  if (requiredPermission === 'manage') {
+    if (user.role !== 'owner' && !user.isPrimary && !isMaster) {
+      res.status(403).json({ ok: false, error: 'Access forbidden: Only workspace owners are authorized to perform this administrative operation.' });
+      return null;
+    }
+  }
+
+  // 4. 'delete' permission on transactions: 'member' cannot delete, only 'owner', 'manager', or 'main_admin'
+  if (requiredPermission === 'delete') {
+    if (user.role === 'member') {
+      res.status(403).json({ ok: false, error: 'Access forbidden: Member accounts cannot delete transactions.' });
       return null;
     }
   }
@@ -1174,11 +1208,12 @@ async function startServer() {
           name: user.name,
           email: user.email,
           tier: user.tier,
-          role: (user.email.toLowerCase() === 'peter.w.badir@gmail.com') ? 'main_admin' : (user.role || (user.isPrimary ? 'owner' : 'member')),
+          role: user.role || (user.isPrimary ? 'owner' : 'member'),
           propertyRole: user.propertyRole || 'tenant',
           avatarUrl: user.avatarUrl || '',
           isPrimary: !!user.isPrimary,
-          isMainAdmin: !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin',
+          isMainAdmin: !user.isDemo && (!!user.isMainAdmin || user.role === 'main_admin'),
+          isDemo: !!user.isDemo,
           parentId: user.parentId,
           vaultId: user.vaultId,
           mustChangePassword: !!user.mustChangePassword,
@@ -1403,17 +1438,11 @@ async function startServer() {
         return res.status(401).json({ ok: false, error: 'Not authenticated' });
       }
 
-      if (user.email.toLowerCase() === 'peter.w.badir@gmail.com') {
-        user.isMainAdmin = true;
-        user.role = 'main_admin';
-        user.tier = 'Master Admin Suite';
-      }
-
       if (!user.vaultId) {
         if (user.parentId) {
           const parent = (db.users || {})[user.parentId];
           user.vaultId = parent?.vaultId || 'shared-main-vault';
-        } else if (user.id === 'usr_peter_badir') {
+        } else if (user.isMainAdmin || user.role === 'main_admin') {
           user.vaultId = 'shared-main-vault';
         } else {
           user.vaultId = 'vault_' + user.id;
@@ -1496,8 +1525,8 @@ async function startServer() {
         return res.status(401).json({ ok: false, error: 'Session expired or not authenticated.' });
       }
 
-      if (!caller.isPrimary && caller.role !== 'owner') {
-        return res.status(403).json({ ok: false, error: 'Access denied: Only the primary user is granted permission to create sub-users.' });
+      if (caller.isDemo || (!caller.isPrimary && caller.role !== 'owner')) {
+        return res.status(403).json({ ok: false, error: 'Access denied: Demo accounts cannot manage sub-users.' });
       }
 
       const { name, email, role } = req.body || {};
@@ -1580,8 +1609,8 @@ async function startServer() {
       const token = authHeader.replace(/^Bearer\s+/i, '').trim();
       const caller = resolveTokenUser(token);
 
-      if (!caller || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
-        return res.status(403).json({ ok: false, error: 'Only the primary user can remove sub-users.' });
+      if (!caller || caller.isDemo || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
+        return res.status(403).json({ ok: false, error: 'Access denied: Demo accounts and non-owners cannot remove sub-users.' });
       }
 
       const subUserId = req.params.id;
@@ -1718,6 +1747,53 @@ async function startServer() {
     }
   });
 
+  // Emergency bulk session revocation endpoint (Requires Master Admin or Workspace Owner)
+  app.post('/api/auth/revoke-all-sessions', (req, res) => {
+    try {
+      const user = getAuthenticatedUser(req, res);
+      if (!user) return;
+
+      if (user.isDemo) {
+        return res.status(403).json({ ok: false, error: 'Access forbidden: Demo accounts cannot revoke sessions.' });
+      }
+
+      if (!user.isMainAdmin && user.role !== 'owner' && user.role !== 'main_admin' && !user.isPrimary) {
+        return res.status(403).json({ ok: false, error: 'Access forbidden: Only workspace owners or administrators can perform session revocation.' });
+      }
+
+      const scope = req.body?.scope || 'organization'; // 'all' (main admin only) or 'organization'
+      let revokedCount = 0;
+
+      if (scope === 'all' && (user.isMainAdmin || user.role === 'main_admin')) {
+        revokedCount = Object.keys(db.tokens || {}).length;
+        db.tokens = {};
+      } else {
+        // Revoke all tokens belonging to this user or users in their organization
+        const orgUserIds = new Set(
+          Object.values(db.users || {})
+            .filter(u => u.id === user.id || u.parentId === user.id || u.vaultId === user.vaultId)
+            .map(u => u.id)
+        );
+        Object.entries(db.tokens || {}).forEach(([tokenKey, record]) => {
+          const recUserId = typeof record === 'string' ? record : record.userId;
+          if (orgUserIds.has(recUserId)) {
+            delete (db.tokens as any)[tokenKey];
+            revokedCount++;
+          }
+        });
+      }
+
+      saveDatabase(db);
+      res.json({
+        ok: true,
+        message: `Successfully revoked ${revokedCount} active session(s). Affected users must sign in again with fresh credentials.`,
+        revokedCount
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   // View Sent Emails Outbox (Strictly Scoped to Organization & Redacted)
   app.get('/api/emails/outbox', (req, res) => {
     try {
@@ -1759,6 +1835,35 @@ async function startServer() {
       }
 
       res.json({ ok: true, message: 'Logged out successfully' });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Get profile (Strictly Authenticated)
+  app.get('/api/auth/profile', (req, res) => {
+    try {
+      const user = getAuthenticatedUser(req, res);
+      if (!user) return;
+
+      res.json({
+        ok: true,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          tier: user.tier,
+          role: user.role,
+          propertyRole: user.propertyRole || 'tenant',
+          avatarUrl: user.avatarUrl || '',
+          isPrimary: user.isPrimary,
+          isMainAdmin: !!user.isMainAdmin || user.role === 'main_admin',
+          parentId: user.parentId,
+          vaultId: user.vaultId,
+          mustChangePassword: !!user.mustChangePassword,
+          createdAt: user.createdAt
+        }
+      });
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message });
     }
@@ -1911,7 +2016,7 @@ async function startServer() {
   app.delete('/api/cloud-sync/transactions/:id', (req, res) => {
     const id = req.params.id;
     const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-    const user = requireVaultAccess(req, res, vaultId, 'write');
+    const user = requireVaultAccess(req, res, vaultId, 'delete');
     if (!user) return;
 
     const vault = db.vaults[vaultId];
@@ -1927,7 +2032,7 @@ async function startServer() {
   app.delete('/api/cloud-sync/accounts/:id', (req, res) => {
     const id = req.params.id;
     const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-    const user = requireVaultAccess(req, res, vaultId, 'write');
+    const user = requireVaultAccess(req, res, vaultId, 'manage');
     if (!user) return;
 
     const vault = db.vaults[vaultId];
@@ -2081,7 +2186,8 @@ async function startServer() {
       throw new Error('Invalid backup payload: content must be a JSON object.');
     }
 
-    const detectedVersion = raw.schemaVersion || (raw.version && String(raw.version).includes('1.') ? '1.0.0' : '2.0.0');
+    const isLegacy = !raw.schemaVersion && !raw.modules;
+    const detectedVersion = raw.schemaVersion || (isLegacy ? '1.0.0' : (raw.version ? String(raw.version) : '2.0.0'));
     const sourceOrg = raw.organizationId || raw.vaultId || raw.vault || 'default';
     const ownerEmail = raw.ownerEmail || (raw.forecaster_profile_user?.email) || '';
     const ownerUserId = raw.ownerUserId || '';
@@ -2580,7 +2686,7 @@ async function startServer() {
   app.post('/api/backup/restore', (req, res) => {
     try {
       const vaultId = String(req.body?.vaultId || req.query?.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-      const user = requireVaultAccess(req, res, vaultId, 'write');
+      const user = requireVaultAccess(req, res, vaultId, 'restore');
       if (!user) return;
 
       let vault = db.vaults[vaultId];
@@ -2638,7 +2744,12 @@ async function startServer() {
       return null;
     }
 
-    const isMaster = !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin';
+    if (user.isDemo) {
+      res.status(403).json({ ok: false, error: 'Access forbidden: Demo accounts cannot access administrator operations.' });
+      return null;
+    }
+
+    const isMaster = (!!user.isMainAdmin || user.role === 'main_admin') && !user.isDemo;
     if (!isMaster) {
       res.status(403).json({ ok: false, error: 'Access forbidden: Full Main Administrator privileges required.' });
       return null;

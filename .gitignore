@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local databases and runtime state
+data/
+*.tmp
+*.db
+*.sqlite
