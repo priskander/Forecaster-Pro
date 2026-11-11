@@ -1520,7 +1520,6 @@
           <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
               <div class="flex items-center gap-2.5">
                 <h2 class="text-base font-bold text-slate-900 dark:text-white">Pharmacy Audit Register</h2>
-                <button type="button" onclick="window.restoreMasterHistory(true)" class="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-xs" title="Restore complete pharmacy schedules, medicine batches, and linked transactions"><span>🔄</span> Restore History</button>
               </div>
               <div class="relative w-full md:w-64">
                 <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-404">🔍</span>
@@ -1861,8 +1860,6 @@
           </div>
           <div class="flex items-center gap-2">
             <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400" id="vehicle-health-summary-count">0 vehicles tracked</span>
-            <button type="button" onclick="window.restoreRegisteredVehicles(true)" class="px-2.5 py-1 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm" title="Restore registered vehicle, maintenance history, and fuel logs"><span>🔄</span> Restore Vehicles</button>
-            <button type="button" onclick="window.restoreMasterHistory(true)" class="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-xs" title="Restore all history, pharmacy schedules, vehicle fleet, and audit register"><span>📜</span> Restore Full History</button>
           </div>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5" id="vehicle-health-cards-container"></div>
@@ -2274,24 +2271,40 @@
             </div>
           </div>
 
-          <h3 class="text-xs font-bold text-slate-404 uppercase tracking-wider pt-2 border-t border-slate-100 dark:border-slate-700">Manual JSON Backup &amp; Restore</h3>
+          <h3 class="text-xs font-bold text-slate-404 uppercase tracking-wider pt-2 border-t border-slate-100 dark:border-slate-700">Enterprise JSON Backup &amp; Restoration (v2.0)</h3>
           <div class="space-y-3">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm" onclick="downloadBackupJSON()">
-                <div class="flex items-center gap-2.5 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>📋</span> Download Full Backup</div><span>📥</span>
+              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm" onclick="downloadBackupJSON('all')">
+                <div class="flex items-center gap-2.5 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>📋</span> Full Snapshot Backup</div><span>📥</span>
               </div>
               <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm" onclick="window.backupPaymentAccounts()">
-                <div class="flex items-center gap-2.5 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>💳</span> Download Accounts Backup</div><span>📥</span>
+                <div class="flex items-center gap-2.5 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>💳</span> Accounts Backup</div><span>📥</span>
               </div>
             </div>
+
+            <!-- Modular Backup Selector -->
+            <div class="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+              <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300">📦 Independent Modular Backups:</label>
+              <div class="flex flex-wrap gap-1.5">
+                <button type="button" onclick="downloadBackupJSON('financial')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">💵 Financial</button>
+                <button type="button" onclick="downloadBackupJSON('budgets')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">📊 Budgets</button>
+                <button type="button" onclick="downloadBackupJSON('inventory')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">💊 Stock &amp; Pharmacy</button>
+                <button type="button" onclick="downloadBackupJSON('parts')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">⚙️ Spare Parts</button>
+                <button type="button" onclick="downloadBackupJSON('fleet')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">🚗 Vehicles &amp; Fleet</button>
+                <button type="button" onclick="downloadBackupJSON('rentals')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">🏠 Rental Contracts</button>
+                <button type="button" onclick="downloadBackupJSON('settings')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">⚙️ Settings</button>
+              </div>
+            </div>
+
             <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm" onclick="window.ForecasterGitHubSync.openModal()">
               <div class="flex items-center gap-2.5 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>☁️</span> GitHub Gist / Repo Backup</div><span>↗️</span>
             </div>
+
             <div class="border-2 border-dashed border-slate-300 dark:border-slate-700 p-5 rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:bg-blue-50/40 dark:hover:bg-slate-800/60 transition cursor-pointer relative text-center" onclick="document.getElementById('import-json-file')?.click()">
               <input accept=".json,application/json" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full" id="import-json-file" onchange="importBackupJSON(event)" type="file"/>
               <span class="text-2xl mb-1">📁</span>
-              <p class="font-bold text-slate-700 dark:text-slate-200 text-xs">Upload / Restore Backup File</p>
-              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Accepts full ledger backups and payment account backups</p>
+              <p class="font-bold text-slate-700 dark:text-slate-200 text-xs">Upload &amp; Restore Backup (Safe Validation &amp; Deduplication)</p>
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Pre-flight diagnostics, duplicate prevention, and non-destructive merge protection</p>
             </div>
           </div>
         </div>
@@ -2978,6 +2991,116 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- =================== ENTERPRISE BACKUP RESTORATION & REVIEW MODAL =================== -->
+  <div class="hidden fixed inset-0 z-[80] overflow-y-auto bg-slate-950/80 backdrop-blur-md p-3 sm:p-6 flex items-center justify-center transition-all duration-200" id="backup-restore-review-modal" role="dialog" aria-modal="true" aria-labelledby="backup-review-modal-title">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl relative text-slate-900 dark:text-white space-y-5 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-blue-600/10 text-blue-600 flex items-center justify-center text-xl font-bold border border-blue-500/20">
+            🛡️
+          </div>
+          <div>
+            <h3 id="backup-review-modal-title" class="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+              Restore Verification &amp; Diagnostics
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Pre-flight schema inspection, duplicate detection &amp; non-destructive merge</p>
+          </div>
+        </div>
+        <button type="button" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none p-1 cursor-pointer" onclick="window.closeBackupReviewModal()">&times;</button>
+      </div>
+
+      <!-- Overview Header Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
+        <div class="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+          <span class="block text-[10px] font-bold uppercase text-slate-400">Format Version</span>
+          <span id="bk-meta-version" class="text-xs font-extrabold text-blue-600 dark:text-blue-400">v2.0.0</span>
+        </div>
+        <div class="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+          <span class="block text-[10px] font-bold uppercase text-slate-400">Total Records</span>
+          <span id="bk-meta-total" class="text-xs font-extrabold text-slate-800 dark:text-slate-100">0</span>
+        </div>
+        <div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
+          <span class="block text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400">Valid Records</span>
+          <span id="bk-meta-valid" class="text-xs font-extrabold text-emerald-700 dark:text-emerald-300">0</span>
+        </div>
+        <div class="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800/60">
+          <span class="block text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">Duplicate IDs</span>
+          <span id="bk-meta-duplicates" class="text-xs font-extrabold text-amber-700 dark:text-amber-300">0</span>
+        </div>
+      </div>
+
+      <!-- Organization & Ownership Notice -->
+      <div id="bk-ownership-alert" class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-xs flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span>🏢</span>
+          <span class="text-slate-600 dark:text-slate-300">Target Workspace: <strong id="bk-target-org" class="font-bold text-slate-900 dark:text-white">shared-main-vault</strong></span>
+        </div>
+        <span id="bk-ownership-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-300">Verified</span>
+      </div>
+
+      <!-- Warnings / Incompatibilities -->
+      <div id="bk-warnings-container" class="hidden p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+        <div class="font-bold flex items-center gap-1.5"><span>⚠️</span> Diagnostics Notice:</div>
+        <ul id="bk-warnings-list" class="list-disc pl-5 space-y-0.5 text-[11px]"></ul>
+      </div>
+
+      <!-- Modules Breakdown Table -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Select Modules to Restore:</label>
+          <span class="text-[11px] text-slate-400">Independent modular selection</span>
+        </div>
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold uppercase text-slate-500">
+              <tr>
+                <th class="p-2.5">Module</th>
+                <th class="p-2.5 text-center">In Backup</th>
+                <th class="p-2.5 text-center">Duplicates</th>
+                <th class="p-2.5 text-center">New</th>
+                <th class="p-2.5 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody id="bk-modules-table-body" class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Restoration Strategy Radio Options -->
+      <div class="space-y-2">
+        <label class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Restoration Strategy:</label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <label class="p-3 rounded-xl border border-blue-500 bg-blue-50/50 dark:bg-blue-950/30 flex items-start gap-2.5 cursor-pointer">
+            <input type="radio" name="bk-restore-strategy" id="bk-mode-merge" value="merge" checked class="mt-0.5 text-blue-600 focus:ring-blue-500" />
+            <div>
+              <span class="block text-xs font-bold text-slate-900 dark:text-white">🛡️ Safe Merge &amp; Deduplicate</span>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Non-destructive. Preserves your existing ledger records, updates existing items by ID, and adds new records. Zero duplicates created.</p>
+            </div>
+          </label>
+          <label class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 flex items-start gap-2.5 cursor-pointer">
+            <input type="radio" name="bk-restore-strategy" id="bk-mode-replace" value="replace" class="mt-0.5 text-red-600 focus:ring-red-500" />
+            <div>
+              <span class="block text-xs font-bold text-slate-900 dark:text-white">⚠️ Complete Replace</span>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Explicit replacement. Replaces the selected modules completely with the backup snapshot.</p>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+        <button type="button" onclick="window.closeBackupReviewModal()" class="px-4 py-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition">
+          Cancel
+        </button>
+        <button type="button" id="bk-confirm-restore-btn" onclick="window.confirmExecuteRestore()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-1.5 cursor-pointer">
+          <span>🚀</span> Confirm &amp; Restore Data
+        </button>
+      </div>
     </div>
   </div>
 

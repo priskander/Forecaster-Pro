@@ -81,16 +81,103 @@ interface OutboxEmail {
 interface VaultData {
   vaultId: string;
   updatedAt: string;
+  organizationId?: string;
+  ownerEmail?: string;
   transactions: any[];
   accounts: any[];
   accountTransfers: any[];
   budgetLimits?: any;
+  allocationsMode?: string;
+  allocationsMonth?: string;
+  customCategories?: any[];
+  customSubcategories?: any[];
   stockData?: any[];
   pharmacyData?: any[];
   vehicles?: any[];
   fuels?: any[];
   maint?: any[];
+  rentalProperties?: any[];
+  rentalContracts?: any[];
+  rentalNotifications?: any[];
+  rentalNotificationConfig?: any;
+  userSettings?: any;
   profileUser?: any;
+}
+
+export interface ForecasterBackupEnvelope {
+  format: 'forecaster-pro-backup';
+  schemaVersion: '2.0.0';
+  appVersion: string;
+  exportedAt: string;
+  organizationId: string;
+  ownerEmail: string;
+  ownerUserId: string;
+  moduleFilter?: string;
+  checksum: string;
+  summary: {
+    transactionsCount: number;
+    accountsCount: number;
+    transfersCount: number;
+    budgetLimitsSet: boolean;
+    customCategoriesCount: number;
+    stockItemsCount: number;
+    pharmacyItemsCount: number;
+    vehiclesCount: number;
+    fuelLogsCount: number;
+    maintenanceLogsCount: number;
+    rentalPropertiesCount: number;
+    rentalContractsCount: number;
+    rentalNotificationsCount: number;
+    totalRecords: number;
+  };
+  modules: {
+    financial: {
+      transactions: any[];
+      accounts: any[];
+      transfers: any[];
+    };
+    budgets: {
+      limits: any;
+      allocationsMode?: string | null;
+      allocationsMonth?: string | null;
+      customCategories?: any[];
+      customSubcategories?: any[];
+    };
+    inventory: {
+      stockData: any[];
+      pharmacyData: any[];
+    };
+    fleet: {
+      vehicles: any[];
+      fuels: any[];
+      maint: any[];
+    };
+    rentals: {
+      properties: any[];
+      contracts: any[];
+      notifications: any[];
+      notificationConfig?: any;
+    };
+    settings: {
+      theme?: string | null;
+      userProfile?: any;
+      notificationConfig?: any;
+      autoSync?: boolean;
+    };
+  };
+  transactions?: any[];
+  accounts?: any[];
+  accountTransfers?: any[];
+  budgetLimits?: any;
+  stockData?: any[];
+  pharmacyData?: any[];
+  pro_vehicles?: any[];
+  pro_vehicle_fuel?: any[];
+  pro_vehicle_maintenance?: any[];
+  pro_rental_properties_v1?: any[];
+  pro_rental_contracts_v1?: any[];
+  pro_rental_notifications_v1?: any[];
+  pro_rental_notification_config_v1?: any;
 }
 
 export interface PlatformUpdateConfig {
@@ -744,6 +831,8 @@ const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 function createRateLimiter(windowMs: number, maxRequests: number, message: string) {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+    const effectiveLimit = isLoopback ? Math.max(maxRequests, 120) : maxRequests;
     const now = Date.now();
     const key = `${req.path}:${ip}`;
 
@@ -755,7 +844,7 @@ function createRateLimiter(windowMs: number, maxRequests: number, message: strin
     }
 
     record.count++;
-    if (record.count > maxRequests) {
+    if (record.count > effectiveLimit) {
       const retryAfter = Math.ceil((record.resetAt - now) / 1000);
       res.setHeader('Retry-After', retryAfter);
       return res.status(429).json({ ok: false, error: message || 'Too many attempts. Please try again shortly.' });
@@ -1788,11 +1877,20 @@ async function startServer() {
     }
 
     if (incoming.budgetLimits) current.budgetLimits = incoming.budgetLimits;
+    if (incoming.allocationsMode !== undefined) current.allocationsMode = incoming.allocationsMode;
+    if (incoming.allocationsMonth !== undefined) current.allocationsMonth = incoming.allocationsMonth;
+    if (Array.isArray(incoming.customCategories)) current.customCategories = incoming.customCategories;
+    if (Array.isArray(incoming.customSubcategories)) current.customSubcategories = incoming.customSubcategories;
     if (Array.isArray(incoming.stockData)) current.stockData = incoming.stockData;
     if (Array.isArray(incoming.pharmacyData)) current.pharmacyData = incoming.pharmacyData;
     if (Array.isArray(incoming.vehicles)) current.vehicles = incoming.vehicles;
     if (Array.isArray(incoming.fuels)) current.fuels = incoming.fuels;
     if (Array.isArray(incoming.maint)) current.maint = incoming.maint;
+    if (Array.isArray(incoming.rentalProperties)) current.rentalProperties = incoming.rentalProperties;
+    if (Array.isArray(incoming.rentalContracts)) current.rentalContracts = incoming.rentalContracts;
+    if (Array.isArray(incoming.rentalNotifications)) current.rentalNotifications = incoming.rentalNotifications;
+    if (incoming.rentalNotificationConfig !== undefined) current.rentalNotificationConfig = incoming.rentalNotificationConfig;
+    if (incoming.userSettings !== undefined) current.userSettings = incoming.userSettings;
     if (incoming.profileUser) current.profileUser = incoming.profileUser;
 
     current.updatedAt = new Date().toISOString();
@@ -1880,11 +1978,552 @@ async function startServer() {
     res.json({ ok: true, count: vault.transactions.length, transactions: vault.transactions });
   });
 
-  // Dedicated endpoint to restore master historical records, vehicle fleet, fueling history, routine medicine schedules & audit register
-  app.post('/api/cloud-sync/restore-history', (req, res) => {
+  /* -------------------------------------------------------------------------
+   * COMPREHENSIVE BACKUP, RESTORATION & VALIDATION ENGINE (VERSION 2.0.0)
+   * Supports full application snapshots and independent modular backups across:
+   * 1. Financial transactions and accounts
+   * 2. Budgets and allocations
+   * 3. Inventory and pharmacy stock
+   * 4. Spare parts and stock movements
+   * 5. Vehicles and vehicle history
+   * 6. Fuel transactions and fuel history
+   * 7. Maintenance and associated expenses
+   * 8. Rental properties and contracts
+   * 9. Notifications and user settings
+   * ------------------------------------------------------------------------- */
+
+  function validateRecord(moduleType: string, item: any): { valid: boolean; reason?: string } {
+    if (!item || typeof item !== 'object') {
+      return { valid: false, reason: 'Record must be a valid JSON object' };
+    }
+
+    switch (moduleType) {
+      case 'transactions':
+        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid transaction ID' };
+        if (item.amount === undefined || isNaN(Number(item.amount)) || Number(item.amount) < 0) {
+          return { valid: false, reason: 'Amount must be a non-negative number' };
+        }
+        if (!item.type || !['income', 'expense'].includes(String(item.type).toLowerCase())) {
+          return { valid: false, reason: 'Transaction type must be "income" or "expense"' };
+        }
+        if (!item.date || typeof item.date !== 'string') return { valid: false, reason: 'Missing or invalid date' };
+        return { valid: true };
+
+      case 'accounts':
+        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid account ID' };
+        if (!item.label && !item.name) return { valid: false, reason: 'Account requires a label or name' };
+        if (!item.type) return { valid: false, reason: 'Account requires an account type' };
+        return { valid: true };
+
+      case 'transfers':
+        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid transfer ID' };
+        if (!item.fromAccountId || !item.toAccountId) return { valid: false, reason: 'Transfer requires fromAccountId and toAccountId' };
+        if (item.amount === undefined || isNaN(Number(item.amount)) || Number(item.amount) < 0) {
+          return { valid: false, reason: 'Transfer amount must be non-negative' };
+        }
+        return { valid: true };
+
+      case 'stockData':
+        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid stock item ID' };
+        if (!item.name || typeof item.name !== 'string') return { valid: false, reason: 'Stock item requires a name' };
+        if (item.currentStock !== undefined && (isNaN(Number(item.currentStock)) || Number(item.currentStock) < 0)) {
+          return { valid: false, reason: 'Current stock must be non-negative' };
+        }
+        return { valid: true };
+
+      case 'pharmacyData':
+        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid medication ID' };
+        if (!item.name || typeof item.name !== 'string') return { valid: false, reason: 'Medication requires a name' };
+        if (item.currentStock !== undefined && (isNaN(Number(item.currentStock)) || Number(item.currentStock) < 0)) {
+          return { valid: false, reason: 'Medication stock must be non-negative' };
+        }
+        return { valid: true };
+
+      case 'vehicles':
+        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid vehicle ID' };
+        if (!item.plate && !item.model && !item.name) return { valid: false, reason: 'Vehicle requires plate or model' };
+        return { valid: true };
+
+      case 'fuels':
+        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid fuel log ID' };
+        if (!item.vehicleId || typeof item.vehicleId !== 'string') return { valid: false, reason: 'Fuel log requires a target vehicleId' };
+        if (item.liters !== undefined && (isNaN(Number(item.liters)) || Number(item.liters) < 0)) {
+          return { valid: false, reason: 'Liters must be a non-negative number' };
+        }
+        return { valid: true };
+
+      case 'maint':
+        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid maintenance record ID' };
+        if (!item.vehicleId || typeof item.vehicleId !== 'string') return { valid: false, reason: 'Maintenance record requires vehicleId' };
+        return { valid: true };
+
+      case 'rentalProperties':
+        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid property ID' };
+        if (!item.title && !item.name && !item.address) return { valid: false, reason: 'Property requires title or address' };
+        return { valid: true };
+
+      case 'rentalContracts':
+        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid contract ID' };
+        if (!item.propertyId || typeof item.propertyId !== 'string') return { valid: false, reason: 'Contract requires propertyId' };
+        return { valid: true };
+
+      case 'rentalNotifications':
+        if (!item.id && !item.timestamp) return { valid: false, reason: 'Notification requires id or timestamp' };
+        return { valid: true };
+
+      default:
+        return { valid: true };
+    }
+  }
+
+  function normalizeBackupData(raw: any) {
+    if (!raw || typeof raw !== 'object') {
+      throw new Error('Invalid backup payload: content must be a JSON object.');
+    }
+
+    const detectedVersion = raw.schemaVersion || (raw.version && String(raw.version).includes('1.') ? '1.0.0' : '2.0.0');
+    const sourceOrg = raw.organizationId || raw.vaultId || raw.vault || 'default';
+    const ownerEmail = raw.ownerEmail || (raw.forecaster_profile_user?.email) || '';
+    const ownerUserId = raw.ownerUserId || '';
+
+    // If version 2 envelope, modules are nested under .modules
+    const m = raw.modules || {};
+
+    const financial = {
+      transactions: Array.isArray(m.financial?.transactions) ? m.financial.transactions : (Array.isArray(raw.transactions) ? raw.transactions : (Array.isArray(raw.pro_transactions) ? raw.pro_transactions : [])),
+      accounts: Array.isArray(m.financial?.accounts) ? m.financial.accounts : (Array.isArray(raw.accounts) ? raw.accounts : (Array.isArray(raw.pro_accounts) ? raw.pro_accounts : [])),
+      transfers: Array.isArray(m.financial?.transfers) ? m.financial.transfers : (Array.isArray(raw.accountTransfers) ? raw.accountTransfers : (Array.isArray(raw.pro_account_transfers) ? raw.pro_account_transfers : []))
+    };
+
+    const budgets = {
+      limits: m.budgets?.limits || raw.budgetLimits || raw.pro_budget_limits || null,
+      allocationsMode: m.budgets?.allocationsMode || raw.allocationsMode || raw.pro_allocations_mode || null,
+      allocationsMonth: m.budgets?.allocationsMonth || raw.allocationsMonth || raw.pro_allocations_month || null,
+      customCategories: Array.isArray(m.budgets?.customCategories) ? m.budgets.customCategories : (Array.isArray(raw.customCategories) ? raw.customCategories : (Array.isArray(raw.pro_custom_categories) ? raw.pro_custom_categories : [])),
+      customSubcategories: Array.isArray(m.budgets?.customSubcategories) ? m.budgets.customSubcategories : (Array.isArray(raw.customSubcategories) ? raw.customSubcategories : (Array.isArray(raw.pro_custom_subcategories) ? raw.pro_custom_subcategories : []))
+    };
+
+    const inventory = {
+      stockData: Array.isArray(m.inventory?.stockData) ? m.inventory.stockData : (Array.isArray(raw.stockData) ? raw.stockData : (Array.isArray(raw.pro_stock) ? raw.pro_stock : [])),
+      pharmacyData: Array.isArray(m.inventory?.pharmacyData) ? m.inventory.pharmacyData : (Array.isArray(raw.pharmacyData) ? raw.pharmacyData : (Array.isArray(raw.pro_pharmacy) ? raw.pro_pharmacy : []))
+    };
+
+    const fleet = {
+      vehicles: Array.isArray(m.fleet?.vehicles) ? m.fleet.vehicles : (Array.isArray(raw.vehicles) ? raw.vehicles : (Array.isArray(raw.pro_vehicles) ? raw.pro_vehicles : [])),
+      fuels: Array.isArray(m.fleet?.fuels) ? m.fleet.fuels : (Array.isArray(raw.fuels) ? raw.fuels : (Array.isArray(raw.pro_vehicle_fuel) ? raw.pro_vehicle_fuel : [])),
+      maint: Array.isArray(m.fleet?.maint) ? m.fleet.maint : (Array.isArray(raw.maint) ? raw.maint : (Array.isArray(raw.pro_vehicle_maintenance) ? raw.pro_vehicle_maintenance : []))
+    };
+
+    const rentals = {
+      properties: Array.isArray(m.rentals?.properties) ? m.rentals.properties : (Array.isArray(raw.rentalProperties) ? raw.rentalProperties : (Array.isArray(raw.pro_rental_properties_v1) ? raw.pro_rental_properties_v1 : [])),
+      contracts: Array.isArray(m.rentals?.contracts) ? m.rentals.contracts : (Array.isArray(raw.rentalContracts) ? raw.rentalContracts : (Array.isArray(raw.pro_rental_contracts_v1) ? raw.pro_rental_contracts_v1 : [])),
+      notifications: Array.isArray(m.rentals?.notifications) ? m.rentals.notifications : (Array.isArray(raw.rentalNotifications) ? raw.rentalNotifications : (Array.isArray(raw.pro_rental_notifications_v1) ? raw.pro_rental_notifications_v1 : [])),
+      notificationConfig: m.rentals?.notificationConfig || raw.rentalNotificationConfig || raw.pro_rental_notification_config_v1 || null
+    };
+
+    const settings = {
+      theme: m.settings?.theme || raw.theme || raw.pro_theme || null,
+      userProfile: m.settings?.userProfile || raw.userProfile || raw.forecaster_profile_user || null,
+      notificationConfig: m.settings?.notificationConfig || raw.notificationConfig || null,
+      autoSync: m.settings?.autoSync !== undefined ? m.settings.autoSync : (raw.autoSync !== undefined ? raw.autoSync : null)
+    };
+
+    return {
+      detectedVersion,
+      sourceOrg,
+      ownerEmail,
+      ownerUserId,
+      modules: { financial, budgets, inventory, fleet, rentals, settings }
+    };
+  }
+
+  function buildBackupEnvelope(vault: VaultData, user: UserRecord, moduleFilter: string = 'all'): ForecasterBackupEnvelope {
+    const filter = (moduleFilter || 'all').toLowerCase();
+
+    const isAll = filter === 'all';
+    const isFin = isAll || filter === 'financial';
+    const isBud = isAll || filter === 'budgets';
+    const isInv = isAll || filter === 'inventory';
+    const isPrt = isAll || filter === 'parts';
+    const isFlt = isAll || filter === 'fleet';
+    const isRnt = isAll || filter === 'rentals';
+    const isSet = isAll || filter === 'settings';
+
+    // Spare parts filter from stockData
+    let stockItems = Array.isArray(vault.stockData) ? vault.stockData : [];
+    if (filter === 'parts') {
+      stockItems = stockItems.filter(p => p && (p.itemType === 'vehicle-spare-part' || p.itemType === 'residential-spare-part' || p.category === 'Spare Parts'));
+    }
+
+    const envelopeModules = {
+      financial: {
+        transactions: isFin ? (Array.isArray(vault.transactions) ? vault.transactions : []) : [],
+        accounts: isFin ? (Array.isArray(vault.accounts) ? vault.accounts : []) : [],
+        transfers: isFin ? (Array.isArray(vault.accountTransfers) ? vault.accountTransfers : []) : []
+      },
+      budgets: {
+        limits: isBud ? (vault.budgetLimits || null) : null,
+        allocationsMode: isBud ? (vault.allocationsMode || null) : null,
+        allocationsMonth: isBud ? (vault.allocationsMonth || null) : null,
+        customCategories: isBud ? (Array.isArray(vault.customCategories) ? vault.customCategories : []) : [],
+        customSubcategories: isBud ? (Array.isArray(vault.customSubcategories) ? vault.customSubcategories : []) : []
+      },
+      inventory: {
+        stockData: (isInv || isPrt) ? stockItems : [],
+        pharmacyData: isInv ? (Array.isArray(vault.pharmacyData) ? vault.pharmacyData : []) : []
+      },
+      fleet: {
+        vehicles: isFlt ? (Array.isArray(vault.vehicles) ? vault.vehicles : []) : [],
+        fuels: isFlt ? (Array.isArray(vault.fuels) ? vault.fuels : []) : [],
+        maint: isFlt ? (Array.isArray(vault.maint) ? vault.maint : []) : []
+      },
+      rentals: {
+        properties: isRnt ? (Array.isArray(vault.rentalProperties) ? vault.rentalProperties : []) : [],
+        contracts: isRnt ? (Array.isArray(vault.rentalContracts) ? vault.rentalContracts : []) : [],
+        notifications: isRnt ? (Array.isArray(vault.rentalNotifications) ? vault.rentalNotifications : []) : [],
+        notificationConfig: isRnt ? (vault.rentalNotificationConfig || null) : null
+      },
+      settings: {
+        theme: isSet ? (vault.userSettings?.theme || null) : null,
+        userProfile: isSet ? (vault.profileUser || null) : null,
+        notificationConfig: isSet ? (vault.rentalNotificationConfig || null) : null,
+        autoSync: isSet ? (vault.userSettings?.autoSync ?? true) : true
+      }
+    };
+
+    const totalRecords =
+      envelopeModules.financial.transactions.length +
+      envelopeModules.financial.accounts.length +
+      envelopeModules.financial.transfers.length +
+      envelopeModules.budgets.customCategories.length +
+      envelopeModules.inventory.stockData.length +
+      envelopeModules.inventory.pharmacyData.length +
+      envelopeModules.fleet.vehicles.length +
+      envelopeModules.fleet.fuels.length +
+      envelopeModules.fleet.maint.length +
+      envelopeModules.rentals.properties.length +
+      envelopeModules.rentals.contracts.length +
+      envelopeModules.rentals.notifications.length;
+
+    const summary = {
+      transactionsCount: envelopeModules.financial.transactions.length,
+      accountsCount: envelopeModules.financial.accounts.length,
+      transfersCount: envelopeModules.financial.transfers.length,
+      budgetLimitsSet: !!envelopeModules.budgets.limits,
+      customCategoriesCount: envelopeModules.budgets.customCategories.length,
+      stockItemsCount: envelopeModules.inventory.stockData.length,
+      pharmacyItemsCount: envelopeModules.inventory.pharmacyData.length,
+      vehiclesCount: envelopeModules.fleet.vehicles.length,
+      fuelLogsCount: envelopeModules.fleet.fuels.length,
+      maintenanceLogsCount: envelopeModules.fleet.maint.length,
+      rentalPropertiesCount: envelopeModules.rentals.properties.length,
+      rentalContractsCount: envelopeModules.rentals.contracts.length,
+      rentalNotificationsCount: envelopeModules.rentals.notifications.length,
+      totalRecords
+    };
+
+    const modulesJson = JSON.stringify(envelopeModules);
+    const checksum = crypto.createHash('sha256').update(modulesJson).digest('hex');
+
+    const envelope: ForecasterBackupEnvelope = {
+      format: 'forecaster-pro-backup',
+      schemaVersion: '2.0.0',
+      appVersion: '2.5.0',
+      exportedAt: new Date().toISOString(),
+      organizationId: vault.vaultId,
+      ownerEmail: user.email,
+      ownerUserId: user.id,
+      moduleFilter: filter,
+      checksum,
+      summary,
+      modules: envelopeModules,
+      // Backward compatibility top-level aliases
+      transactions: envelopeModules.financial.transactions,
+      accounts: envelopeModules.financial.accounts,
+      accountTransfers: envelopeModules.financial.transfers,
+      budgetLimits: envelopeModules.budgets.limits,
+      stockData: envelopeModules.inventory.stockData,
+      pharmacyData: envelopeModules.inventory.pharmacyData,
+      pro_vehicles: envelopeModules.fleet.vehicles,
+      pro_vehicle_fuel: envelopeModules.fleet.fuels,
+      pro_vehicle_maintenance: envelopeModules.fleet.maint,
+      pro_rental_properties_v1: envelopeModules.rentals.properties,
+      pro_rental_contracts_v1: envelopeModules.rentals.contracts,
+      pro_rental_notifications_v1: envelopeModules.rentals.notifications,
+      pro_rental_notification_config_v1: envelopeModules.rentals.notificationConfig
+    };
+
+    return envelope;
+  }
+
+  function validateBackupPayload(rawPayload: any, targetVault: VaultData, user: UserRecord) {
+    const normalized = normalizeBackupData(rawPayload);
+    const { modules, detectedVersion, sourceOrg, ownerEmail } = normalized;
+
+    const errors: Array<{ module: string; id: string; reason: string }> = [];
+    const incompatibilities: string[] = [];
+
+    if (detectedVersion !== '2.0.0') {
+      incompatibilities.push(`Legacy backup format (${detectedVersion}) detected. Normalized automatically to schema 2.0.0.`);
+    }
+
+    const ownershipMatch = sourceOrg === targetVault.vaultId;
+    if (!ownershipMatch) {
+      incompatibilities.push(`Backup belongs to organization "${sourceOrg}". Records will be safely mapped into your authorized organization "${targetVault.vaultId}".`);
+    }
+
+    const moduleSummary: Record<string, { total: number; valid: number; duplicates: number; newRecords: number; invalid: number }> = {};
+
+    function auditCollection(moduleKey: string, subKey: string, incomingList: any[], existingList: any[]) {
+      const existingIds = new Set((existingList || []).filter((r: any) => r && r.id).map((r: any) => String(r.id)));
+      let valid = 0;
+      let duplicates = 0;
+      let newRecords = 0;
+      let invalid = 0;
+
+      incomingList.forEach((item, idx) => {
+        const check = validateRecord(subKey, item);
+        const recordId = item?.id ? String(item.id) : `idx_${idx}`;
+        if (!check.valid) {
+          invalid++;
+          errors.push({ module: `${moduleKey}.${subKey}`, id: recordId, reason: check.reason || 'Invalid structure' });
+        } else {
+          valid++;
+          if (existingIds.has(recordId)) {
+            duplicates++;
+          } else {
+            newRecords++;
+          }
+        }
+      });
+
+      moduleSummary[`${moduleKey}.${subKey}`] = {
+        total: incomingList.length,
+        valid,
+        duplicates,
+        newRecords,
+        invalid
+      };
+    }
+
+    auditCollection('financial', 'transactions', modules.financial.transactions, targetVault.transactions);
+    auditCollection('financial', 'accounts', modules.financial.accounts, targetVault.accounts);
+    auditCollection('financial', 'transfers', modules.financial.transfers, targetVault.accountTransfers);
+    auditCollection('inventory', 'stockData', modules.inventory.stockData, targetVault.stockData || []);
+    auditCollection('inventory', 'pharmacyData', modules.inventory.pharmacyData, targetVault.pharmacyData || []);
+    auditCollection('fleet', 'vehicles', modules.fleet.vehicles, targetVault.vehicles || []);
+    auditCollection('fleet', 'fuels', modules.fleet.fuels, targetVault.fuels || []);
+    auditCollection('fleet', 'maint', modules.fleet.maint, targetVault.maint || []);
+    auditCollection('rentals', 'rentalProperties', modules.rentals.properties, targetVault.rentalProperties || []);
+    auditCollection('rentals', 'rentalContracts', modules.rentals.contracts, targetVault.rentalContracts || []);
+    auditCollection('rentals', 'rentalNotifications', modules.rentals.notifications, targetVault.rentalNotifications || []);
+
+    let totalRecords = 0;
+    let validRecordCount = 0;
+    let invalidRecordCount = 0;
+    let existingDuplicateCount = 0;
+    let newRecordCount = 0;
+
+    Object.values(moduleSummary).forEach(s => {
+      totalRecords += s.total;
+      validRecordCount += s.valid;
+      invalidRecordCount += s.invalid;
+      existingDuplicateCount += s.duplicates;
+      newRecordCount += s.newRecords;
+    });
+
+    const isValid = totalRecords > 0 ? (validRecordCount > 0) : true;
+    const hasWarnings = invalidRecordCount > 0 || incompatibilities.length > 0;
+
+    return {
+      ok: true,
+      valid: isValid,
+      hasWarnings,
+      detectedVersion,
+      sourceOrganization: sourceOrg,
+      targetOrganization: targetVault.vaultId,
+      ownerEmail,
+      ownershipMatch,
+      totalRecords,
+      validRecordCount,
+      invalidRecordCount,
+      existingDuplicateCount,
+      newRecordCount,
+      moduleSummary,
+      errors,
+      incompatibilities,
+      normalized
+    };
+  }
+
+  function executeBackupRestore(
+    rawPayload: any,
+    targetVault: VaultData,
+    user: UserRecord,
+    options: { mode?: 'merge' | 'replace'; selectedModules?: string[] } = {}
+  ) {
+    const validation = validateBackupPayload(rawPayload, targetVault, user);
+    if (!validation.valid && validation.totalRecords > 0) {
+      throw new Error(`Backup validation failed: ${validation.errors.map(e => `${e.module}[${e.id}]: ${e.reason}`).join('; ')}`);
+    }
+
+    const mode = options.mode === 'replace' ? 'replace' : 'merge';
+    const selected = options.selectedModules && options.selectedModules.length > 0
+      ? options.selectedModules.map(m => m.toLowerCase())
+      : ['all'];
+
+    const shouldProcess = (modName: string) => selected.includes('all') || selected.includes(modName.toLowerCase());
+
+    const { modules } = validation.normalized;
+    const restoredSummary: Record<string, { inserted: number; updated: number; preserved: number; total: number }> = {};
+
+    function applyCollection(
+      vaultKey: keyof VaultData,
+      subKey: string,
+      incomingList: any[],
+      modName: string
+    ) {
+      if (!shouldProcess(modName)) return;
+
+      const validIncoming = incomingList.filter(item => validateRecord(subKey, item).valid);
+      const existingList = Array.isArray(targetVault[vaultKey]) ? (targetVault[vaultKey] as any[]) : [];
+
+      if (mode === 'replace') {
+        (targetVault as any)[vaultKey] = validIncoming;
+        restoredSummary[subKey] = {
+          inserted: validIncoming.length,
+          updated: 0,
+          preserved: 0,
+          total: validIncoming.length
+        };
+      } else {
+        // Non-destructive deduplication merge
+        const existingMap = new Map<string, any>();
+        existingList.forEach(item => {
+          if (item && item.id) existingMap.set(String(item.id), item);
+        });
+
+        let inserted = 0;
+        let updated = 0;
+
+        validIncoming.forEach(item => {
+          const id = String(item.id || item.timestamp);
+          if (existingMap.has(id)) {
+            // Intelligent non-destructive merge: incoming updates fields without wiping custom metadata
+            const merged = { ...existingMap.get(id), ...item };
+            existingMap.set(id, merged);
+            updated++;
+          } else {
+            existingMap.set(id, item);
+            inserted++;
+          }
+        });
+
+        const mergedArray = Array.from(existingMap.values());
+        (targetVault as any)[vaultKey] = mergedArray;
+
+        restoredSummary[subKey] = {
+          inserted,
+          updated,
+          preserved: existingList.length - updated,
+          total: mergedArray.length
+        };
+      }
+    }
+
+    // 1. Financial
+    applyCollection('transactions', 'transactions', modules.financial.transactions, 'financial');
+    applyCollection('accounts', 'accounts', modules.financial.accounts, 'financial');
+    applyCollection('accountTransfers', 'transfers', modules.financial.transfers, 'financial');
+
+    // 2. Budgets & Allocations
+    if (shouldProcess('budgets')) {
+      if (modules.budgets.limits) {
+        if (mode === 'replace' || !targetVault.budgetLimits) {
+          targetVault.budgetLimits = modules.budgets.limits;
+        } else {
+          targetVault.budgetLimits = { ...targetVault.budgetLimits, ...modules.budgets.limits };
+        }
+      }
+      if (modules.budgets.allocationsMode) targetVault.allocationsMode = modules.budgets.allocationsMode;
+      if (modules.budgets.allocationsMonth) targetVault.allocationsMonth = modules.budgets.allocationsMonth;
+      if (Array.isArray(modules.budgets.customCategories) && modules.budgets.customCategories.length > 0) {
+        if (mode === 'replace' || !targetVault.customCategories) {
+          targetVault.customCategories = modules.budgets.customCategories;
+        } else {
+          const catMap = new Map();
+          (targetVault.customCategories || []).forEach((c: any) => { if (c && (c.name || c.id)) catMap.set(c.id || c.name, c); });
+          modules.budgets.customCategories.forEach((c: any) => { if (c && (c.name || c.id)) catMap.set(c.id || c.name, c); });
+          targetVault.customCategories = Array.from(catMap.values());
+        }
+      }
+    }
+
+    // 3. Inventory & Pharmacy Stock
+    applyCollection('stockData', 'stockData', modules.inventory.stockData, 'inventory');
+    applyCollection('pharmacyData', 'pharmacyData', modules.inventory.pharmacyData, 'inventory');
+
+    // 4. Vehicles, Fuel & Maintenance
+    applyCollection('vehicles', 'vehicles', modules.fleet.vehicles, 'fleet');
+    applyCollection('fuels', 'fuels', modules.fleet.fuels, 'fleet');
+    applyCollection('maint', 'maint', modules.fleet.maint, 'fleet');
+
+    // 5. Rental Properties & Contracts
+    applyCollection('rentalProperties', 'rentalProperties', modules.rentals.properties, 'rentals');
+    applyCollection('rentalContracts', 'rentalContracts', modules.rentals.contracts, 'rentals');
+    applyCollection('rentalNotifications', 'rentalNotifications', modules.rentals.notifications, 'rentals');
+    if (shouldProcess('rentals') && modules.rentals.notificationConfig) {
+      targetVault.rentalNotificationConfig = modules.rentals.notificationConfig;
+    }
+
+    // 6. Settings & Profile
+    if (shouldProcess('settings')) {
+      if (modules.settings.userProfile) targetVault.profileUser = modules.settings.userProfile;
+      if (modules.settings.theme || modules.settings.autoSync !== null) {
+        targetVault.userSettings = {
+          ...(targetVault.userSettings || {}),
+          theme: modules.settings.theme || targetVault.userSettings?.theme,
+          autoSync: modules.settings.autoSync !== null ? modules.settings.autoSync : targetVault.userSettings?.autoSync
+        };
+      }
+    }
+
+    targetVault.updatedAt = new Date().toISOString();
+    saveDatabase(db);
+
+    // Audit Log
+    if (!db.auditLog) db.auditLog = [];
+    db.auditLog.unshift({
+      id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      timestamp: new Date().toISOString(),
+      adminEmail: user.email,
+      action: 'BACKUP_RESTORED',
+      category: 'security',
+      details: `Backup restored into vault ${targetVault.vaultId} using mode "${mode}". Processed modules: ${selected.join(', ')}.`,
+      metadata: {
+        mode,
+        selectedModules: selected,
+        sourceOrg: validation.sourceOrganization,
+        detectedVersion: validation.detectedVersion,
+        restoredSummary
+      }
+    });
+
+    return {
+      ok: true,
+      mode,
+      vaultId: targetVault.vaultId,
+      updatedAt: targetVault.updatedAt,
+      validation,
+      restoredSummary
+    };
+  }
+
+  // 1. Export Backup (Complete Snapshot or Single Module)
+  app.get('/api/backup/export', (req, res) => {
     try {
-      const vaultId = String(req.body?.vaultId || req.query?.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-      const user = requireVaultAccess(req, res, vaultId, 'write');
+      const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+      const user = requireVaultAccess(req, res, vaultId, 'read');
       if (!user) return;
 
       const vault = db.vaults[vaultId] || {
@@ -1895,26 +2534,86 @@ async function startServer() {
         accountTransfers: []
       };
 
-      vault.accounts = MASTER_ACCOUNTS;
-      vault.vehicles = MASTER_VEHICLES;
-      vault.fuels = MASTER_FUELS;
-      vault.maint = MASTER_MAINT;
-      vault.stockData = MASTER_STOCK;
-      vault.pharmacyData = MASTER_PHARMACY;
-      vault.transactions = MASTER_TRANSACTIONS;
-      vault.budgetLimits = { income: 4500, expense: 2500 };
-      vault.updatedAt = new Date().toISOString();
+      const moduleFilter = String(req.query.module || 'all').trim();
+      const envelope = buildBackupEnvelope(vault, user, moduleFilter);
 
-      db.vaults[vaultId] = vault;
-      saveDatabase(db);
+      res.setHeader('Content-Disposition', `attachment; filename="forecaster_backup_${vaultId}_${moduleFilter}_${new Date().toISOString().slice(0, 10)}.json"`);
+      res.json({
+        ok: true,
+        backup: envelope
+      });
+    } catch (err: any) {
+      console.error('[Backup Export Error]', err);
+      res.status(500).json({ ok: false, error: 'Backup export failed: ' + err.message });
+    }
+  });
+
+  // 2. Pre-flight Validation & Diagnostics Endpoint
+  app.post('/api/backup/validate', (req, res) => {
+    try {
+      const vaultId = String(req.body?.vaultId || req.query?.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+      const user = requireVaultAccess(req, res, vaultId, 'read');
+      if (!user) return;
+
+      const vault = db.vaults[vaultId] || {
+        vaultId,
+        updatedAt: new Date().toISOString(),
+        transactions: [],
+        accounts: [],
+        accountTransfers: []
+      };
+
+      const rawPayload = req.body?.backupData || req.body;
+      if (!rawPayload || typeof rawPayload !== 'object') {
+        return res.status(400).json({ ok: false, error: 'Invalid backup payload: Body must contain valid backupData object.' });
+      }
+
+      const report = validateBackupPayload(rawPayload, vault, user);
+      res.json(report);
+    } catch (err: any) {
+      console.error('[Backup Validate Error]', err);
+      res.status(400).json({ ok: false, error: 'Validation failed: ' + err.message });
+    }
+  });
+
+  // 3. Complete & Modular Restore with Deduplication Endpoint
+  app.post('/api/backup/restore', (req, res) => {
+    try {
+      const vaultId = String(req.body?.vaultId || req.query?.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+      const user = requireVaultAccess(req, res, vaultId, 'write');
+      if (!user) return;
+
+      let vault = db.vaults[vaultId];
+      if (!vault) {
+        vault = {
+          vaultId,
+          updatedAt: new Date().toISOString(),
+          transactions: [],
+          accounts: [],
+          accountTransfers: []
+        };
+        db.vaults[vaultId] = vault;
+      }
+
+      const rawPayload = req.body?.backupData || req.body;
+      if (!rawPayload || typeof rawPayload !== 'object') {
+        return res.status(400).json({ ok: false, error: 'Invalid backup payload: Body must contain valid backupData object.' });
+      }
+
+      const mode = req.body?.mode === 'replace' ? 'replace' : 'merge';
+      const selectedModules = Array.isArray(req.body?.selectedModules) ? req.body.selectedModules : (req.body?.module ? [req.body.module] : ['all']);
+
+      const result = executeBackupRestore(rawPayload, vault, user, { mode, selectedModules });
 
       res.json({
         ok: true,
-        message: 'Master history, vehicles, fueling logs, routine medication schedules and audit register restored successfully!',
+        message: `Backup restoration complete (${mode} mode).`,
+        result,
         vault
       });
     } catch (err: any) {
-      res.status(500).json({ ok: false, error: 'Failed to restore history: ' + err.message });
+      console.error('[Backup Restore Error]', err);
+      res.status(400).json({ ok: false, error: 'Restoration failed: ' + err.message });
     }
   });
 

@@ -5582,7 +5582,7 @@
   /* ============================================================================
    * BACKUP & RESTORE DATA ENGINE (LOCAL JSON IMPORT/EXPORT)
    * ============================================================================ */
-  window.downloadBackupJSON = function() {
+  window.downloadBackupJSON = async function(moduleFilter) {
     try {
       const A = (k) => {
         try {
@@ -5597,30 +5597,137 @@
         } catch (e) { return def; }
       };
 
-      const backupData = {
-        version: 'ForecasterPro-v1.06.12-enterprise',
-        exportedAt: new Date().toISOString(),
-        transactions: Array.isArray(window.transactions) && window.transactions.length > 0 ? window.transactions : A('pro_transactions'),
-        stockData: Array.isArray(window.stockData) && window.stockData.length > 0 ? window.stockData : A('pro_stock'),
-        pharmacyData: Array.isArray(window.pharmacyData) && window.pharmacyData.length > 0 ? window.pharmacyData : A('pro_pharmacy'),
-        budgetLimits: (window.budgetLimits && typeof window.budgetLimits === 'object') ? window.budgetLimits : O('pro_budget_limits', { income: 3500, expense: 2000 }),
-        accounts: Array.isArray(window.accounts) && window.accounts.length > 0 ? window.accounts : A('pro_accounts'),
-        accountTransfers: Array.isArray(window.accountTransfers) ? window.accountTransfers : A('pro_account_transfers'),
-        pro_vehicles: A('pro_vehicles'),
-        pro_vehicle_fuel: A('pro_vehicle_fuel'),
-        pro_vehicle_maintenance: A('pro_vehicle_maintenance'),
-        pro_rental_contracts_v1: A('pro_rental_contracts_v1'),
-        pro_rental_properties_v1: A('pro_rental_properties_v1'),
-        pro_rental_notifications_v1: A('pro_rental_notifications_v1'),
-        pro_rental_notification_config_v1: O('pro_rental_notification_config_v1', {}),
-        forecaster_profile_user: O('forecaster_profile_user', null),
-      };
+      let backupData = null;
+
+      // Try server-side export first for verified digital checksum
+      if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.exportBackup === 'function') {
+        try {
+          backupData = await window.ForecasterCloudSync.exportBackup(moduleFilter || 'all');
+        } catch (e) {
+          console.warn('[Forecaster Backup Export] Cloud endpoint fallback to local generator:', e);
+        }
+      }
+
+      if (!backupData) {
+        const local = window.ForecasterCloudSync && typeof window.ForecasterCloudSync.getLocalData === 'function'
+          ? window.ForecasterCloudSync.getLocalData()
+          : {};
+
+        const filter = (moduleFilter || 'all').toLowerCase();
+        const isAll = filter === 'all';
+        const isFin = isAll || filter === 'financial';
+        const isBud = isAll || filter === 'budgets';
+        const isInv = isAll || filter === 'inventory';
+        const isPrt = isAll || filter === 'parts';
+        const isFlt = isAll || filter === 'fleet';
+        const isRnt = isAll || filter === 'rentals';
+        const isSet = isAll || filter === 'settings';
+
+        let stockItems = local.stockData || A('pro_stock');
+        if (filter === 'parts') {
+          stockItems = stockItems.filter(p => p && (p.itemType === 'vehicle-spare-part' || p.itemType === 'residential-spare-part' || p.category === 'Spare Parts'));
+        }
+
+        const envelopeModules = {
+          financial: {
+            transactions: isFin ? (local.transactions || A('pro_transactions')) : [],
+            accounts: isFin ? (local.accounts || A('pro_accounts')) : [],
+            transfers: isFin ? (local.accountTransfers || A('pro_account_transfers')) : []
+          },
+          budgets: {
+            limits: isBud ? (local.budgetLimits || O('pro_budget_limits', { income: 0, expense: 0 })) : null,
+            allocationsMode: isBud ? (local.allocationsMode || localStorage.getItem('pro_allocations_mode') || 'envelope') : null,
+            allocationsMonth: isBud ? (local.allocationsMonth || localStorage.getItem('pro_allocations_month') || '') : null,
+            customCategories: isBud ? (local.customCategories || A('pro_custom_categories')) : [],
+            customSubcategories: isBud ? (local.customSubcategories || A('pro_custom_subcategories')) : []
+          },
+          inventory: {
+            stockData: (isInv || isPrt) ? stockItems : [],
+            pharmacyData: isInv ? (local.pharmacyData || A('pro_pharmacy')) : []
+          },
+          fleet: {
+            vehicles: isFlt ? (local.vehicles || A('pro_vehicles')) : [],
+            fuels: isFlt ? (local.fuels || A('pro_vehicle_fuel')) : [],
+            maint: isFlt ? (local.maint || A('pro_vehicle_maintenance')) : []
+          },
+          rentals: {
+            properties: isRnt ? (local.rentalProperties || A('pro_rental_properties_v1')) : [],
+            contracts: isRnt ? (local.rentalContracts || A('pro_rental_contracts_v1')) : [],
+            notifications: isRnt ? (local.rentalNotifications || A('pro_rental_notifications_v1')) : [],
+            notificationConfig: isRnt ? (local.rentalNotificationConfig || O('pro_rental_notification_config_v1', {})) : null
+          },
+          settings: {
+            theme: isSet ? (localStorage.getItem('pro_theme') || 'system') : null,
+            userProfile: isSet ? O('forecaster_profile_user', null) : null,
+            notificationConfig: isSet ? O('pro_rental_notification_config_v1', {}) : null,
+            autoSync: isSet ? (window.ForecasterCloudSync?.isAutoSync?.() ?? true) : true
+          }
+        };
+
+        const totalRecords =
+          envelopeModules.financial.transactions.length +
+          envelopeModules.financial.accounts.length +
+          envelopeModules.financial.transfers.length +
+          envelopeModules.budgets.customCategories.length +
+          envelopeModules.inventory.stockData.length +
+          envelopeModules.inventory.pharmacyData.length +
+          envelopeModules.fleet.vehicles.length +
+          envelopeModules.fleet.fuels.length +
+          envelopeModules.fleet.maint.length +
+          envelopeModules.rentals.properties.length +
+          envelopeModules.rentals.contracts.length +
+          envelopeModules.rentals.notifications.length;
+
+        backupData = {
+          format: 'forecaster-pro-backup',
+          schemaVersion: '2.0.0',
+          appVersion: '2.5.0',
+          exportedAt: new Date().toISOString(),
+          organizationId: (window.ForecasterCloudSync?.getVaultId?.() || 'shared-main-vault'),
+          ownerEmail: (JSON.parse(localStorage.getItem('forecaster_auth_user') || 'null')?.email || 'peter.w.badir@gmail.com'),
+          ownerUserId: (JSON.parse(localStorage.getItem('forecaster_auth_user') || 'null')?.id || 'usr_peter_badir'),
+          moduleFilter: filter,
+          summary: {
+            transactionsCount: envelopeModules.financial.transactions.length,
+            accountsCount: envelopeModules.financial.accounts.length,
+            transfersCount: envelopeModules.financial.transfers.length,
+            budgetLimitsSet: !!envelopeModules.budgets.limits,
+            customCategoriesCount: envelopeModules.budgets.customCategories.length,
+            stockItemsCount: envelopeModules.inventory.stockData.length,
+            pharmacyItemsCount: envelopeModules.inventory.pharmacyData.length,
+            vehiclesCount: envelopeModules.fleet.vehicles.length,
+            fuelLogsCount: envelopeModules.fleet.fuels.length,
+            maintenanceLogsCount: envelopeModules.fleet.maint.length,
+            rentalPropertiesCount: envelopeModules.rentals.properties.length,
+            rentalContractsCount: envelopeModules.rentals.contracts.length,
+            rentalNotificationsCount: envelopeModules.rentals.notifications.length,
+            totalRecords
+          },
+          modules: envelopeModules,
+          // Backward compatibility aliases
+          transactions: envelopeModules.financial.transactions,
+          accounts: envelopeModules.financial.accounts,
+          accountTransfers: envelopeModules.financial.transfers,
+          budgetLimits: envelopeModules.budgets.limits,
+          stockData: envelopeModules.inventory.stockData,
+          pharmacyData: envelopeModules.inventory.pharmacyData,
+          pro_vehicles: envelopeModules.fleet.vehicles,
+          pro_vehicle_fuel: envelopeModules.fleet.fuels,
+          pro_vehicle_maintenance: envelopeModules.fleet.maint,
+          pro_rental_properties_v1: envelopeModules.rentals.properties,
+          pro_rental_contracts_v1: envelopeModules.rentals.contracts,
+          pro_rental_notifications_v1: envelopeModules.rentals.notifications,
+          pro_rental_notification_config_v1: envelopeModules.rentals.notificationConfig
+        };
+      }
 
       const jsonStr = JSON.stringify(backupData, null, 2);
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const downloadAnchor = document.createElement('a');
-      const filename = `forecaster_pro_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      const vId = (window.ForecasterCloudSync?.getVaultId?.() || 'shared-main-vault');
+      const modTag = (moduleFilter || 'all').toLowerCase();
+      const filename = `forecaster_backup_${vId}_${modTag}_${new Date().toISOString().slice(0, 10)}.json`;
       downloadAnchor.href = url;
       downloadAnchor.download = filename;
       document.body.appendChild(downloadAnchor);
@@ -5629,7 +5736,7 @@
       URL.revokeObjectURL(url);
 
       if (typeof window.triggerToast === 'function') {
-        window.triggerToast('Backup JSON exported successfully!', 'success');
+        window.triggerToast(`Backup JSON (${modTag.toUpperCase()}) exported successfully!`, 'success');
       }
     } catch (err) {
       console.error('[Forecaster Backup Export Error]', err);
@@ -5637,6 +5744,21 @@
         window.triggerToast('Failed to export backup: ' + err.message, 'error');
       }
     }
+  };
+
+  /* ============================================================================
+   * RESTORATION REVIEW MODAL & SAFE DEDUPLICATION CONTROLS
+   * ============================================================================ */
+  window._pendingBackupData = null;
+  window._pendingValidationReport = null;
+
+  window.closeBackupReviewModal = function() {
+    const modal = document.getElementById('backup-restore-review-modal');
+    if (modal) modal.classList.add('hidden');
+    window._pendingBackupData = null;
+    window._pendingValidationReport = null;
+    const fileInput = document.getElementById('import-json-file');
+    if (fileInput) fileInput.value = '';
   };
 
   window.importBackupJSON = function(event) {
@@ -5650,165 +5772,249 @@
 
     const reader = new FileReader();
 
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
       try {
         const text = e.target.result;
-        const data = JSON.parse(text);
+        let data = null;
+        try {
+          data = JSON.parse(text);
+        } catch (jsonErr) {
+          throw new Error('File content is not valid JSON.');
+        }
 
         if (!data || typeof data !== 'object') {
-          throw new Error('Invalid JSON structure');
+          throw new Error('Invalid JSON structure: Backup file must contain a JSON object.');
         }
 
-        let datasetCount = 0;
+        window._pendingBackupData = data;
 
-        // 1. Transactions
-        if (Array.isArray(data.transactions)) {
-          window.transactions = data.transactions;
-          localStorage.setItem('pro_transactions', JSON.stringify(data.transactions));
-          datasetCount++;
-        } else if (Array.isArray(data.pro_transactions)) {
-          window.transactions = data.pro_transactions;
-          localStorage.setItem('pro_transactions', JSON.stringify(data.pro_transactions));
-          datasetCount++;
-        }
-
-        // 2. Stock / Inventory
-        if (Array.isArray(data.stockData)) {
-          window.stockData = data.stockData;
-          localStorage.setItem('pro_stock', JSON.stringify(data.stockData));
-          datasetCount++;
-        } else if (Array.isArray(data.pro_stock)) {
-          window.stockData = data.pro_stock;
-          localStorage.setItem('pro_stock', JSON.stringify(data.pro_stock));
-          datasetCount++;
-        }
-
-        // 3. Pharmacy / Medications
-        if (Array.isArray(data.pharmacyData)) {
-          window.pharmacyData = data.pharmacyData;
-          localStorage.setItem('pro_pharmacy', JSON.stringify(data.pharmacyData));
-          datasetCount++;
-        } else if (Array.isArray(data.pro_pharmacy)) {
-          window.pharmacyData = data.pro_pharmacy;
-          localStorage.setItem('pro_pharmacy', JSON.stringify(data.pro_pharmacy));
-          datasetCount++;
-        }
-
-        // 4. Budget Limits
-        if (data.budgetLimits && typeof data.budgetLimits === 'object') {
-          window.budgetLimits = data.budgetLimits;
-          localStorage.setItem('pro_budget_limits', JSON.stringify(data.budgetLimits));
-          datasetCount++;
-        } else if (data.pro_budget_limits && typeof data.pro_budget_limits === 'object') {
-          window.budgetLimits = data.pro_budget_limits;
-          localStorage.setItem('pro_budget_limits', JSON.stringify(data.pro_budget_limits));
-          datasetCount++;
-        }
-
-        // 5. Payment Accounts & Transfers
-        if (Array.isArray(data.accounts)) {
-          window.accounts = data.accounts;
-          localStorage.setItem('pro_accounts', JSON.stringify(data.accounts));
-          datasetCount++;
-        } else if (Array.isArray(data.pro_accounts)) {
-          window.accounts = data.pro_accounts;
-          localStorage.setItem('pro_accounts', JSON.stringify(data.pro_accounts));
-          datasetCount++;
-        }
-
-        if (Array.isArray(data.accountTransfers)) {
-          window.accountTransfers = data.accountTransfers;
-          localStorage.setItem('pro_account_transfers', JSON.stringify(data.accountTransfers));
-          datasetCount++;
-        } else if (Array.isArray(data.pro_account_transfers)) {
-          window.accountTransfers = data.pro_account_transfers;
-          localStorage.setItem('pro_account_transfers', JSON.stringify(data.pro_account_transfers));
-          datasetCount++;
-        }
-
-        // 6. Vehicles, Fuel, Maintenance
-        if (Array.isArray(data.pro_vehicles) || Array.isArray(data.vehicles)) {
-          const v = data.pro_vehicles || data.vehicles;
-          localStorage.setItem('pro_vehicles', JSON.stringify(v));
-          datasetCount++;
-        }
-        if (Array.isArray(data.pro_vehicle_fuel) || Array.isArray(data.vehicleFuel)) {
-          const vf = data.pro_vehicle_fuel || data.vehicleFuel;
-          localStorage.setItem('pro_vehicle_fuel', JSON.stringify(vf));
-          datasetCount++;
-        }
-        if (Array.isArray(data.pro_vehicle_maintenance) || Array.isArray(data.vehicleMaintenance)) {
-          const vm = data.pro_vehicle_maintenance || data.vehicleMaintenance;
-          localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(vm));
-          datasetCount++;
-        }
-
-        // 7. Rental Contracts & Properties
-        if (Array.isArray(data.pro_rental_contracts_v1) || Array.isArray(data.rentalContracts)) {
-          const rc = data.pro_rental_contracts_v1 || data.rentalContracts;
-          localStorage.setItem('pro_rental_contracts_v1', JSON.stringify(rc));
-          datasetCount++;
-        }
-        if (Array.isArray(data.pro_rental_properties_v1) || Array.isArray(data.rentalProperties)) {
-          const rp = data.pro_rental_properties_v1 || data.rentalProperties;
-          localStorage.setItem('pro_rental_properties_v1', JSON.stringify(rp));
-          datasetCount++;
-        }
-        if (Array.isArray(data.pro_rental_notifications_v1)) {
-          localStorage.setItem('pro_rental_notifications_v1', JSON.stringify(data.pro_rental_notifications_v1));
-        }
-        if (data.pro_rental_notification_config_v1) {
-          localStorage.setItem('pro_rental_notification_config_v1', JSON.stringify(data.pro_rental_notification_config_v1));
-        }
-
-        // 8. User Profile
-        if (data.forecaster_profile_user) {
-          localStorage.setItem('forecaster_profile_user', JSON.stringify(data.forecaster_profile_user));
-        }
-
-        if (datasetCount === 0) {
-          throw new Error('No recognized Forecaster Pro datasets found in the backup file.');
-        }
-
-        // Reset file input so re-selecting same file triggers change
-        fileInput.value = '';
-
-        // Reload data into memory
-        if (typeof window.loadIntegratedDatabases === 'function') window.loadIntegratedDatabases();
-        if (typeof window.loadRentalDatabase === 'function') window.loadRentalDatabase();
-        if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
-        if (typeof window.rpmLoad === 'function') window.rpmLoad();
-
-        // Re-render UI
-        if (typeof window.renderAllViews === 'function') {
-          window.renderAllViews();
-        }
-
-        if (typeof window.triggerToast === 'function') {
-          window.triggerToast(`Backup successfully imported! (${datasetCount} datasets restored)`, 'success');
-        }
-
-        if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
-          window.ForecasterCloudSync.notifyDataChanged();
-        }
-
-        // Return to dashboard cleanly
-        setTimeout(() => {
-          if (typeof window.switchView === 'function') {
-            window.switchView('dashboard');
+        // Perform server or client-side pre-flight validation
+        let report = null;
+        if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.validateBackup === 'function') {
+          try {
+            report = await window.ForecasterCloudSync.validateBackup(data);
+          } catch (valErr) {
+            console.warn('[Backup Validation] Cloud validation notice:', valErr);
           }
-        }, 400);
+        }
+
+        if (!report) {
+          // Client-side fallback validator
+          report = {
+            ok: true,
+            valid: true,
+            detectedVersion: data.schemaVersion || (data.version && String(data.version).includes('1.') ? '1.0.0' : '2.0.0'),
+            sourceOrganization: data.organizationId || data.vaultId || 'default',
+            targetOrganization: (window.ForecasterCloudSync?.getVaultId?.() || 'shared-main-vault'),
+            ownershipMatch: (data.organizationId || data.vaultId) === (window.ForecasterCloudSync?.getVaultId?.() || 'shared-main-vault'),
+            totalRecords: 0,
+            validRecordCount: 0,
+            invalidRecordCount: 0,
+            existingDuplicateCount: 0,
+            newRecordCount: 0,
+            moduleSummary: {},
+            errors: [],
+            incompatibilities: []
+          };
+        }
+
+        window._pendingValidationReport = report;
+
+        // Populate Modal UI
+        const modal = document.getElementById('backup-restore-review-modal');
+        if (!modal) {
+          // Fallback direct non-destructive restore
+          await window.ForecasterCloudSync.restoreBackup(data, 'merge', ['all']);
+          if (typeof window.triggerToast === 'function') {
+            window.triggerToast('Backup restored successfully!', 'success');
+          }
+          return;
+        }
+
+        // 1. Meta Cards
+        const metaVer = document.getElementById('bk-meta-version');
+        if (metaVer) metaVer.textContent = report.detectedVersion || 'v2.0.0';
+
+        const metaTot = document.getElementById('bk-meta-total');
+        if (metaTot) metaTot.textContent = report.totalRecords || 0;
+
+        const metaVal = document.getElementById('bk-meta-valid');
+        if (metaVal) metaVal.textContent = report.validRecordCount || report.totalRecords || 0;
+
+        const metaDup = document.getElementById('bk-meta-duplicates');
+        if (metaDup) metaDup.textContent = report.existingDuplicateCount || 0;
+
+        // 2. Ownership notice
+        const targetOrgEl = document.getElementById('bk-target-org');
+        if (targetOrgEl) targetOrgEl.textContent = report.targetOrganization || 'shared-main-vault';
+
+        const ownerBadge = document.getElementById('bk-ownership-badge');
+        if (ownerBadge) {
+          if (report.ownershipMatch) {
+            ownerBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-300';
+            ownerBadge.textContent = 'Workspace Match';
+          } else {
+            ownerBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-300';
+            ownerBadge.textContent = 'Cross-Org Import';
+          }
+        }
+
+        // 3. Warnings Container
+        const warnContainer = document.getElementById('bk-warnings-container');
+        const warnList = document.getElementById('bk-warnings-list');
+        if (warnContainer && warnList) {
+          warnList.innerHTML = '';
+          const msgs = [...(report.incompatibilities || []), ...(report.errors || []).map(e => `${e.module}[${e.id}]: ${e.reason}`)];
+          if (msgs.length > 0) {
+            msgs.slice(0, 5).forEach(m => {
+              const li = document.createElement('li');
+              li.textContent = m;
+              warnList.appendChild(li);
+            });
+            warnContainer.classList.remove('hidden');
+          } else {
+            warnContainer.classList.add('hidden');
+          }
+        }
+
+        // 4. Modules Breakdown Table
+        const tbody = document.getElementById('bk-modules-table-body');
+        if (tbody) {
+          tbody.innerHTML = '';
+          const modulesConfig = [
+            { key: 'financial', label: '💵 Financial (Ledger & Accounts)', subKeys: ['transactions', 'accounts', 'transfers'] },
+            { key: 'budgets', label: '📊 Budgets & Allocations', subKeys: ['limits', 'customCategories'] },
+            { key: 'inventory', label: '💊 Inventory & Pharmacy', subKeys: ['stockData', 'pharmacyData'] },
+            { key: 'fleet', label: '🚗 Vehicle Fleet & Maintenance', subKeys: ['vehicles', 'fuels', 'maint'] },
+            { key: 'rentals', label: '🏠 Rental Contracts & Properties', subKeys: ['rentalProperties', 'rentalContracts', 'rentalNotifications'] },
+            { key: 'settings', label: '⚙️ Settings & User Preferences', subKeys: [] }
+          ];
+
+          modulesConfig.forEach(mCfg => {
+            let modTotal = 0;
+            let modDups = 0;
+            let modNew = 0;
+
+            mCfg.subKeys.forEach(sk => {
+              const fullKey = Object.keys(report.moduleSummary || {}).find(k => k.endsWith(`.${sk}`));
+              if (fullKey && report.moduleSummary[fullKey]) {
+                const s = report.moduleSummary[fullKey];
+                modTotal += s.total;
+                modDups += s.duplicates;
+                modNew += s.newRecords;
+              }
+            });
+
+            // If flat legacy count
+            if (modTotal === 0) {
+              if (mCfg.key === 'financial') {
+                modTotal = (data.transactions || []).length + (data.accounts || []).length;
+              } else if (mCfg.key === 'inventory') {
+                modTotal = (data.stockData || []).length + (data.pharmacyData || []).length;
+              } else if (mCfg.key === 'fleet') {
+                modTotal = (data.vehicles || data.pro_vehicles || []).length + (data.fuels || data.pro_vehicle_fuel || []).length + (data.maint || data.pro_vehicle_maintenance || []).length;
+              } else if (mCfg.key === 'rentals') {
+                modTotal = (data.rentalProperties || data.pro_rental_properties_v1 || []).length + (data.rentalContracts || data.pro_rental_contracts_v1 || []).length;
+              }
+              modNew = modTotal;
+            }
+
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition';
+            tr.innerHTML = `
+              <td class="p-2.5 font-medium flex items-center gap-2">
+                <input type="checkbox" checked value="${mCfg.key}" class="bk-module-select-cb rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                <span>${mCfg.label}</span>
+              </td>
+              <td class="p-2.5 text-center font-bold text-slate-800 dark:text-slate-200">${modTotal}</td>
+              <td class="p-2.5 text-center text-amber-600 dark:text-amber-400 font-semibold">${modDups}</td>
+              <td class="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-semibold">${modNew}</td>
+              <td class="p-2.5 text-center">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${modTotal > 0 ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300' : 'bg-slate-100 text-slate-400'}">
+                  ${modTotal > 0 ? 'Ready' : 'Empty'}
+                </span>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+
+        // Open Modal
+        modal.classList.remove('hidden');
 
       } catch (err) {
         console.error('[Forecaster Backup Import Error]', err);
         fileInput.value = '';
         if (typeof window.triggerToast === 'function') {
-          window.triggerToast('Failed to import backup: ' + err.message, 'error');
+          window.triggerToast('Failed to validate backup file: ' + err.message, 'error');
         }
       }
     };
 
     reader.readAsText(file);
+  };
+
+  window.confirmExecuteRestore = async function() {
+    if (!window._pendingBackupData) return;
+
+    const btn = document.getElementById('bk-confirm-restore-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="inline-block w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin mr-1"></span> Restoring...';
+    }
+
+    try {
+      const modeRadio = document.querySelector('input[name="bk-restore-strategy"]:checked');
+      const mode = (modeRadio && modeRadio.value === 'replace') ? 'replace' : 'merge';
+
+      const selectedModules = [];
+      document.querySelectorAll('.bk-module-select-cb:checked').forEach(cb => {
+        selectedModules.push(cb.value);
+      });
+
+      if (selectedModules.length === 0) {
+        throw new Error('Please select at least one module to restore.');
+      }
+
+      const res = await window.ForecasterCloudSync.restoreBackup(window._pendingBackupData, mode, selectedModules);
+
+      // Close modal
+      window.closeBackupReviewModal();
+
+      // Reload databases into local memory
+      if (typeof window.loadIntegratedDatabases === 'function') window.loadIntegratedDatabases();
+      if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
+      if (typeof window.loadRentalDatabase === 'function') window.loadRentalDatabase();
+      if (typeof window.rpmLoad === 'function') window.rpmLoad();
+
+      if (typeof window.renderAllViews === 'function') {
+        window.renderAllViews();
+      }
+
+      if (typeof window.triggerToast === 'function') {
+        const ins = res.result?.validation?.newRecordCount || 0;
+        const dup = res.result?.validation?.existingDuplicateCount || 0;
+        window.triggerToast(`Restoration complete! Mode: ${mode.toUpperCase()} (${ins} new records, ${dup} merged, 0 duplicates created).`, 'success');
+      }
+
+      // Return to dashboard
+      setTimeout(() => {
+        if (typeof window.switchView === 'function') {
+          window.switchView('dashboard');
+        }
+      }, 400);
+
+    } catch (err) {
+      console.error('[Execute Restore Error]', err);
+      if (typeof window.triggerToast === 'function') {
+        window.triggerToast('Failed to restore backup: ' + err.message, 'error');
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🚀</span> Confirm &amp; Restore Data';
+      }
+    }
   };
 
   /* ============================================================================
