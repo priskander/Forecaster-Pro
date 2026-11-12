@@ -12,7 +12,8 @@
     "lint": "tsc --noEmit",
     "test:security": "tsx scripts/test-security-remediation.ts",
     "test:backup": "tsx scripts/test-backup-restoration.ts",
-    "test": "tsx scripts/test-security-remediation.ts && tsx scripts/test-backup-restoration.ts"
+    "test": "tsx scripts/test-security-remediation.ts && tsx scripts/test-backup-restoration.ts",
+    "package:source": "tar --exclude=node_modules --exclude=data --exclude=dist --exclude=.git -czf forecaster-pro-source.tar.gz ."
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -9,6 +9,14 @@ coverage/
 
 # Local databases and runtime state
 data/
+data/cloud-ledger-db.json
 *.tmp
 *.db
 *.sqlite
+*.bak
+*.backup
+*.dump
+*.sql
+*.zip
+*.tar.gz
+forecaster-pro-source.tar.gz

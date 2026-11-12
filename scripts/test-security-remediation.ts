@@ -6,7 +6,7 @@
 
 const BASE_URL = 'http://localhost:3000';
 
-async function request(path: string, options: RequestInit = {}): Promise<{ status: number; body: any }> {
+async function request(path: string, options: RequestInit = {}): Promise<{ status: number; body: any; headers: Headers }> {
   const url = `${BASE_URL}${path}`;
   const res = await fetch(url, {
     ...options,
@@ -23,7 +23,7 @@ async function request(path: string, options: RequestInit = {}): Promise<{ statu
   } catch {
     body = text;
   }
-  return { status: res.status, body };
+  return { status: res.status, body, headers: res.headers };
 }
 
 let passedTests = 0;
@@ -298,13 +298,73 @@ async function runSecurityTestSuite() {
   });
   assert(managerRestore.status === 403, 'RBAC 3.13: Manager is FORBIDDEN from restoring backups (HTTP 403)');
 
+  // Manager is authorized to export backups (Owner & Manager)
+  const managerExport = await request(`/api/backup/export?vaultId=${workspaceVaultId}`, {
+    headers: { Authorization: `Bearer ${managerToken}` }
+  });
+  assert(managerExport.status === 200, 'RBAC 3.14: Manager is authorized to export backups (HTTP 200)');
+
+  // Manager is authorized to validate backups (Owner & Manager)
+  const managerValidate = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${managerToken}` },
+    body: JSON.stringify({ vaultId: workspaceVaultId, backupData: { schemaVersion: '2.0.0', modules: {} } })
+  });
+  assert(managerValidate.status === 200, 'RBAC 3.15: Manager is authorized to validate backups (HTTP 200)');
+
+  // Manager is FORBIDDEN from creating sub-users (Owner only)
+  const managerCreateSub = await request('/api/auth/sub-users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${managerToken}` },
+    body: JSON.stringify({ name: 'Manager Rogue Sub', email: 'rogue@sub.local', role: 'viewer' })
+  });
+  assert(managerCreateSub.status === 403, 'RBAC 3.16: Manager is FORBIDDEN from creating sub-users (HTTP 403)');
+
+  // Manager is authorized to view sub-users (Owner & Manager)
+  const managerListSub = await request('/api/auth/sub-users', {
+    headers: { Authorization: `Bearer ${managerToken}` }
+  });
+  assert(managerListSub.status === 200, 'RBAC 3.17: Manager is authorized to view sub-users (HTTP 200)');
+
+  // Member is FORBIDDEN from exporting backups
+  const memberExport = await request(`/api/backup/export?vaultId=${workspaceVaultId}`, {
+    headers: { Authorization: `Bearer ${memberToken}` }
+  });
+  assert(memberExport.status === 403, 'RBAC 3.18: Member is FORBIDDEN from exporting backups (HTTP 403)');
+
+  // Member is FORBIDDEN from validating backups
+  const memberValidate = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${memberToken}` },
+    body: JSON.stringify({ vaultId: workspaceVaultId, backupData: {} })
+  });
+  assert(memberValidate.status === 403, 'RBAC 3.19: Member is FORBIDDEN from validating backups (HTTP 403)');
+
+  // Member is FORBIDDEN from viewing sub-users
+  const memberListSub = await request('/api/auth/sub-users', {
+    headers: { Authorization: `Bearer ${memberToken}` }
+  });
+  assert(memberListSub.status === 403, 'RBAC 3.20: Member is FORBIDDEN from viewing sub-users (HTTP 403)');
+
+  // Viewer is FORBIDDEN from exporting backups
+  const viewerExport = await request(`/api/backup/export?vaultId=${workspaceVaultId}`, {
+    headers: { Authorization: `Bearer ${viewerToken}` }
+  });
+  assert(viewerExport.status === 403, 'RBAC 3.21: Viewer is FORBIDDEN from exporting backups (HTTP 403)');
+
+  // Viewer is FORBIDDEN from viewing sub-users
+  const viewerListSub = await request('/api/auth/sub-users', {
+    headers: { Authorization: `Bearer ${viewerToken}` }
+  });
+  assert(viewerListSub.status === 403, 'RBAC 3.22: Viewer is FORBIDDEN from viewing sub-users (HTTP 403)');
+
   // --- OWNER TESTS ---
   // Owner can manage accounts
   const ownerDelAcc = await request(`/api/cloud-sync/accounts/non_existent_acc?vaultId=${workspaceVaultId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${updatedToken}` }
   });
-  assert(ownerDelAcc.status === 200, 'RBAC 3.14: Owner is authorized to manage/delete accounts (HTTP 200)');
+  assert(ownerDelAcc.status === 200, 'RBAC 3.23: Owner is authorized to manage/delete accounts (HTTP 200)');
 
   // =========================================================================
   // 4. Multi-Tenant Data & Organization Isolation
@@ -461,6 +521,109 @@ async function runSecurityTestSuite() {
     body: JSON.stringify({ name: 'Demo Hack Sub', email: 'hack@demo.local', role: 'member' })
   });
   assert(demoSubUserHack.status === 403, 'Demo 6.4: Demo user is FORBIDDEN from managing sub-users (HTTP 403)');
+
+  // =========================================================================
+  // 7. CORS and Security Headers Policy
+  // =========================================================================
+  console.log('\n--- Test Category 7: Configurable CORS, CSRF & Security Headers ---');
+
+  // 7.1 Preflight OPTIONS with untrusted origin is rejected with HTTP 403
+  const badCorsOptions = await request('/api/cloud-sync/status', {
+    method: 'OPTIONS',
+    headers: { Origin: 'https://malicious-attacker.com' }
+  });
+  assert(badCorsOptions.status === 403, 'CORS 7.1: Preflight OPTIONS from untrusted origin is rejected (HTTP 403)');
+
+  // 7.2 Preflight OPTIONS with trusted loopback origin succeeds with HTTP 204 & Access-Control-Allow-Origin
+  const loopbackCorsOptions = await request('/api/cloud-sync/status', {
+    method: 'OPTIONS',
+    headers: { Origin: 'http://localhost:3000' }
+  });
+  assert(
+    loopbackCorsOptions.status === 204 && loopbackCorsOptions.headers.get('access-control-allow-origin') === 'http://localhost:3000',
+    'CORS 7.2: Preflight OPTIONS from trusted local origin succeeds with HTTP 204 and matching allow-origin'
+  );
+
+  // 7.3 Mutation from untrusted origin is blocked by CSRF protection
+  const csrfAttack = await request('/api/auth/register', {
+    method: 'POST',
+    headers: { Origin: 'https://evil-phishing.org' },
+    body: JSON.stringify({ name: 'CSRF Attack', email: 'csrf@evil.org', password: 'Password123!' })
+  });
+  assert(csrfAttack.status === 403, 'CORS 7.3: Mutation request from untrusted origin is rejected by CSRF protection (HTTP 403)');
+
+  // 7.4 Defense-in-depth security headers are present
+  const secHeadersReq = await request('/api/public/system-status');
+  assert(
+    secHeadersReq.headers.get('x-content-type-options') === 'nosniff' &&
+    secHeadersReq.headers.get('x-frame-options') === 'SAMEORIGIN',
+    'CORS 7.4: Standard defense-in-depth security headers (nosniff, SAMEORIGIN) are properly enforced'
+  );
+
+  // =========================================================================
+  // 8. Password Policy & Brute-Force Lockout
+  // =========================================================================
+  console.log('\n--- Test Category 8: Strong Password Policy & Brute-Force Lockout ---');
+
+  // 8.1 Password shorter than 8 characters is rejected
+  const shortPassRes = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Short Pass User', email: `short_${Date.now()}@test.local`, password: 'Short1!' })
+  });
+  assert(shortPassRes.status === 400, 'Password 8.1: Password shorter than 8 characters is rejected (HTTP 400)');
+
+  // 8.2 Password missing uppercase letter is rejected
+  const noUpperRes = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'No Upper User', email: `noupper_${Date.now()}@test.local`, password: 'password123!' })
+  });
+  assert(noUpperRes.status === 400, 'Password 8.2: Password missing uppercase letter is rejected (HTTP 400)');
+
+  // 8.3 Password missing numeric digit is rejected
+  const noDigitRes = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'No Digit User', email: `nodigit_${Date.now()}@test.local`, password: 'Password!@#' })
+  });
+  assert(noDigitRes.status === 400, 'Password 8.3: Password missing numeric digit is rejected (HTTP 400)');
+
+  // 8.4 Password missing special character is rejected
+  const noSpecialRes = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'No Special User', email: `nospecial_${Date.now()}@test.local`, password: 'Password123' })
+  });
+  assert(noSpecialRes.status === 400, 'Password 8.4: Password missing special character is rejected (HTTP 400)');
+
+  // 8.5 Valid strong password succeeds
+  const lockoutTargetEmail = `lockout_target_${Date.now()}@lockout.local`;
+  const validStrongPass = 'SecureTargetPass#2026!';
+  const strongRegRes = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Lockout Target', email: lockoutTargetEmail, password: validStrongPass })
+  });
+  assert(strongRegRes.status === 200 || strongRegRes.status === 201, 'Password 8.5: Valid strong password meets all criteria and succeeds (HTTP 201)');
+
+  // 8.6 Brute-force account lockout: 5 consecutive failed login attempts
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const failRes = await request('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: lockoutTargetEmail, password: 'WrongPassword#999!' })
+    });
+    assert(failRes.status === 401, `Lockout 8.6a: Failed attempt #${attempt} returns HTTP 401`);
+  }
+
+  // 5th failed attempt triggers HTTP 423 Account Locked
+  const lockTriggerRes = await request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: lockoutTargetEmail, password: 'WrongPassword#999!' })
+  });
+  assert(lockTriggerRes.status === 423, 'Lockout 8.6b: 5th consecutive failed attempt triggers temporary account lockout (HTTP 423)');
+
+  // 8.7 While account is locked, even the correct password is rejected with HTTP 423
+  const lockedWithCorrectPass = await request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: lockoutTargetEmail, password: validStrongPass })
+  });
+  assert(lockedWithCorrectPass.status === 423, 'Lockout 8.7: Locked account rejects login even with valid password while lockout is active (HTTP 423)');
 
   console.log('\n======================================================');
   console.log(`🏆 ALL SECURITY REMEDIATION TESTS PASSED: ${passedTests}/${totalTests}`);

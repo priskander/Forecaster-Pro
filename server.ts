@@ -56,6 +56,9 @@ interface UserRecord {
   temporaryPassword?: string;
   propertyRole?: 'landlord' | 'tenant' | 'both';
   avatarUrl?: string;
+  failedLoginAttempts?: number;
+  lockoutUntil?: number;
+  resetTokenExpiresAt?: number;
   createdAt: string;
   lastLogin: string;
 }
@@ -290,6 +293,52 @@ function verifyPassword(password: string, salt: string, expectedHash: string): b
   } catch (err) {
     return false;
   }
+}
+
+function validateStrongPassword(password: string): { valid: boolean; message?: string } {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, message: 'Password is required.' };
+  }
+  if (password.length < 8) {
+    return { valid: false, message: 'Password must be at least 8 characters long.' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one uppercase letter (A-Z).' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one lowercase letter (a-z).' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one numeric digit (0-9).' };
+  }
+  if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one special symbol (e.g. !@#$%^&*).' };
+  }
+  return { valid: true };
+}
+
+const rawAllowedOrigins = process.env.ALLOWED_ORIGINS || '';
+const customAllowedOrigins = new Set(
+  rawAllowedOrigins
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+function isOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) return true; // Same-origin, direct browser navigation, cURL, PWA standalone mode
+  const lower = origin.toLowerCase().trim();
+  if (customAllowedOrigins.has(lower)) return true;
+
+  // Local development loopback (e.g. http://localhost:3000, http://127.0.0.1:3000)
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(lower)) return true;
+
+  // AI Studio / Cloud Run preview domains
+  if (/^https:\/\/[a-z0-9-]+\.run\.app$/.test(lower)) return true;
+  if (/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(lower)) return true;
+  if (/^https:\/\/[a-z0-9-]+\.aistudio\.google\.com$/.test(lower)) return true;
+
+  return false;
 }
 
 function generateTemporaryPassword(): string {
@@ -961,7 +1010,7 @@ function requireVaultAccess(
   req: express.Request,
   res: express.Response,
   targetVaultId: string,
-  requiredPermission: 'read' | 'write' | 'delete' | 'manage' | 'restore' = 'read'
+  requiredPermission: 'read' | 'write' | 'delete' | 'manage' | 'export' | 'restore' = 'read'
 ): UserRecord | null {
   const user = getAuthenticatedUser(req, res);
   if (!user) return null;
@@ -998,7 +1047,15 @@ function requireVaultAccess(
     }
   }
 
-  // 3. 'manage' permission: Only workspace owners and master admins can delete payment accounts or alter org structure
+  // 3. 'export' permission: Only workspace owners and managers can export organization backups/reports
+  if (requiredPermission === 'export') {
+    if (user.role !== 'owner' && user.role !== 'manager' && !user.isPrimary && !isMaster) {
+      res.status(403).json({ ok: false, error: 'Access forbidden: Member and Viewer accounts cannot export organization data.' });
+      return null;
+    }
+  }
+
+  // 4. 'manage' permission: Only workspace owners and master admins can delete payment accounts or alter org structure
   if (requiredPermission === 'manage') {
     if (user.role !== 'owner' && !user.isPrimary && !isMaster) {
       res.status(403).json({ ok: false, error: 'Access forbidden: Only workspace owners are authorized to perform this administrative operation.' });
@@ -1006,9 +1063,9 @@ function requireVaultAccess(
     }
   }
 
-  // 4. 'delete' permission on transactions: 'member' cannot delete, only 'owner', 'manager', or 'main_admin'
+  // 5. 'delete' permission on transactions: 'member' and 'viewer' cannot delete, only 'owner', 'manager', or 'main_admin'
   if (requiredPermission === 'delete') {
-    if (user.role === 'member') {
+    if (user.role === 'member' || user.role === 'viewer') {
       res.status(403).json({ ok: false, error: 'Access forbidden: Member accounts cannot delete transactions.' });
       return null;
     }
@@ -1021,13 +1078,49 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '25mb' }));
 
-  // CORS headers for flexible cross-device PWA access
+  // Explicit Configurable Allowed-Origin CORS & Security Headers Policy
   app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    const origin = req.headers.origin;
+
+    if (origin) {
+      if (isOriginAllowed(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Vary', 'Origin');
+      } else {
+        // Untrusted cross-origin request
+        if (req.method === 'OPTIONS') {
+          return res.status(403).json({ ok: false, error: 'CORS policy: Untrusted origin blocked.' });
+        }
+      }
+    }
+
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control');
+    res.setHeader('Access-Control-Max-Age', '86400');
+
+    // Standard Defense-In-Depth Security Headers
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
     if (req.method === 'OPTIONS') {
-      return res.sendStatus(200);
+      if (origin && !isOriginAllowed(origin)) {
+        return res.status(403).json({ ok: false, error: 'CORS policy: Untrusted origin blocked.' });
+      }
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
+  // CSRF protection for mutation endpoints from untrusted cross-origin contexts
+  app.use((req, res, next) => {
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+      const origin = req.headers.origin;
+      if (origin && !isOriginAllowed(origin)) {
+        return res.status(403).json({ ok: false, error: 'CSRF policy: Untrusted origin blocked from mutating application data.' });
+      }
     }
     next();
   });
@@ -1048,8 +1141,9 @@ async function startServer() {
         return res.status(400).json({ ok: false, error: 'Full name, email address, and password are required.' });
       }
 
-      if (password.length < 6) {
-        return res.status(400).json({ ok: false, error: 'Password must be at least 6 characters long.' });
+      const pwdCheck = validateStrongPassword(password);
+      if (!pwdCheck.valid) {
+        return res.status(400).json({ ok: false, error: pwdCheck.message });
       }
 
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1187,10 +1281,33 @@ async function startServer() {
         return res.status(401).json({ ok: false, error: 'Invalid email or password.' });
       }
 
+      // Check if account is temporarily locked
+      if (user.lockoutUntil && Date.now() < user.lockoutUntil) {
+        const remainingMinutes = Math.ceil((user.lockoutUntil - Date.now()) / (60 * 1000));
+        return res.status(423).json({
+          ok: false,
+          error: `Account is temporarily locked due to consecutive failed login attempts. Please try again in ${remainingMinutes} minute(s) or reset your password.`
+        });
+      }
+
       const isValid = verifyPassword(password, user.salt, user.passwordHash);
       if (!isValid) {
+        user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+        if (user.failedLoginAttempts >= 5) {
+          user.lockoutUntil = Date.now() + 15 * 60 * 1000; // 15 minutes lockout
+          saveDatabase(db);
+          return res.status(423).json({
+            ok: false,
+            error: 'Account has been temporarily locked for 15 minutes due to 5 consecutive failed login attempts.'
+          });
+        }
+        saveDatabase(db);
         return res.status(401).json({ ok: false, error: 'Invalid email or password.' });
       }
+
+      // Successful login resets lockout counters
+      user.failedLoginAttempts = 0;
+      delete user.lockoutUntil;
 
       // Ensure user has vaultId assigned
       if (!user.vaultId) {
@@ -1326,6 +1443,7 @@ async function startServer() {
       user.salt = salt;
       user.mustChangePassword = true;
       user.temporaryPassword = tempPass;
+      user.resetTokenExpiresAt = Date.now() + 15 * 60 * 1000; // 15 Minutes Expiration
 
       // Dispatch password reset email record to outbox
       const emailRecord: OutboxEmail = {
@@ -1395,13 +1513,18 @@ async function startServer() {
         return res.status(400).json({ ok: false, error: 'Email, temporary access password, and new password are required.' });
       }
 
-      if (newPassword.length < 6) {
-        return res.status(400).json({ ok: false, error: 'New password must be at least 6 characters long.' });
+      const pwdCheck = validateStrongPassword(newPassword);
+      if (!pwdCheck.valid) {
+        return res.status(400).json({ ok: false, error: pwdCheck.message });
       }
 
       const user = Object.values(db.users || {}).find(u => u.email.toLowerCase() === cleanEmail);
       if (!user) {
         return res.status(404).json({ ok: false, error: 'User account not found.' });
+      }
+
+      if (user.resetTokenExpiresAt && Date.now() > user.resetTokenExpiresAt) {
+        return res.status(400).json({ ok: false, error: 'Temporary access password has expired. Please request a new one.' });
       }
 
       const isValid = verifyPassword(temporaryPassword, user.salt, user.passwordHash);
@@ -1417,6 +1540,9 @@ async function startServer() {
       user.salt = newSalt;
       user.mustChangePassword = false;
       delete user.temporaryPassword;
+      delete user.resetTokenExpiresAt;
+      user.failedLoginAttempts = 0;
+      delete user.lockoutUntil;
       user.lastLogin = new Date().toISOString();
 
       const token = createSessionToken(user.id);
@@ -1513,13 +1639,14 @@ async function startServer() {
         return res.status(401).json({ ok: false, error: 'Session expired or not authenticated.' });
       }
 
-      if (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin') {
-        return res.status(403).json({ ok: false, error: 'Access denied: Only account owners are authorized to manage sub-users.' });
+      if (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'manager' && caller.role !== 'main_admin') {
+        return res.status(403).json({ ok: false, error: 'Access denied: Only account owners and managers are authorized to view team members.' });
       }
 
-      // Strict organization scoping: only users created by this primary account
+      // Strict organization scoping: users created by this primary account or in same org
+      const ownerId = caller.isPrimary ? caller.id : (caller.parentId || caller.id);
       const subUsers = Object.values(db.users || {})
-        .filter(u => caller.role === 'main_admin' ? (!u.isPrimary) : (u.parentId === caller.id))
+        .filter(u => caller.role === 'main_admin' ? (!u.isPrimary) : (u.parentId === ownerId))
         .map(u => ({
           id: u.id,
           name: u.name,
@@ -1548,8 +1675,8 @@ async function startServer() {
         return res.status(401).json({ ok: false, error: 'Session expired or not authenticated.' });
       }
 
-      if (caller.isDemo || (!caller.isPrimary && caller.role !== 'owner')) {
-        return res.status(403).json({ ok: false, error: 'Access denied: Demo accounts cannot manage sub-users.' });
+      if (caller.isDemo || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
+        return res.status(403).json({ ok: false, error: 'Access denied: Only account owners are authorized to create sub-users.' });
       }
 
       const { name, email, role } = req.body || {};
@@ -1590,6 +1717,7 @@ async function startServer() {
         vaultId: caller.vaultId || (caller.id === 'usr_peter_badir' ? 'shared-main-vault' : 'vault_' + caller.id),
         mustChangePassword: true,
         temporaryPassword: tempPass,
+        resetTokenExpiresAt: Date.now() + 15 * 60 * 1000,
         createdAt: new Date().toISOString(),
         lastLogin: ''
       };
@@ -1695,6 +1823,7 @@ async function startServer() {
       targetUser.passwordHash = hashPassword(newTempPass, salt);
       targetUser.salt = salt;
       targetUser.mustChangePassword = true;
+      targetUser.resetTokenExpiresAt = Date.now() + 15 * 60 * 1000;
 
       const emailRecord = sendSubUserWelcomeEmail(targetUser, newTempPass, caller);
       saveDatabase(db);
@@ -1718,8 +1847,9 @@ async function startServer() {
 
       const { currentPassword, newPassword } = req.body || {};
 
-      if (!newPassword || newPassword.length < 6) {
-        return res.status(400).json({ ok: false, error: 'New password must be at least 6 characters long.' });
+      const pwdCheck = validateStrongPassword(newPassword);
+      if (!pwdCheck.valid) {
+        return res.status(400).json({ ok: false, error: pwdCheck.message });
       }
 
       if (!currentPassword) {
@@ -1739,6 +1869,9 @@ async function startServer() {
       user.salt = newSalt;
       user.mustChangePassword = false;
       delete user.temporaryPassword;
+      delete user.resetTokenExpiresAt;
+      user.failedLoginAttempts = 0;
+      delete user.lockoutUntil;
       user.lastLogin = new Date().toISOString();
 
       // Issue single fresh session token
@@ -2004,11 +2137,13 @@ async function startServer() {
       });
     };
 
+    const isMember = user.role === 'member';
+
     if (Array.isArray(incoming.transactions)) {
       current.transactions = sanitizeNonDemo(incoming.transactions);
     }
 
-    if (Array.isArray(incoming.accounts)) {
+    if (Array.isArray(incoming.accounts) && !isMember) {
       if (isDemoVault) {
         current.accounts = incoming.accounts;
       } else {
@@ -2028,9 +2163,9 @@ async function startServer() {
       current.accountTransfers = incoming.accountTransfers;
     }
 
-    if (incoming.budgetLimits) current.budgetLimits = incoming.budgetLimits;
-    if (incoming.allocationsMode !== undefined) current.allocationsMode = incoming.allocationsMode;
-    if (incoming.allocationsMonth !== undefined) current.allocationsMonth = incoming.allocationsMonth;
+    if (incoming.budgetLimits && !isMember) current.budgetLimits = incoming.budgetLimits;
+    if (incoming.allocationsMode !== undefined && !isMember) current.allocationsMode = incoming.allocationsMode;
+    if (incoming.allocationsMonth !== undefined && !isMember) current.allocationsMonth = incoming.allocationsMonth;
     if (Array.isArray(incoming.customCategories)) current.customCategories = incoming.customCategories;
     if (Array.isArray(incoming.customSubcategories)) current.customSubcategories = incoming.customSubcategories;
     if (Array.isArray(incoming.stockData)) current.stockData = sanitizeNonDemo(incoming.stockData);
@@ -2676,7 +2811,7 @@ async function startServer() {
   app.get('/api/backup/export', (req, res) => {
     try {
       const vaultId = String(req.query.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-      const user = requireVaultAccess(req, res, vaultId, 'read');
+      const user = requireVaultAccess(req, res, vaultId, 'export');
       if (!user) return;
 
       const vault = db.vaults[vaultId] || {
@@ -2705,7 +2840,7 @@ async function startServer() {
   app.post('/api/backup/validate', (req, res) => {
     try {
       const vaultId = String(req.body?.vaultId || req.query?.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
-      const user = requireVaultAccess(req, res, vaultId, 'read');
+      const user = requireVaultAccess(req, res, vaultId, 'export');
       if (!user) return;
 
       const vault = db.vaults[vaultId] || {
