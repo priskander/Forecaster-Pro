@@ -26,12 +26,17 @@ function getHost(): string {
 
 const PORT = getPort();
 const HOST = getHost();
-const DATA_DIR = path.resolve(__dirname, 'data');
-const DB_FILE = path.resolve(DATA_DIR, 'cloud-ledger-db.json');
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.resolve(__dirname, 'data');
+const DB_FILE = process.env.DB_FILE
+  ? path.resolve(process.env.DB_FILE)
+  : path.resolve(DATA_DIR, 'cloud-ledger-db.json');
 
-// Ensure data storage directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Ensure database storage directory exists
+const DB_PARENT_DIR = path.dirname(DB_FILE);
+if (!fs.existsSync(DB_PARENT_DIR)) {
+  fs.mkdirSync(DB_PARENT_DIR, { recursive: true });
 }
 
 import crypto from 'crypto';
@@ -53,7 +58,10 @@ interface UserRecord {
   parentId?: string; // ID of the primary user who created this sub-user
   vaultId?: string; // ID of the isolated vault/database
   mustChangePassword?: boolean;
-  temporaryPassword?: string;
+  temporaryPassword?: string; // Deprecated: never persisted
+  resetTempPasswordHash?: string;
+  resetTempPasswordSalt?: string;
+  resetCredentialUsed?: boolean;
   propertyRole?: 'landlord' | 'tenant' | 'both';
   avatarUrl?: string;
   failedLoginAttempts?: number;
@@ -75,7 +83,6 @@ interface OutboxEmail {
   metadata: {
     userId: string;
     role: string;
-    temporaryPassword?: string;
     senderId: string;
     senderEmail: string;
   };
@@ -317,26 +324,35 @@ function validateStrongPassword(password: string): { valid: boolean; message?: s
   return { valid: true };
 }
 
+const isProductionEnv = process.env.NODE_ENV === 'production';
 const rawAllowedOrigins = process.env.ALLOWED_ORIGINS || '';
 const customAllowedOrigins = new Set(
   rawAllowedOrigins
     .split(',')
-    .map(s => s.trim().toLowerCase())
+    .map(s => s.trim().replace(/\/+$/, '').toLowerCase())
     .filter(Boolean)
 );
 
+if (process.env.APP_URL && !isProductionEnv) {
+  try {
+    const appOrigin = new URL(process.env.APP_URL).origin.toLowerCase();
+    customAllowedOrigins.add(appOrigin);
+  } catch (_) {}
+}
+
+if (isProductionEnv && customAllowedOrigins.size === 0) {
+  console.warn('[Security] ALLOWED_ORIGINS is not configured in production mode. All cross-origin CORS requests will fail closed (HTTP 403).');
+}
+
 function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true; // Same-origin, direct browser navigation, cURL, PWA standalone mode
-  const lower = origin.toLowerCase().trim();
+  const lower = origin.toLowerCase().trim().replace(/\/+$/, '');
   if (customAllowedOrigins.has(lower)) return true;
 
-  // Local development loopback (e.g. http://localhost:3000, http://127.0.0.1:3000)
-  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(lower)) return true;
-
-  // AI Studio / Cloud Run preview domains
-  if (/^https:\/\/[a-z0-9-]+\.run\.app$/.test(lower)) return true;
-  if (/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(lower)) return true;
-  if (/^https:\/\/[a-z0-9-]+\.aistudio\.google\.com$/.test(lower)) return true;
+  // Local development loopback is allowed strictly outside production mode
+  if (!isProductionEnv && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(lower)) {
+    return true;
+  }
 
   return false;
 }
@@ -442,14 +458,13 @@ Forecaster Pro Team`;
     to: subUser.email,
     toName: subUser.name,
     subject,
-    body: textBody,
-    htmlBody,
+    body: textBody.replace(tempPass, '[REDACTED_ON_STORAGE]'),
+    htmlBody: htmlBody.replace(tempPass, '[REDACTED_ON_STORAGE]'),
     sentAt: new Date().toISOString(),
     status: 'delivered',
     metadata: {
       userId: subUser.id,
       role: subUser.role,
-      temporaryPassword: tempPass,
       senderId: owner.id,
       senderEmail: owner.email
     }
@@ -466,20 +481,22 @@ if (!db.tokens) db.tokens = {};
 if (!db.outbox) db.outbox = [];
 
 // Secure Initial Administrator Provisioning
-const defaultEmail = (process.env.INITIAL_ADMIN_EMAIL || 'peter.w.badir@gmail.com').trim().toLowerCase();
-let defaultUser = Object.values(db.users).find(u => u.email.toLowerCase() === defaultEmail.toLowerCase());
+const defaultEmail = (process.env.INITIAL_ADMIN_EMAIL || '').trim().toLowerCase();
+let defaultUser = defaultEmail
+  ? Object.values(db.users).find(u => u.email.toLowerCase() === defaultEmail)
+  : Object.values(db.users).find(u => u.isMainAdmin || u.role === 'main_admin');
 const initialAdminSecret = process.env.INITIAL_ADMIN_PASSWORD ? process.env.INITIAL_ADMIN_PASSWORD.trim() : '';
 
 if (!defaultUser) {
-  if (!initialAdminSecret) {
-    console.warn('[Security] Administrator bootstrap skipped: INITIAL_ADMIN_PASSWORD environment variable is not configured. Set INITIAL_ADMIN_PASSWORD to bootstrap the initial administrator.');
-  } else if (initialAdminSecret.length < 10) {
-    console.warn('[Security] Administrator bootstrap skipped: INITIAL_ADMIN_PASSWORD must be at least 10 characters.');
+  if (!defaultEmail || !initialAdminSecret) {
+    console.warn('[Security] Administrator bootstrap skipped: INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD must be configured to provision an initial administrator.');
+  } else if (initialAdminSecret.length < 10 || !validateStrongPassword(initialAdminSecret).valid) {
+    console.warn('[Security] Administrator bootstrap skipped: INITIAL_ADMIN_PASSWORD must be at least 10 characters and meet strong complexity requirements.');
   } else {
     const salt = crypto.randomBytes(16).toString('hex');
     const user: UserRecord = {
-      id: 'usr_peter_badir',
-      name: 'Peter W. Badir',
+      id: 'usr_main_admin_bootstrap',
+      name: 'System Administrator',
       email: defaultEmail,
       passwordHash: hashPassword(initialAdminSecret, salt),
       salt,
@@ -495,15 +512,14 @@ if (!defaultUser) {
     };
     db.users[user.id] = user;
     saveDatabase(db);
-    console.log(`[Security] Initial administrator account provisioned securely: ${defaultEmail}`);
+    console.log('[Security] Initial administrator account provisioned securely.');
   }
 } else {
   // Existing administrator account: NEVER overwrite or reset custom credentials on server restart
-  defaultUser.name = defaultUser.name || 'Peter W. Badir';
   defaultUser.role = 'main_admin';
   defaultUser.isPrimary = true;
   defaultUser.isMainAdmin = true;
-  defaultUser.status = 'active';
+  defaultUser.status = defaultUser.status || 'active';
   defaultUser.tier = defaultUser.tier || 'Master Admin Suite';
   defaultUser.vaultId = defaultUser.vaultId || 'shared-main-vault';
 }
@@ -638,12 +654,15 @@ function logAdminAction(adminEmail: string, action: string, category: AdminAudit
   return entry;
 }
 
-// Migrate any existing users without role or vaultId
+// Migrate any existing users without role or vaultId, and scrub legacy plaintext temp passwords
 Object.values(db.users).forEach(u => {
-  if (u.email.toLowerCase() === 'peter.w.badir@gmail.com') {
+  if (u.temporaryPassword !== undefined) {
+    delete u.temporaryPassword;
+  }
+  if (u.isMainAdmin || u.role === 'main_admin' || u.id === 'usr_peter_badir' || (defaultEmail && u.email.toLowerCase() === defaultEmail)) {
     u.role = 'main_admin';
     u.isMainAdmin = true;
-    u.tier = 'Master Admin Suite';
+    u.tier = u.tier || 'Master Admin Suite';
   } else if (!u.role) {
     u.role = u.isPrimary ? 'owner' : 'member';
   }
@@ -651,7 +670,7 @@ Object.values(db.users).forEach(u => {
     if (u.parentId) {
       const parent = (db.users || {})[u.parentId];
       u.vaultId = parent?.vaultId || 'shared-main-vault';
-    } else if (u.id === 'usr_peter_badir') {
+    } else if (u.isMainAdmin || u.role === 'main_admin' || u.id === 'usr_peter_badir') {
       u.vaultId = 'shared-main-vault';
     } else {
       u.vaultId = 'vault_' + u.id;
@@ -1165,7 +1184,11 @@ async function startServer() {
           existing.passwordHash = passwordHash;
           existing.salt = salt;
           existing.mustChangePassword = false;
-          existing.temporaryPassword = undefined;
+          delete existing.temporaryPassword;
+          delete existing.resetTempPasswordHash;
+          delete existing.resetTempPasswordSalt;
+          delete existing.resetTokenExpiresAt;
+          delete existing.resetCredentialUsed;
           existing.lastLogin = new Date().toISOString();
           existing.vaultId = parent?.vaultId || 'shared-main-vault';
           if (cleanPropertyRole) existing.propertyRole = cleanPropertyRole;
@@ -1290,7 +1313,25 @@ async function startServer() {
         });
       }
 
-      const isValid = verifyPassword(password, user.salt, user.passwordHash);
+      let isValid = verifyPassword(password, user.salt, user.passwordHash);
+      let usedTempResetCredential = false;
+
+      if (
+        !isValid &&
+        user.resetTempPasswordHash &&
+        user.resetTempPasswordSalt &&
+        user.resetCredentialUsed !== true &&
+        typeof user.resetTokenExpiresAt === 'number' &&
+        Number.isFinite(user.resetTokenExpiresAt) &&
+        user.resetTokenExpiresAt > 0 &&
+        Date.now() <= user.resetTokenExpiresAt
+      ) {
+        if (verifyPassword(password, user.resetTempPasswordSalt, user.resetTempPasswordHash)) {
+          isValid = true;
+          usedTempResetCredential = true;
+        }
+      }
+
       if (!isValid) {
         user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
         if (user.failedLoginAttempts >= 5) {
@@ -1303,6 +1344,16 @@ async function startServer() {
         }
         saveDatabase(db);
         return res.status(401).json({ ok: false, error: 'Invalid email or password.' });
+      }
+
+      if (usedTempResetCredential && user.resetTempPasswordHash && user.resetTempPasswordSalt) {
+        user.passwordHash = user.resetTempPasswordHash;
+        user.salt = user.resetTempPasswordSalt;
+        user.mustChangePassword = true;
+        user.resetCredentialUsed = true;
+        delete user.resetTempPasswordHash;
+        delete user.resetTempPasswordSalt;
+        delete user.resetTokenExpiresAt;
       }
 
       // Successful login resets lockout counters
@@ -1422,62 +1473,46 @@ async function startServer() {
     }
   });
 
-  // Request Password Reset / Instant Temporary Access Key
+  // Request Password Reset (Non-enumerating, time-limited single-use hashed recovery credential)
   app.post('/api/auth/forgot-password', passwordResetLimiter, (req, res) => {
     try {
       const { email } = req.body || {};
       const cleanEmail = (email || '').trim().toLowerCase();
 
-      if (!cleanEmail) {
-        return res.status(400).json({ ok: false, error: 'Please enter your email address.' });
+      if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return res.status(400).json({ ok: false, error: 'Please enter a valid email address.' });
       }
 
+      const genericResponse = {
+        ok: true,
+        message: 'If an account is registered with that email address, temporary recovery instructions have been dispatched.'
+      };
+
       const user = Object.values(db.users || {}).find(u => u.email.toLowerCase() === cleanEmail);
-      if (!user) {
-        return res.status(404).json({ ok: false, error: `No account was found registered with ${cleanEmail}.` });
+      if (!user || user.isDemo) {
+        return res.json(genericResponse);
       }
 
       const tempPass = generateTemporaryPassword();
-      const salt = crypto.randomBytes(16).toString('hex');
-      user.passwordHash = hashPassword(tempPass, salt);
-      user.salt = salt;
-      user.mustChangePassword = true;
-      user.temporaryPassword = tempPass;
+      const resetSalt = crypto.randomBytes(16).toString('hex');
+      user.resetTempPasswordHash = hashPassword(tempPass, resetSalt);
+      user.resetTempPasswordSalt = resetSalt;
       user.resetTokenExpiresAt = Date.now() + 15 * 60 * 1000; // 15 Minutes Expiration
+      user.resetCredentialUsed = false;
+      delete user.temporaryPassword;
 
-      // Dispatch password reset email record to outbox
       const emailRecord: OutboxEmail = {
         id: 'mail_reset_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex'),
         to: user.email,
         toName: user.name,
-        subject: 'Forecaster Pro - Password Reset Access Code',
-        body: `Hello ${user.name},\n\nA password reset was requested for your account (${user.email}).\n\nYour Temporary Access Password is:\n${tempPass}\n\nPlease sign in with this temporary password. You will be prompted to set your new permanent password immediately upon login.\n\nBest regards,\nForecaster Pro Security Team`,
-        htmlBody: `
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
-  <div style="background: linear-gradient(135deg, #1e3a8a, #2563eb); padding: 24px; color: #ffffff;">
-    <h1 style="margin: 0; font-size: 20px; font-weight: 800;">Forecaster Pro Security</h1>
-    <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;">Password Recovery &amp; Access Key</p>
-  </div>
-  <div style="padding: 24px;">
-    <h2 style="margin: 0 0 12px 0; font-size: 17px; color: #0f172a;">Hello ${user.name},</h2>
-    <p style="font-size: 13.5px; line-height: 1.5; color: #334155;">
-      A password reset was requested for your Forecaster Pro account.
-    </p>
-    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 18px 0;">
-      <h3 style="margin: 0 0 10px 0; font-size: 12px; color: #64748b; text-transform: uppercase;">Your Temporary Access Password</h3>
-      <code style="background: #e0f2fe; color: #0284c7; padding: 6px 12px; border-radius: 8px; font-weight: bold; font-family: monospace; font-size: 16px; border: 1px solid #bae6fd; display: inline-block;">${tempPass}</code>
-    </div>
-    <p style="font-size: 12px; color: #64748b;">
-      Use this temporary password to log in. You will be prompted to set your own new permanent password right away.
-    </p>
-  </div>
-</div>`,
+        subject: 'Forecaster Pro - Password Reset Requested',
+        body: `Hello ${user.name},\n\nA password reset was requested for your account (${user.email}). Your temporary recovery code expires in 15 minutes and can only be used once.\n\nIf you did not request this reset, you can safely ignore this message.\n\nBest regards,\nForecaster Pro Security Team`,
+        htmlBody: `<div style="font-family:sans-serif;max-width:580px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;"><h2>Password Reset Requested</h2><p>Hello ${user.name}, a single-use password reset credential was generated for your account and will expire in 15 minutes.</p></div>`,
         sentAt: new Date().toISOString(),
         status: 'delivered',
         metadata: {
           userId: user.id,
           role: user.role,
-          temporaryPassword: tempPass,
           senderId: 'system_security',
           senderEmail: 'security@forecasterpro.local'
         }
@@ -1486,31 +1521,25 @@ async function startServer() {
       if (!db.outbox) db.outbox = [];
       db.outbox.unshift(emailRecord);
 
-      logAdminAction(user.email, 'PASSWORD_RESET_REQUESTED', 'security', `Temporary access code generated for ${user.email}`);
+      logAdminAction(user.email, 'PASSWORD_RESET_REQUESTED', 'security', `Single-use password reset credential generated (15m TTL)`);
 
       saveDatabase(db);
 
-      res.json({
-        ok: true,
-        message: `A new temporary access password has been generated for ${user.email}.`,
-        temporaryPassword: tempPass,
-        email: user.email,
-        name: user.name
-      });
+      return res.json(genericResponse);
     } catch (err: any) {
       console.error('[Forgot Password Error]', err);
-      res.status(500).json({ ok: false, error: 'Password reset request failed: ' + err.message });
+      res.status(500).json({ ok: false, error: 'Password reset request failed.' });
     }
   });
 
-  // Direct Reset Password Endpoint (No Prior Session Required)
+  // Direct Reset Password Endpoint (Requires valid, non-expired, single-use reset credential)
   app.post('/api/auth/reset-password', passwordResetLimiter, (req, res) => {
     try {
       const { email, temporaryPassword, newPassword } = req.body || {};
       const cleanEmail = (email || '').trim().toLowerCase();
 
       if (!cleanEmail || !temporaryPassword || !newPassword) {
-        return res.status(400).json({ ok: false, error: 'Email, temporary access password, and new password are required.' });
+        return res.status(400).json({ ok: false, error: 'Email, recovery credential, and new password are required.' });
       }
 
       const pwdCheck = validateStrongPassword(newPassword);
@@ -1520,37 +1549,56 @@ async function startServer() {
 
       const user = Object.values(db.users || {}).find(u => u.email.toLowerCase() === cleanEmail);
       if (!user) {
-        return res.status(404).json({ ok: false, error: 'User account not found.' });
+        return res.status(400).json({ ok: false, error: 'Invalid or expired password reset credential.' });
       }
 
-      if (user.resetTokenExpiresAt && Date.now() > user.resetTokenExpiresAt) {
-        return res.status(400).json({ ok: false, error: 'Temporary access password has expired. Please request a new one.' });
+      if (
+        user.resetTokenExpiresAt === undefined ||
+        user.resetTokenExpiresAt === null ||
+        typeof user.resetTokenExpiresAt !== 'number' ||
+        !Number.isFinite(user.resetTokenExpiresAt) ||
+        user.resetTokenExpiresAt <= 0 ||
+        Date.now() > user.resetTokenExpiresAt
+      ) {
+        return res.status(400).json({ ok: false, error: 'Reset credential is missing, invalid, or has expired. Please request a new reset.' });
       }
 
-      const isValid = verifyPassword(temporaryPassword, user.salt, user.passwordHash);
+      if (
+        user.resetCredentialUsed === true ||
+        !user.resetTempPasswordHash ||
+        !user.resetTempPasswordSalt
+      ) {
+        return res.status(400).json({ ok: false, error: 'Reset credential has already been used or is invalid.' });
+      }
+
+      const isValid = verifyPassword(temporaryPassword, user.resetTempPasswordSalt, user.resetTempPasswordHash);
       if (!isValid) {
-        return res.status(400).json({ ok: false, error: 'Temporary access password does not match or is invalid.' });
+        return res.status(400).json({ ok: false, error: 'Invalid or expired password reset credential.' });
       }
 
-      // Revoke all prior active sessions upon password reset
+      // Single-use enforcement: invalidate reset credential immediately and revoke all prior sessions
       revokeUserSessions(user.id);
+      delete user.resetTempPasswordHash;
+      delete user.resetTempPasswordSalt;
+      delete user.resetTokenExpiresAt;
+      delete user.temporaryPassword;
+      user.resetCredentialUsed = true;
 
       const newSalt = crypto.randomBytes(16).toString('hex');
       user.passwordHash = hashPassword(newPassword, newSalt);
       user.salt = newSalt;
       user.mustChangePassword = false;
-      delete user.temporaryPassword;
-      delete user.resetTokenExpiresAt;
       user.failedLoginAttempts = 0;
       delete user.lockoutUntil;
       user.lastLogin = new Date().toISOString();
 
       const token = createSessionToken(user.id);
 
-      logAdminAction(user.email, 'PASSWORD_RESET_COMPLETED', 'security', `Password successfully reset and permanent session established for ${user.email}`);
+      logAdminAction(user.email, 'PASSWORD_RESET_COMPLETED', 'security', `Password successfully reset (single-use credential consumed; prior sessions revoked)`);
 
       saveDatabase(db);
 
+      const isMaster = !user.isDemo && (!!user.isMainAdmin || user.role === 'main_admin');
       res.json({
         ok: true,
         message: 'Password successfully reset! You are now logged in.',
@@ -1561,9 +1609,9 @@ async function startServer() {
           name: user.name,
           email: user.email,
           tier: user.tier,
-          role: (user.email.toLowerCase() === 'peter.w.badir@gmail.com') ? 'main_admin' : (user.role || (user.isPrimary ? 'owner' : 'member')),
+          role: user.role || (user.isPrimary ? 'owner' : 'member'),
           isPrimary: !!user.isPrimary,
-          isMainAdmin: !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin',
+          isMainAdmin: isMaster,
           parentId: user.parentId,
           vaultId: user.vaultId,
           mustChangePassword: false,
@@ -1572,7 +1620,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error('[Reset Password Error]', err);
-      res.status(500).json({ ok: false, error: 'Password reset failed: ' + err.message });
+      res.status(500).json({ ok: false, error: 'Password reset failed.' });
     }
   });
 
@@ -1598,6 +1646,7 @@ async function startServer() {
         }
       }
 
+      const isMaster = !user.isDemo && (!!user.isMainAdmin || user.role === 'main_admin');
       res.json({
         ok: true,
         user: {
@@ -1609,7 +1658,7 @@ async function startServer() {
           propertyRole: user.propertyRole || 'tenant',
           avatarUrl: user.avatarUrl || '',
           isPrimary: !!user.isPrimary,
-          isMainAdmin: !!user.isMainAdmin || user.email.toLowerCase() === 'peter.w.badir@gmail.com' || user.role === 'main_admin',
+          isMainAdmin: isMaster,
           parentId: user.parentId,
           vaultId: user.vaultId,
           mustChangePassword: !!user.mustChangePassword,
@@ -1714,9 +1763,8 @@ async function startServer() {
         role: targetRole,
         isPrimary: false,
         parentId: caller.id,
-        vaultId: caller.vaultId || (caller.id === 'usr_peter_badir' ? 'shared-main-vault' : 'vault_' + caller.id),
+        vaultId: caller.vaultId || 'vault_' + caller.id,
         mustChangePassword: true,
-        temporaryPassword: tempPass,
         resetTokenExpiresAt: Date.now() + 15 * 60 * 1000,
         createdAt: new Date().toISOString(),
         lastLogin: ''
@@ -1800,7 +1848,7 @@ async function startServer() {
       const token = authHeader.replace(/^Bearer\s+/i, '').trim();
       const caller = resolveTokenUser(token);
 
-      if (!caller || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
+      if (!caller || caller.isDemo || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
         return res.status(403).json({ ok: false, error: 'Only the primary user can resend sub-user credentials.' });
       }
 
@@ -1869,7 +1917,10 @@ async function startServer() {
       user.salt = newSalt;
       user.mustChangePassword = false;
       delete user.temporaryPassword;
+      delete user.resetTempPasswordHash;
+      delete user.resetTempPasswordSalt;
       delete user.resetTokenExpiresAt;
+      user.resetCredentialUsed = true;
       user.failedLoginAttempts = 0;
       delete user.lockoutUntil;
       user.lastLogin = new Date().toISOString();
@@ -2138,9 +2189,90 @@ async function startServer() {
     };
 
     const isMember = user.role === 'member';
+    const isManager = user.role === 'manager';
+    const isOwnerOrAdmin = user.isPrimary || user.role === 'owner' || user.role === 'main_admin' || !!user.isMainAdmin;
+
+    const canonicalize = (val: any): any => {
+      if (Array.isArray(val)) return val.map(canonicalize);
+      if (val && typeof val === 'object') {
+        const sorted: Record<string, any> = {};
+        Object.keys(val).sort().forEach(k => { sorted[k] = canonicalize(val[k]); });
+        return sorted;
+      }
+      return val ?? null;
+    };
+    const stableEqual = (a: any, b: any): boolean => JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
+
+    // Prevent Member from deleting existing operational items or tampering with owner/manager-only collections
+    const hasMissingExistingIds = (incomingArr: any[], existingArr: any[]): boolean => {
+      const existingIds = (existingArr || []).filter(r => r && r.id).map(r => String(r.id));
+      if (existingIds.length === 0) return false;
+      const incomingIds = new Set((incomingArr || []).filter(r => r && r.id).map(r => String(r.id)));
+      return existingIds.some(id => !incomingIds.has(id));
+    };
+
+    const mergeNonDestructive = <T extends { id?: string }>(existingArr: T[], incomingArr: T[]): T[] => {
+      const map = new Map<string, T>();
+      (existingArr || []).forEach(item => { if (item && item.id) map.set(String(item.id), item); });
+      (incomingArr || []).forEach(item => { if (item && item.id) map.set(String(item.id), item); });
+      return Array.from(map.values());
+    };
+
+    if (isMember) {
+      // Members cannot modify payment accounts, budgets/allocations, rentals, or org settings
+      if (Array.isArray(incoming.accounts) && !stableEqual(incoming.accounts, current.accounts || [])) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot modify payment accounts.' });
+      }
+      if (incoming.budgetLimits !== undefined && !stableEqual(incoming.budgetLimits, current.budgetLimits)) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot modify budgets or allocations.' });
+      }
+      if (incoming.allocationsMode !== undefined && incoming.allocationsMode !== current.allocationsMode) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot modify budget allocation modes.' });
+      }
+      if (Array.isArray(incoming.customCategories) && !stableEqual(incoming.customCategories, current.customCategories || [])) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot modify organization categories.' });
+      }
+      if (Array.isArray(incoming.rentalProperties) && !stableEqual(incoming.rentalProperties, current.rentalProperties || [])) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot modify rental properties.' });
+      }
+      if (Array.isArray(incoming.rentalContracts) && !stableEqual(incoming.rentalContracts, current.rentalContracts || [])) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot modify rental contracts.' });
+      }
+      if (incoming.userSettings !== undefined && !stableEqual(incoming.userSettings, current.userSettings)) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot modify organization settings.' });
+      }
+      if (incoming.profileUser !== undefined && !stableEqual(incoming.profileUser, current.profileUser)) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot modify organization profile settings.' });
+      }
+
+      // Members cannot perform bulk deletions on existing transactions or fleet/inventory registries
+      if (Array.isArray(incoming.transactions) && hasMissingExistingIds(sanitizeNonDemo(incoming.transactions), current.transactions || [])) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot delete existing transactions.' });
+      }
+      if (Array.isArray(incoming.vehicles) && hasMissingExistingIds(sanitizeNonDemo(incoming.vehicles), current.vehicles || [])) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot delete fleet vehicles.' });
+      }
+      if (Array.isArray(incoming.stockData) && hasMissingExistingIds(sanitizeNonDemo(incoming.stockData), current.stockData || [])) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Member role cannot delete inventory records.' });
+      }
+    }
+
+    if (isManager && !isOwnerOrAdmin) {
+      // Managers cannot delete payment accounts or modify owner-only organization settings
+      if (Array.isArray(incoming.accounts) && hasMissingExistingIds(incoming.accounts, current.accounts || [])) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Only Workspace Owners can delete payment accounts.' });
+      }
+      if (incoming.userSettings !== undefined && !stableEqual(incoming.userSettings, current.userSettings)) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Only Workspace Owners can alter organization settings.' });
+      }
+      if (incoming.profileUser !== undefined && !stableEqual(incoming.profileUser, current.profileUser)) {
+        return res.status(403).json({ ok: false, error: 'RBAC Forbidden: Only Workspace Owners can alter organization profile settings.' });
+      }
+    }
 
     if (Array.isArray(incoming.transactions)) {
-      current.transactions = sanitizeNonDemo(incoming.transactions);
+      const cleaned = sanitizeNonDemo(incoming.transactions);
+      current.transactions = isMember ? mergeNonDestructive(current.transactions || [], cleaned) : cleaned;
     }
 
     if (Array.isArray(incoming.accounts) && !isMember) {
@@ -2155,30 +2287,53 @@ async function startServer() {
             { id: 'acc_bank_clean', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
           ];
         }
-        current.accounts = filtered;
+        current.accounts = isManager ? mergeNonDestructive(current.accounts || [], filtered) : filtered;
       }
     }
 
     if (Array.isArray(incoming.accountTransfers)) {
-      current.accountTransfers = incoming.accountTransfers;
+      current.accountTransfers = isMember
+        ? mergeNonDestructive(current.accountTransfers || [], incoming.accountTransfers)
+        : incoming.accountTransfers;
     }
 
-    if (incoming.budgetLimits && !isMember) current.budgetLimits = incoming.budgetLimits;
-    if (incoming.allocationsMode !== undefined && !isMember) current.allocationsMode = incoming.allocationsMode;
-    if (incoming.allocationsMonth !== undefined && !isMember) current.allocationsMonth = incoming.allocationsMonth;
-    if (Array.isArray(incoming.customCategories)) current.customCategories = incoming.customCategories;
-    if (Array.isArray(incoming.customSubcategories)) current.customSubcategories = incoming.customSubcategories;
-    if (Array.isArray(incoming.stockData)) current.stockData = sanitizeNonDemo(incoming.stockData);
-    if (Array.isArray(incoming.pharmacyData)) current.pharmacyData = sanitizeNonDemo(incoming.pharmacyData);
-    if (Array.isArray(incoming.vehicles)) current.vehicles = sanitizeNonDemo(incoming.vehicles);
-    if (Array.isArray(incoming.fuels)) current.fuels = sanitizeNonDemo(incoming.fuels);
-    if (Array.isArray(incoming.maint)) current.maint = sanitizeNonDemo(incoming.maint);
-    if (Array.isArray(incoming.rentalProperties)) current.rentalProperties = incoming.rentalProperties;
-    if (Array.isArray(incoming.rentalContracts)) current.rentalContracts = incoming.rentalContracts;
-    if (Array.isArray(incoming.rentalNotifications)) current.rentalNotifications = incoming.rentalNotifications;
-    if (incoming.rentalNotificationConfig !== undefined) current.rentalNotificationConfig = incoming.rentalNotificationConfig;
-    if (incoming.userSettings !== undefined) current.userSettings = incoming.userSettings;
-    if (incoming.profileUser) current.profileUser = incoming.profileUser;
+    if (!isMember) {
+      if (incoming.budgetLimits) current.budgetLimits = incoming.budgetLimits;
+      if (incoming.allocationsMode !== undefined) current.allocationsMode = incoming.allocationsMode;
+      if (incoming.allocationsMonth !== undefined) current.allocationsMonth = incoming.allocationsMonth;
+      if (Array.isArray(incoming.customCategories)) current.customCategories = incoming.customCategories;
+      if (Array.isArray(incoming.customSubcategories)) current.customSubcategories = incoming.customSubcategories;
+      if (Array.isArray(incoming.rentalProperties)) current.rentalProperties = incoming.rentalProperties;
+      if (Array.isArray(incoming.rentalContracts)) current.rentalContracts = incoming.rentalContracts;
+      if (Array.isArray(incoming.rentalNotifications)) current.rentalNotifications = incoming.rentalNotifications;
+      if (incoming.rentalNotificationConfig !== undefined) current.rentalNotificationConfig = incoming.rentalNotificationConfig;
+    }
+
+    if (Array.isArray(incoming.stockData)) {
+      const cleaned = sanitizeNonDemo(incoming.stockData);
+      current.stockData = isMember ? mergeNonDestructive(current.stockData || [], cleaned) : cleaned;
+    }
+    if (Array.isArray(incoming.pharmacyData)) {
+      const cleaned = sanitizeNonDemo(incoming.pharmacyData);
+      current.pharmacyData = isMember ? mergeNonDestructive(current.pharmacyData || [], cleaned) : cleaned;
+    }
+    if (Array.isArray(incoming.vehicles)) {
+      const cleaned = sanitizeNonDemo(incoming.vehicles);
+      current.vehicles = isMember ? mergeNonDestructive(current.vehicles || [], cleaned) : cleaned;
+    }
+    if (Array.isArray(incoming.fuels)) {
+      const cleaned = sanitizeNonDemo(incoming.fuels);
+      current.fuels = isMember ? mergeNonDestructive(current.fuels || [], cleaned) : cleaned;
+    }
+    if (Array.isArray(incoming.maint)) {
+      const cleaned = sanitizeNonDemo(incoming.maint);
+      current.maint = isMember ? mergeNonDestructive(current.maint || [], cleaned) : cleaned;
+    }
+
+    if (isOwnerOrAdmin) {
+      if (incoming.userSettings !== undefined) current.userSettings = incoming.userSettings;
+      if (incoming.profileUser) current.profileUser = incoming.profileUser;
+    }
 
     current.updatedAt = new Date().toISOString();
     saveDatabase(db);
@@ -2955,7 +3110,7 @@ async function startServer() {
           role: u.role,
           tier: u.tier,
           isPrimary: !!u.isPrimary,
-          isMainAdmin: !!u.isMainAdmin || u.email.toLowerCase() === 'peter.w.badir@gmail.com',
+          isMainAdmin: !u.isDemo && (!!u.isMainAdmin || u.role === 'main_admin'),
           status: u.status || 'active',
           parentId: u.parentId,
           vaultId: u.vaultId,
@@ -3137,8 +3292,8 @@ async function startServer() {
 
       const { role, tier, status, newPassword } = req.body || {};
 
-      // Protection for Master Admin Peter Badir
-      const isTargetMaster = targetUser.email.toLowerCase() === 'peter.w.badir@gmail.com';
+      // Protection for Master Admin account
+      const isTargetMaster = !!targetUser.isMainAdmin || targetUser.role === 'main_admin' || targetUser.id === 'usr_peter_badir';
       if (isTargetMaster && (status === 'suspended' || (role && role !== 'main_admin'))) {
         return res.status(403).json({ ok: false, error: 'The Master App Admin account cannot be suspended or demoted.' });
       }
@@ -3151,13 +3306,17 @@ async function startServer() {
           revokeUserSessions(targetUser.id);
         }
       }
-      if (newPassword && String(newPassword).length >= 6) {
+      if (newPassword !== undefined && String(newPassword).length > 0) {
+        const pwdCheck = validateStrongPassword(String(newPassword));
+        if (!pwdCheck.valid) {
+          return res.status(400).json({ ok: false, error: pwdCheck.message });
+        }
         revokeUserSessions(targetUser.id);
         const salt = crypto.randomBytes(16).toString('hex');
         targetUser.passwordHash = hashPassword(String(newPassword), salt);
         targetUser.salt = salt;
         targetUser.mustChangePassword = false;
-        targetUser.temporaryPassword = undefined;
+        delete targetUser.temporaryPassword;
       }
 
       logAdminAction(admin.email, 'USER_ACCOUNT_MANAGED', 'user_management',

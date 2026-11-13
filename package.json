@@ -13,7 +13,7 @@
     "test:security": "tsx scripts/test-security-remediation.ts",
     "test:backup": "tsx scripts/test-backup-restoration.ts",
     "test": "tsx scripts/test-security-remediation.ts && tsx scripts/test-backup-restoration.ts",
-    "package:source": "tar --exclude=node_modules --exclude=data --exclude=dist --exclude=.git -czf forecaster-pro-source.tar.gz ."
+    "package:source": "tar --exclude=node_modules --exclude=data --exclude=backups --exclude=dist --exclude=build --exclude=coverage --exclude=.git --exclude='.env' --exclude='.env.local' --exclude='.env.production' --exclude='.env.development' --exclude='.env.test' --exclude='*.db' --exclude='*.sqlite' --exclude='*.sqlite3' --exclude='*.bak' --exclude='*.backup' --exclude='*.dump' --exclude='*.tmp' --exclude='*.zip' --exclude='*.tar.gz' -czf forecaster-pro-source.tar.gz ."
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

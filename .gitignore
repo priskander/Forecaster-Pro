@@ -7,16 +7,21 @@ coverage/
 .env*
 !.env.example
 
-# Local databases and runtime state
+# Local databases, runtime state, backups, and source archives
 data/
 data/cloud-ledger-db.json
+backups/
 *.tmp
 *.db
 *.sqlite
+*.sqlite3
 *.bak
 *.backup
 *.dump
-*.sql
 *.zip
 *.tar.gz
 forecaster-pro-source.tar.gz
+
+# Keep SQL migration scripts tracked (never exclude legitimate migrations)
+!migrations/**/*.sql
+!prisma/**/*.sql

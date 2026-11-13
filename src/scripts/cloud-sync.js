@@ -435,6 +435,23 @@
     },
 
     syncNow: async function(showFeedback = false) {
+      const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
+        ? window.ForecasterAuth.getToken()
+        : (localStorage.getItem('forecaster_auth_token') || '');
+      const role = (window.ForecasterAuth && typeof window.ForecasterAuth.getRole === 'function')
+        ? window.ForecasterAuth.getRole()
+        : null;
+
+      if (!token) {
+        return;
+      }
+      if (role === 'viewer') {
+        if (showFeedback && typeof window.triggerToast === 'function') {
+          window.triggerToast('Read-only Viewer accounts cannot push changes to Cloud Sync.', 'info');
+        }
+        return;
+      }
+
       if (isSyncing) return;
       isSyncing = true;
       this.updateUI(true);
@@ -444,9 +461,6 @@
       try {
         // Step 1: Push local state to server to merge
         const localData = this.getLocalData();
-        const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
-          ? window.ForecasterAuth.getToken()
-          : (localStorage.getItem('forecaster_auth_token') || '');
 
         const headers = {
           'Content-Type': 'application/json',

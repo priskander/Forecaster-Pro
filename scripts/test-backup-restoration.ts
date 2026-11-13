@@ -4,7 +4,9 @@
  * Never touches or modifies real production users or production vaults.
  */
 
-const BASE_URL = 'http://localhost:3000';
+import { startIsolatedTestServer } from './test-harness';
+
+let activeBaseUrl = '';
 
 interface TestResult {
   category: string;
@@ -27,7 +29,7 @@ function assert(condition: boolean, category: string, name: string, detail?: str
 }
 
 async function request(path: string, options: RequestInit = {}): Promise<{ status: number; body: any }> {
-  const url = `${BASE_URL}${path}`;
+  const url = `${activeBaseUrl}${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -49,7 +51,11 @@ async function request(path: string, options: RequestInit = {}): Promise<{ statu
 }
 
 async function runTests() {
-  console.log('\n📦 Starting Forecaster Pro Backup & Cloud Restoration Test Suite (Phase 1.1)...\n');
+  console.log('\n📦 Starting Forecaster Pro Backup & Cloud Restoration Test Suite (Isolated Temp DB)...\n');
+
+  const server = await startIsolatedTestServer();
+  activeBaseUrl = server.baseUrl;
+  try {
 
   // --- Setup Isolated Synthetic Workspace Owner Session ---
   const synthOwnerEmail = `synth_backup_${Date.now()}@backup-test.local`;
@@ -291,14 +297,20 @@ async function runTests() {
         vehicles: [
           { id: 'veh_dedup_1', make: 'Ford', model: 'Focus', plate: 'DED-100' }
         ],
-        fuels: [],
-        maint: []
+        fuels: [
+          { id: 'fuel_dedup_1', vehicleId: 'veh_dedup_1', liters: 42, cost: 65, date: '2026-11-02' }
+        ],
+        maint: [
+          { id: 'maint_dedup_1', vehicleId: 'veh_dedup_1', service: 'Brake Check', cost: 110, date: '2026-11-03' }
+        ]
       },
       rentals: {
         properties: [
           { id: 'prop_dedup_1', title: 'Dedup Studio Apt' }
         ],
-        contracts: [],
+        contracts: [
+          { id: 'cntr_dedup_1', propertyId: 'prop_dedup_1', tenantName: 'Test Tenant', rentAmount: 1100 }
+        ],
         notifications: []
       },
       budgets: { limits: { Supplies: 400 } },
@@ -316,9 +328,12 @@ async function runTests() {
   const vault1 = firstRestore.body?.vault;
   assert(vault1?.transactions?.length === 2, 'Deduplication', 'Initial transaction count is 2');
   assert(vault1?.vehicles?.length === 1, 'Deduplication', 'Initial vehicle count is 1');
+  assert(vault1?.fuels?.length === 1, 'Deduplication', 'Initial fuel logs count is 1');
+  assert(vault1?.maint?.length === 1, 'Deduplication', 'Initial maintenance count is 1');
   assert(vault1?.stockData?.length === 1, 'Deduplication', 'Initial stock count is 1');
   assert(vault1?.pharmacyData?.length === 1, 'Deduplication', 'Initial pharmacy count is 1');
   assert(vault1?.rentalProperties?.length === 1, 'Deduplication', 'Initial rental property count is 1');
+  assert(vault1?.rentalContracts?.length === 1, 'Deduplication', 'Initial rental contract count is 1');
 
   // Second restore of the EXACT SAME backup (should deduplicate completely)
   const secondRestore = await request('/api/backup/restore', {
@@ -330,8 +345,11 @@ async function runTests() {
   const vault2 = secondRestore.body?.vault;
   assert(vault2?.transactions?.length === 2, 'Deduplication', 'Transaction count remains EXACTLY 2 (zero duplicates)');
   assert(vault2?.vehicles?.length === 1, 'Deduplication', 'Vehicle count remains EXACTLY 1 (zero duplicates)');
+  assert(vault2?.fuels?.length === 1, 'Deduplication', 'Fuel log count remains EXACTLY 1 (zero duplicates)');
+  assert(vault2?.maint?.length === 1, 'Deduplication', 'Maintenance count remains EXACTLY 1 (zero duplicates)');
   assert(vault2?.stockData?.length === 1, 'Deduplication', 'Stock count remains EXACTLY 1 (zero duplicates)');
   assert(vault2?.rentalProperties?.length === 1, 'Deduplication', 'Rental property count remains EXACTLY 1 (zero duplicates)');
+  assert(vault2?.rentalContracts?.length === 1, 'Deduplication', 'Rental contract count remains EXACTLY 1 (zero duplicates)');
 
   // Third repeated restore to confirm stability
   const thirdRestore = await request('/api/backup/restore', {
@@ -557,11 +575,13 @@ async function runTests() {
   if (failed === 0) {
     console.log(`🏆 ALL CLOUD SYNC & BACKUP RESTORATION TESTS PASSED: ${passed}/${total}`);
     console.log('======================================================\n');
-    process.exit(0);
   } else {
     console.error(`💥 TEST SUITE FAILED: ${failed} failure(s) out of ${total}`);
     console.log('======================================================\n');
-    process.exit(1);
+    throw new Error(`${failed} backup restoration assertions failed.`);
+  }
+  } finally {
+    await server.stop(true);
   }
 }
 

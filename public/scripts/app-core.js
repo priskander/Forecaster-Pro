@@ -5704,8 +5704,8 @@
           appVersion: '2.5.0',
           exportedAt: new Date().toISOString(),
           organizationId: (window.ForecasterCloudSync?.getVaultId?.() || 'shared-main-vault'),
-          ownerEmail: (JSON.parse(localStorage.getItem('forecaster_auth_user') || 'null')?.email || 'peter.w.badir@gmail.com'),
-          ownerUserId: (JSON.parse(localStorage.getItem('forecaster_auth_user') || 'null')?.id || 'usr_peter_badir'),
+          ownerEmail: (JSON.parse(localStorage.getItem('forecaster_auth_user') || 'null')?.email || ''),
+          ownerUserId: (JSON.parse(localStorage.getItem('forecaster_auth_user') || 'null')?.id || ''),
           moduleFilter: filter,
           summary: {
             transactionsCount: envelopeModules.financial.transactions.length,

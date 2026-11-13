@@ -41,7 +41,7 @@
       label: 'Main Admin',
       badgeClass: 'bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-xs font-black',
       icon: '🛡️',
-      tagline: 'Master App Owner & System Administrator (Peter W. Badir)',
+      tagline: 'Master App Owner & System Administrator',
       description: 'Full authority across Website, Desktop & Mobile deployments, live version bumps, feature flags, user directories, and multi-tenant databases.',
       permissions: [
         { label: 'Master App Control Panel & Updates', allowed: true },
@@ -137,8 +137,8 @@
 
     isMainAdmin: function() {
       const user = this.getUser();
-      if (!user) return false;
-      return !!(user.isMainAdmin || user.role === 'main_admin' || (user.email && user.email.toLowerCase() === 'peter.w.badir@gmail.com'));
+      if (!user || user.isDemo) return false;
+      return !!(user.isMainAdmin || user.role === 'main_admin');
     },
 
     isPrimaryUser: function() {
@@ -231,8 +231,6 @@
         const loginEmail = document.getElementById('login-email');
         if (forgotEmail && loginEmail && loginEmail.value) {
           forgotEmail.value = loginEmail.value;
-        } else if (forgotEmail && !forgotEmail.value) {
-          forgotEmail.value = 'peter.w.badir@gmail.com';
         }
       } else {
         if (loginTabBtn) loginTabBtn.className = activeTabStyle;
@@ -265,34 +263,155 @@
           throw new Error(data.error || 'Password reset request failed.');
         }
 
-        this._lastTempPass = data.temporaryPassword;
-        this._lastResetEmail = data.email;
+        this._lastResetEmail = cleanEmail;
 
         const card = document.getElementById('forgot-result-card');
-        const display = document.getElementById('forgot-temp-pass-display');
-        if (display) display.textContent = data.temporaryPassword;
+        const statusEl = document.getElementById('forgot-generic-status');
+        if (statusEl) {
+          statusEl.textContent = data.message || 'If an account is registered with that email address, temporary recovery instructions have been dispatched.';
+        }
         if (card) card.classList.remove('hidden');
 
         if (typeof window.triggerToast === 'function') {
-          window.triggerToast('Temporary password generated! Click Auto-Fill to sign in.', 'success');
+          window.triggerToast(data.message || 'Recovery request submitted.', 'info');
         }
       } catch (err) {
         this.showAuthError(err.message);
       }
     },
 
-    autoFillAndLoginWithTemp: function() {
-      const email = this._lastResetEmail || document.getElementById('forgot-email')?.value || 'peter.w.badir@gmail.com';
-      const tempPass = this._lastTempPass || document.getElementById('forgot-temp-pass-display')?.textContent || '';
-      if (!tempPass) return;
+    completePasswordReset: async function() {
+      try {
+        this.clearAuthErrors();
+        const email = (document.getElementById('forgot-email')?.value || this._lastResetEmail || '').trim().toLowerCase();
+        const temporaryPassword = document.getElementById('reset-temp-code')?.value || '';
+        const newPassword = document.getElementById('reset-new-password')?.value || '';
 
-      this.toggleAuthTab('login');
-      const emailInput = document.getElementById('login-email');
-      const passInput = document.getElementById('login-password');
-      if (emailInput) emailInput.value = email;
-      if (passInput) passInput.value = tempPass;
+        if (!email || !temporaryPassword || !newPassword) {
+          throw new Error('Email, recovery code, and new password are required.');
+        }
 
-      this.login(email, tempPass);
+        const strength = this.evaluatePasswordStrength(newPassword);
+        if (!strength.meetsMinimum) {
+          throw new Error(strength.requirementMessage);
+        }
+
+        const res = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, temporaryPassword, newPassword })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || 'Password reset failed.');
+        }
+
+        if (data.token && data.user) {
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
+          localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+          localStorage.setItem('forecaster_is_demo', 'false');
+          localStorage.removeItem('forecaster_explicit_logout');
+          if (window.ForecasterCloudSync && data.user.vaultId) {
+            window.ForecasterCloudSync.setVaultId(data.user.vaultId, false);
+            await window.ForecasterCloudSync.pullVault(data.user.vaultId, true);
+          }
+          this.closeAuthModal();
+          this.updateUI();
+        }
+
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Password reset successfully!', 'success');
+        }
+      } catch (err) {
+        this.showAuthError(err.message);
+      }
+    },
+
+    toggleComplexityTooltip: function(tooltipId) {
+      const tip = document.getElementById(tooltipId);
+      if (!tip) return;
+      tip.classList.toggle('hidden');
+    },
+
+    evaluatePasswordStrength: function(password) {
+      const pwd = String(password || '');
+      const hasLen8 = pwd.length >= 8;
+      const hasLen12 = pwd.length >= 12;
+      const hasUpper = /[A-Z]/.test(pwd);
+      const hasLower = /[a-z]/.test(pwd);
+      const hasDigit = /[0-9]/.test(pwd);
+      const hasSymbol = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(pwd);
+
+      const meetsMinimum = hasLen8 && hasUpper && hasLower && hasDigit && hasSymbol;
+
+      let score = 0;
+      if (pwd.length > 0) {
+        let checks = 0;
+        if (hasLen8) checks++;
+        if (hasUpper && hasLower) checks++;
+        if (hasDigit) checks++;
+        if (hasSymbol) checks++;
+
+        if (checks <= 1 || !hasLen8) score = 1;
+        else if (checks === 2 || checks === 3) score = 2;
+        else if (checks === 4 && !hasLen12) score = 3;
+        else if (checks === 4 && hasLen12) score = 4;
+      }
+
+      const missing = [];
+      if (!hasLen8) missing.push('8+ chars');
+      if (!hasUpper) missing.push('uppercase');
+      if (!hasLower) missing.push('lowercase');
+      if (!hasDigit) missing.push('number');
+      if (!hasSymbol) missing.push('symbol');
+
+      return {
+        score,
+        meetsMinimum,
+        missing,
+        hasLen12,
+        requirementMessage: missing.length > 0
+          ? `Password requires: ${missing.join(', ')}.`
+          : 'Password meets complexity requirements.'
+      };
+    },
+
+    updatePasswordStrength: function(inputId, prefix) {
+      const input = document.getElementById(inputId);
+      const meter = document.getElementById(`${prefix}-meter`);
+      const labelEl = document.getElementById(`${prefix}-label`);
+      const hintEl = document.getElementById(`${prefix}-hint`);
+      if (!input) return;
+
+      const pwd = input.value || '';
+      const evalRes = this.evaluatePasswordStrength(pwd);
+      const score = evalRes.score;
+
+      const palette = {
+        0: { bar: 'bg-slate-200 dark:bg-slate-700', text: 'text-slate-400', label: 'Strength: Not entered', hint: 'Aim for high entropy' },
+        1: { bar: 'bg-rose-500', text: 'text-rose-600 dark:text-rose-400', label: 'Strength: Weak', hint: `Add ${evalRes.missing.slice(0, 2).join(', ') || 'more length'}` },
+        2: { bar: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400', label: 'Strength: Fair', hint: evalRes.missing.length ? `Missing: ${evalRes.missing.join(', ')}` : 'Add symbols or length' },
+        3: { bar: 'bg-blue-500', text: 'text-blue-600 dark:text-blue-400', label: 'Strength: Good', hint: 'Use 12+ chars for max entropy' },
+        4: { bar: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400', label: 'Strength: Strong (High Entropy)', hint: 'All security criteria met' }
+      };
+
+      const cfg = palette[score] || palette[0];
+
+      for (let i = 1; i <= 4; i++) {
+        const bar = document.getElementById(`${prefix}-bar-${i}`);
+        if (!bar) continue;
+        bar.className = `rounded-full transition-colors duration-200 ${i <= score ? cfg.bar : 'bg-slate-200 dark:bg-slate-700'}`;
+      }
+
+      if (meter) meter.setAttribute('aria-valuenow', String(score));
+      if (labelEl) {
+        labelEl.className = `font-bold ${cfg.text}`;
+        labelEl.textContent = cfg.label;
+      }
+      if (hintEl) {
+        hintEl.textContent = cfg.hint;
+      }
     },
 
     togglePasswordVisibility: function(inputId, btnEl) {
@@ -373,6 +492,11 @@
     register: async function(name, email, password, confirmPassword, propertyRole = 'tenant') {
       try {
         this.clearAuthErrors();
+
+        const strength = this.evaluatePasswordStrength(password);
+        if (!strength.meetsMinimum) {
+          throw new Error(strength.requirementMessage);
+        }
 
         if (password !== confirmPassword) {
           throw new Error('Passwords do not match. Please re-enter.');
@@ -458,17 +582,6 @@
       } catch (err) {
         this.showAuthError(err.message);
       }
-    },
-
-    quickDemoLogin: async function() {
-      localStorage.removeItem('forecaster_explicit_logout');
-      const emailInput = document.getElementById('login-email');
-      const passInput = document.getElementById('login-password');
-      if (emailInput && passInput) {
-        emailInput.value = 'peter.w.badir@gmail.com';
-        passInput.value = 'Password123!';
-      }
-      await this.login('peter.w.badir@gmail.com', 'Password123!');
     },
 
     loginDemoAccount: async function() {
@@ -671,11 +784,11 @@
         errEl.classList.add('hidden');
       }
 
-      if (nameInput) nameInput.value = user.name || 'Peter W. Badir';
-      if (emailInput) emailInput.value = user.email || 'peter.w.badir@gmail.com';
+      if (nameInput) nameInput.value = user.name || '';
+      if (emailInput) emailInput.value = user.email || '';
 
       this._pendingAvatarUrl = user.avatarUrl || null;
-      this.updateAvatarPreview(this._pendingAvatarUrl, user.name || 'PB');
+      this.updateAvatarPreview(this._pendingAvatarUrl, user.name || 'U');
 
       const currentRole = user.propertyRole || (typeof window.getPropertyRole === 'function' ? window.getPropertyRole() : 'tenant');
       this.selectEditPropertyRole(currentRole);
@@ -787,7 +900,7 @@
       const name = nameInput?.value?.trim() || '';
       const propertyRole = document.querySelector('input[name="edit-property-role"]:checked')?.value || 'tenant';
       const currentUser = this.getUser() || {};
-      const email = currentUser.email || 'peter.w.badir@gmail.com';
+      const email = currentUser.email || '';
 
       if (errEl) errEl.classList.add('hidden');
 
@@ -877,15 +990,16 @@
       if (currentInput) {
         if (currentPassword) {
           currentInput.value = currentPassword;
-        } else if (!currentInput.value) {
-          const user = this.getUser();
-          if (user && user.temporaryPassword) {
-            currentInput.value = user.temporaryPassword;
-          } else if (user && user.email && user.email.toLowerCase() === 'peter.w.badir@gmail.com') {
-            currentInput.value = 'Password123!';
-          }
+        } else {
+          currentInput.value = '';
         }
       }
+
+      const newInput = document.getElementById('change-pass-new');
+      const confirmInput = document.getElementById('change-pass-confirm');
+      if (newInput) newInput.value = '';
+      if (confirmInput) confirmInput.value = '';
+      this.updatePasswordStrength('change-pass-new', 'change-strength');
 
       const errEl = document.getElementById('change-pass-error-banner');
       if (errEl) {
@@ -916,9 +1030,10 @@
 
       if (errEl) errEl.classList.add('hidden');
 
-      if (!newPassword || newPassword.length < 6) {
+      const strength = this.evaluatePasswordStrength(newPassword);
+      if (!strength.meetsMinimum) {
         if (errEl) {
-          errEl.textContent = 'New password must be at least 6 characters long.';
+          errEl.textContent = strength.requirementMessage;
           errEl.classList.remove('hidden');
         }
         return;
@@ -935,7 +1050,7 @@
       try {
         const token = this.getToken();
         const user = this.getUser();
-        const email = user?.email || 'peter.w.badir@gmail.com';
+        const email = user?.email || '';
         const res = await fetch('/api/auth/change-password', {
           method: 'POST',
           headers: {
@@ -1742,7 +1857,7 @@ ${mail.body}
       }
 
       tableBody.innerHTML = users.map(u => {
-        const isMaster = u.isMainAdmin || u.email.toLowerCase() === 'peter.w.badir@gmail.com' || u.role === 'main_admin';
+        const isMaster = !u.isDemo && (u.isMainAdmin || u.role === 'main_admin');
         const roleBadge = isMaster
           ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800">Main Admin</span>'
           : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -1831,12 +1946,14 @@ ${mail.body}
       const wantResetPass = confirm(`Would you like to set a new password for ${name}? Click OK to change password, or Cancel to keep existing.`);
       let newPass = undefined;
       if (wantResetPass) {
-        const passPrompt = prompt(`Enter new password for ${name} (min 6 chars):`);
-        if (passPrompt && passPrompt.length >= 6) {
+        const passPrompt = prompt(`Enter new strong password for ${name} (min 8 chars, upper, lower, digit, symbol):`);
+        if (passPrompt !== null) {
+          const check = this.evaluatePasswordStrength(passPrompt);
+          if (!check.meetsMinimum) {
+            alert(check.requirementMessage);
+            return;
+          }
           newPass = passPrompt;
-        } else if (passPrompt !== null) {
-          alert('Password must be at least 6 characters.');
-          return;
         }
       }
 
@@ -2285,16 +2402,43 @@ ${mail.body}
               </div>
 
               <div>
-                <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">New Permanent Password (min 6 characters)</label>
+                <div class="flex items-center justify-between mb-1">
+                  <label for="change-pass-new" class="block text-xs font-bold text-slate-600 dark:text-slate-300">New Permanent Password (min 8 characters)</label>
+                  <div class="relative inline-block group">
+                    <button type="button" aria-label="Password complexity requirements" aria-describedby="change-pass-tooltip" class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-[10px] font-black cursor-pointer hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500" onclick="window.ForecasterAuth.toggleComplexityTooltip('change-pass-tooltip')" title="Min 8 chars, uppercase, lowercase, numeric digit, and special symbol">i</button>
+                    <div id="change-pass-tooltip" role="tooltip" class="hidden group-hover:block group-focus-within:block absolute right-0 bottom-6 z-50 w-60 p-3 rounded-xl bg-slate-900 text-white text-[10.5px] leading-relaxed shadow-xl border border-slate-700">
+                      <div class="font-bold text-blue-300 mb-1">Password Complexity Requirements</div>
+                      <ul class="list-disc pl-3.5 space-y-0.5 text-slate-200">
+                        <li>Minimum 8 characters (12+ for high entropy)</li>
+                        <li>At least 1 uppercase letter (A-Z)</li>
+                        <li>At least 1 lowercase letter (a-z)</li>
+                        <li>At least 1 numeric digit (0-9)</li>
+                        <li>At least 1 special symbol (!@#$%^&amp;*)</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
                 <div class="relative">
-                  <input type="password" id="change-pass-new" required minlength="6" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 pr-10 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Choose a secure permanent password"/>
+                  <input type="password" id="change-pass-new" required minlength="8" oninput="window.ForecasterAuth.updatePasswordStrength('change-pass-new', 'change-strength')" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 pr-10 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Min 8 chars: upper, lower, digit, symbol"/>
                   <button type="button" class="absolute right-3 top-3 text-slate-400 hover:text-slate-600 text-sm" onclick="window.ForecasterAuth.togglePasswordVisibility('change-pass-new', this)">👁️</button>
+                </div>
+                <div id="change-strength-container" class="mt-2 space-y-1">
+                  <div class="grid grid-cols-4 gap-1.5 h-1.5" role="progressbar" aria-label="Password strength" aria-valuemin="0" aria-valuemax="4" aria-valuenow="0" id="change-strength-meter">
+                    <div id="change-strength-bar-1" class="rounded-full bg-slate-200 dark:bg-slate-700 transition-colors duration-200"></div>
+                    <div id="change-strength-bar-2" class="rounded-full bg-slate-200 dark:bg-slate-700 transition-colors duration-200"></div>
+                    <div id="change-strength-bar-3" class="rounded-full bg-slate-200 dark:bg-slate-700 transition-colors duration-200"></div>
+                    <div id="change-strength-bar-4" class="rounded-full bg-slate-200 dark:bg-slate-700 transition-colors duration-200"></div>
+                  </div>
+                  <div class="flex items-center justify-between text-[10.5px]">
+                    <span id="change-strength-label" class="font-bold text-slate-400">Strength: Not entered</span>
+                    <span id="change-strength-hint" class="text-slate-400">Aim for high entropy</span>
+                  </div>
                 </div>
               </div>
 
               <div>
                 <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Confirm Permanent Password</label>
-                <input type="password" id="change-pass-confirm" required minlength="6" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Repeat your new password"/>
+                <input type="password" id="change-pass-confirm" required minlength="8" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Repeat your new password"/>
               </div>
 
               <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-md shadow-blue-500/25 flex items-center justify-center gap-1.5 cursor-pointer">
@@ -2592,43 +2736,12 @@ ${mail.body}
               }
             }
           } else if (res.status === 401) {
-            const localUser = this.getUser();
-            if (localUser && localUser.email) {
-              const reloginRes = await fetch('/api/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: localUser.email, password: 'Password123!' })
-              });
-              if (reloginRes.ok) {
-                const reloginData = await reloginRes.json();
-                localStorage.setItem(AUTH_USER_KEY, JSON.stringify(reloginData.user));
-                localStorage.setItem(AUTH_TOKEN_KEY, reloginData.token);
-              }
-            }
+            // Token expired or revoked: clear stale local session and require explicit login
+            localStorage.removeItem(AUTH_USER_KEY);
+            localStorage.removeItem(AUTH_TOKEN_KEY);
           }
         } catch (e) {
           // Offline mode
-        }
-      } else {
-        // Only automatically sign in with demo user if user didn't explicitly log out
-        const wasExplicitLogout = localStorage.getItem('forecaster_explicit_logout') === 'true';
-        if (!wasExplicitLogout) {
-          try {
-            const autoRes = await fetch('/api/auth/login', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: 'peter.w.badir@gmail.com', password: 'Password123!' })
-            });
-            if (autoRes.ok) {
-              const data = await autoRes.json();
-              localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
-              localStorage.setItem(AUTH_TOKEN_KEY, data.token);
-              if (window.ForecasterCloudSync && data.user && data.user.vaultId) {
-                window.ForecasterCloudSync.setVaultId(data.user.vaultId, false);
-                await window.ForecasterCloudSync.pullVault(data.user.vaultId, true);
-              }
-            }
-          } catch (e) {}
         }
       }
 
