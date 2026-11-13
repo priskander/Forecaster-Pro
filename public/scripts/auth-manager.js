@@ -662,8 +662,9 @@
       try {
         const token = this.getToken();
         if (token) {
-          fetch('/api/auth/logout', {
+          await fetch('/api/auth/logout', {
             method: 'POST',
+            keepalive: true,
             headers: { 'Authorization': `Bearer ${token}` }
           }).catch(() => {});
         }

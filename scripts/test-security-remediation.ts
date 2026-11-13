@@ -1014,6 +1014,590 @@ async function runSecurityTestSuite() {
       try { fs.rmSync(resetTestDir, { recursive: true, force: true }); } catch {}
     }
 
+    // =========================================================================
+    // 10. Phase 1.1.1: Database Static Protection, Expired Tokens, Logout & Account Revocation
+    // =========================================================================
+    console.log('\n--- Test Category 10: Database Access Protection, Session Expiration, Logout & Revocation ---');
+
+    // 10.1 Public static / Vite middleware must NEVER expose database, backups, env, or server source files
+    const blockedStaticRoutes = [
+      '/data/cloud-ledger-db.json',
+      '/data/cloud-ledger-db.json?raw',
+      '/%64ata/cloud-ledger-db.json',
+      '/backups/snapshot.json',
+      '/.env',
+      '/.env.example',
+      '/server.ts',
+      '/scripts/test-security-remediation.ts',
+      '/package.json',
+      '/@fs/app/applet/data/cloud-ledger-db.json'
+    ];
+    for (const staticPath of blockedStaticRoutes) {
+      const staticRes = await request(staticPath, { method: 'GET' });
+      assert(
+        staticRes.status === 403,
+        `DB-Protect 10.1: Protected path blocked over public static/Vite routes (HTTP 403) -> ${staticPath}`
+      );
+    }
+
+    // 10.2 Legitimate frontend scripts under /scripts/*.js remain accessible (HTTP 200)
+    const legitScriptRes = await fetch(`${activeBaseUrl}/scripts/auth-manager.js`);
+    assert(legitScriptRes.status === 200, 'DB-Protect 10.2: Legitimate client asset /scripts/auth-manager.js stays accessible (HTTP 200)');
+
+    // 10.3 Unauthenticated backup & vault endpoints reject with HTTP 401 and include no-store cache headers
+    const unauthExport = await request('/api/backup/export?vaultId=shared-main-vault');
+    assert(unauthExport.status === 401, 'Backup-Auth 10.3a: Unauthenticated /api/backup/export rejected (HTTP 401)');
+    assert(
+      (unauthExport.headers.get('cache-control') || '').includes('no-store'),
+      'Headers 10.3b: API routes enforce Cache-Control: no-store'
+    );
+
+    const unauthValidate = await request('/api/backup/validate', { method: 'POST', body: JSON.stringify({}) });
+    assert(unauthValidate.status === 401, 'Backup-Auth 10.3c: Unauthenticated /api/backup/validate rejected (HTTP 401)');
+
+    const unauthRestore = await request('/api/backup/restore', { method: 'POST', body: JSON.stringify({}) });
+    assert(unauthRestore.status === 401, 'Backup-Auth 10.3d: Unauthenticated /api/backup/restore rejected (HTTP 401)');
+
+    const unauthVault = await request('/api/cloud-sync/vault/shared-main-vault');
+    assert(unauthVault.status === 401, 'DB-Auth 10.3e: Unauthenticated /api/cloud-sync/vault/:id rejected (HTTP 401)');
+
+    // 10.4 Logout server-side session invalidation (single session & allSessions)
+    const logoutEmail = `logout_user_${Date.now()}@testcorp.local`;
+    const regLogout = await request('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Logout Test User', email: logoutEmail, password: 'LogoutStrong#2026!' })
+    });
+    const logoutTok1 = regLogout.body.token;
+    const logoutVaultId = regLogout.body.user.vaultId;
+
+    const loginSecond = await request('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: logoutEmail, password: 'LogoutStrong#2026!' })
+    });
+    const logoutTok2 = loginSecond.body.token;
+
+    const logoutRes = await request('/api/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${logoutTok1}` }
+    });
+    assert(logoutRes.status === 200 && logoutRes.body.ok === true, 'Logout 10.4a: POST /api/auth/logout succeeds (HTTP 200)');
+
+    const reuseAfterLogoutMe = await request('/api/auth/me', {
+      headers: { Authorization: `Bearer ${logoutTok1}` }
+    });
+    assert(reuseAfterLogoutMe.status === 401, 'Logout 10.4b: Logged-out token rejected on /api/auth/me (HTTP 401)');
+
+    const reuseAfterLogoutVault = await request(`/api/cloud-sync/vault/${logoutVaultId}`, {
+      headers: { Authorization: `Bearer ${logoutTok1}` }
+    });
+    assert(reuseAfterLogoutVault.status === 401, 'Logout 10.4c: Logged-out token rejected on /api/cloud-sync/vault (HTTP 401)');
+
+    const tok2StillValid = await request('/api/auth/me', {
+      headers: { Authorization: `Bearer ${logoutTok2}` }
+    });
+    assert(tok2StillValid.status === 200, 'Logout 10.4d: Other independent session remains valid on single-device logout (HTTP 200)');
+
+    // Create 3rd session then logout with allSessions: true
+    const loginThird = await request('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: logoutEmail, password: 'LogoutStrong#2026!' })
+    });
+    const logoutTok3 = loginThird.body.token;
+    await request('/api/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${logoutTok2}` },
+      body: JSON.stringify({ allSessions: true })
+    });
+    const reuseTok3 = await request('/api/auth/me', {
+      headers: { Authorization: `Bearer ${logoutTok3}` }
+    });
+    assert(reuseTok3.status === 401, 'Logout 10.4e: Logout with allSessions: true revokes all active user sessions (HTTP 401)');
+
+    // 10.5 Sub-user deletion immediately revokes active sub-user session
+    const subDelOwner = await request('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'SubDel Owner', email: `subdel_own_${Date.now()}@testcorp.local`, password: 'OwnerStrong#2026!' })
+    });
+    const subDelOwnerTok = subDelOwner.body.token;
+    const subDelCreate = await request('/api/auth/sub-users', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${subDelOwnerTok}` },
+      body: JSON.stringify({ name: 'Sub To Delete', email: `subdel_target_${Date.now()}@testcorp.local`, role: 'member' })
+    });
+    const subDelLogin = await request('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: subDelCreate.body.subUser.email, password: subDelCreate.body.temporaryPassword })
+    });
+    const subDelTok = subDelLogin.body.token;
+    assert((await request('/api/auth/me', { headers: { Authorization: `Bearer ${subDelTok}` } })).status === 200, 'Revoke 10.5a: Sub-user active before removal');
+
+    const delSubRes = await request(`/api/auth/sub-users/${subDelCreate.body.subUser.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${subDelOwnerTok}` }
+    });
+    assert(delSubRes.status === 200, 'Revoke 10.5b: Owner deletes sub-user (HTTP 200)');
+    const subAfterDel = await request('/api/auth/me', { headers: { Authorization: `Bearer ${subDelTok}` } });
+    assert(subAfterDel.status === 401, 'Revoke 10.5c: Deleted sub-user session immediately rejected (HTTP 401)');
+
+    // 10.6 Expired tokens rejected & pruned while valid active tokens are preserved across server boot; Admin suspension & revokeSessions
+    const sessionTestDir = path.join(os.tmpdir(), `forecaster_sess_${Date.now()}`);
+    fs.mkdirSync(sessionTestDir, { recursive: true });
+    const sessionDbFile = path.join(sessionTestDir, 'session-test-db.json');
+
+    const adminSalt = crypto.randomBytes(16).toString('hex');
+    const userSalt = crypto.randomBytes(16).toString('hex');
+    const seedSessDb = {
+      version: '1.0.0',
+      vaults: {
+        'shared-main-vault': { vaultId: 'shared-main-vault', updatedAt: new Date().toISOString(), transactions: [], accounts: [], accountTransfers: [] },
+        vault_sess_user: { vaultId: 'vault_sess_user', updatedAt: new Date().toISOString(), transactions: [], accounts: [], accountTransfers: [] }
+      },
+      users: {
+        usr_sess_admin: {
+          id: 'usr_sess_admin',
+          name: 'Sess Admin',
+          email: 'sess-admin@test.local',
+          passwordHash: crypto.scryptSync('AdminSessPass#2026!', adminSalt, 64).toString('hex'),
+          salt: adminSalt,
+          tier: 'Master Admin Suite',
+          role: 'main_admin',
+          isPrimary: true,
+          isMainAdmin: true,
+          status: 'active',
+          vaultId: 'shared-main-vault',
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString()
+        },
+        usr_sess_user: {
+          id: 'usr_sess_user',
+          name: 'Sess User',
+          email: 'sess-user@test.local',
+          passwordHash: crypto.scryptSync('UserSessPass#2026!', userSalt, 64).toString('hex'),
+          salt: userSalt,
+          tier: 'Free Tier',
+          role: 'owner',
+          isPrimary: true,
+          status: 'active',
+          vaultId: 'vault_sess_user',
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString()
+        }
+      },
+      tokens: {
+        tok_expired_1: { userId: 'usr_sess_user', createdAt: Date.now() - 200000, expiresAt: Date.now() - 1000 },
+        tok_legacy_str: 'usr_sess_user',
+        tok_valid_user: { userId: 'usr_sess_user', createdAt: Date.now(), expiresAt: Date.now() + 3600000 },
+        tok_valid_admin: { userId: 'usr_sess_admin', createdAt: Date.now(), expiresAt: Date.now() + 3600000 }
+      },
+      outbox: []
+    };
+    fs.writeFileSync(sessionDbFile, JSON.stringify(seedSessDb, null, 2), 'utf-8');
+
+    const sessServer = await startIsolatedTestServer({
+      dataDir: sessionTestDir,
+      dbFile: sessionDbFile
+    });
+    try {
+      const expiredRes = await request('/api/auth/me', { headers: { Authorization: 'Bearer tok_expired_1' } }, sessServer.baseUrl);
+      assert(expiredRes.status === 401, 'Session 10.6a: Expired session token rejected (HTTP 401)');
+
+      const legacyStrRes = await request('/api/auth/me', { headers: { Authorization: 'Bearer tok_legacy_str' } }, sessServer.baseUrl);
+      assert(legacyStrRes.status === 401, 'Session 10.6b: Legacy unexpiring string token rejected (HTTP 401)');
+
+      const validUserRes = await request('/api/auth/me', { headers: { Authorization: 'Bearer tok_valid_user' } }, sessServer.baseUrl);
+      assert(validUserRes.status === 200, 'Session 10.6c: Legitimate unexpired session preserved across server boot (HTTP 200)');
+
+      // Controlled Admin-approved per-user revocation
+      const adminRevokeUser = await request(
+        '/api/admin/users/usr_sess_user/update',
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bearer tok_valid_admin' },
+          body: JSON.stringify({ revokeSessions: true })
+        },
+        sessServer.baseUrl
+      );
+      assert(adminRevokeUser.status === 200, 'Session 10.6d: Admin controlled revokeSessions succeeded (HTTP 200)');
+
+      const userAfterAdminRevoke = await request('/api/auth/me', { headers: { Authorization: 'Bearer tok_valid_user' } }, sessServer.baseUrl);
+      assert(userAfterAdminRevoke.status === 401, 'Session 10.6e: Session rejected immediately after controlled admin revocation (HTTP 401)');
+
+      // Re-login then suspend user -> session revoked automatically
+      const reLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: 'sess-user@test.local', password: 'UserSessPass#2026!' }) },
+        sessServer.baseUrl
+      );
+      const reTok = reLogin.body.token;
+      await request(
+        '/api/admin/users/usr_sess_user/update',
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bearer tok_valid_admin' },
+          body: JSON.stringify({ status: 'suspended' })
+        },
+        sessServer.baseUrl
+      );
+      const suspendedCheck = await request('/api/auth/me', { headers: { Authorization: `Bearer ${reTok}` } }, sessServer.baseUrl);
+      assert(suspendedCheck.status === 401, 'Session 10.6f: Suspended user session immediately invalidated (HTTP 401)');
+    } finally {
+      await sessServer.stop(true);
+      try { fs.rmSync(sessionTestDir, { recursive: true, force: true }); } catch {}
+    }
+
+    // =========================================================================
+    // 11. Phase 1.1.1 Final Hardening: Startup DB Safety, Interrupted Cleanup Recovery & Dev/Prod Frontend Compatibility
+    // =========================================================================
+    console.log('\n--- Test Category 11: Startup Database Safety, Integrity Regression & Dev/Prod Frontend Compatibility ---');
+
+    const safetyDir = path.join(os.tmpdir(), `forecaster_safety_${Date.now()}`);
+    fs.mkdirSync(safetyDir, { recursive: true });
+    const safetyDbFile = path.join(safetyDir, 'safety-db.json');
+    const safetyUserSalt = crypto.randomBytes(16).toString('hex');
+    const nowMs = Date.now();
+
+    const preCleanupSeed = {
+      version: '1.0.0',
+      vaults: {
+        'shared-main-vault': {
+          vaultId: 'shared-main-vault',
+          updatedAt: '2026-11-01T00:00:00.000Z',
+          transactions: [],
+          accounts: [],
+          accountTransfers: []
+        },
+        vault_safety_owner: {
+          vaultId: 'vault_safety_owner',
+          updatedAt: '2026-11-10T10:00:00.000Z',
+          transactions: [
+            { id: 'tx_safe_1', date: '2026-11-01', description: 'Consulting Revenue', category: 'Salary', type: 'income', amount: 8500, accountId: 'acc_safe_1' },
+            { id: 'tx_safe_2', date: '2026-11-02', description: 'Office Supplies', category: 'Operations', type: 'expense', amount: 420, accountId: 'acc_safe_1' }
+          ],
+          accounts: [
+            { id: 'acc_safe_1', type: 'card', label: 'Primary Treasury Card', initialBalance: 25000 }
+          ],
+          accountTransfers: [
+            { id: 'trf_safe_1', fromId: 'acc_safe_1', toId: 'acc_safe_1', amount: 100, date: '2026-11-03' }
+          ],
+          budgetLimits: { income: 10000, expense: 4000 },
+          stockData: [
+            { id: 'stk_safe_1', name: 'Printer Paper A4', category: 'Supplies', currentStock: 12, minStock: 3, unit: 'Ream', unitPrice: 95 }
+          ],
+          pharmacyData: [
+            { id: 'phm_safe_1', name: 'Vitamin D3', category: 'Supplements', currentStock: 30, minStock: 5, unit: 'caps', unitPrice: 150 }
+          ],
+          vehicles: [
+            { id: 'veh_safe_1', make: 'Nissan', model: 'Sunny', year: 2025, plate: 'SAF 100', odometer: 12000 }
+          ],
+          fuels: [
+            { id: 'fuel_safe_1', vehicleId: 'veh_safe_1', dateTime: '2026-11-05T09:00', odometer: 11800, liters: 35, cost: 490 }
+          ],
+          maint: [
+            { id: 'mnt_safe_1', vehicleId: 'veh_safe_1', date: '2026-11-04', odometer: 11000, description: '10k Inspection', totalCost: 900 }
+          ],
+          rentalProperties: [
+            { id: 'prop_safe_1', name: 'Unit 4B Downtown', monthlyRent: 1800 }
+          ],
+          rentalContracts: [
+            { id: 'cnt_safe_1', propertyId: 'prop_safe_1', tenantName: 'Alex Tenant', rentAmount: 1800, status: 'active' }
+          ],
+          rentalNotifications: [
+            { id: 'rnt_safe_1', message: 'Rent due on 1st', read: false }
+          ],
+          userSettings: { currency: 'EGP', theme: 'dark' }
+        }
+      },
+      users: {
+        usr_safety_owner: {
+          id: 'usr_safety_owner',
+          name: 'Safety Owner',
+          email: 'safety-owner@test.local',
+          passwordHash: crypto.scryptSync('SafetyPass#2026!', safetyUserSalt, 64).toString('hex'),
+          salt: safetyUserSalt,
+          tier: 'Free Tier',
+          role: 'owner',
+          isPrimary: true,
+          status: 'active',
+          vaultId: 'vault_safety_owner',
+          createdAt: '2026-11-01T00:00:00.000Z',
+          lastLogin: '2026-11-10T00:00:00.000Z'
+        }
+      },
+      tokens: {
+        tok_safe_expired_1: { userId: 'usr_safety_owner', createdAt: nowMs - 500000, expiresAt: nowMs - 10000 },
+        tok_safe_expired_2: { userId: 'usr_safety_owner', createdAt: nowMs - 300000, expiresAt: nowMs - 1 },
+        tok_safe_legacy_str: 'usr_safety_owner',
+        tok_safe_malformed_obj: { userId: '', expiresAt: nowMs + 3600000 },
+        tok_safe_active_1: { userId: 'usr_safety_owner', createdAt: nowMs - 1000, expiresAt: nowMs + 3600000 },
+        tok_safe_active_2: { userId: 'usr_safety_owner', createdAt: nowMs - 500, expiresAt: nowMs + 7200000 }
+      },
+      outbox: [
+        { id: 'mail_safe_1', to: 'safety-owner@test.local', toName: 'Safety Owner', subject: 'Welcome', body: 'ok', htmlBody: '<p>ok</p>', sentAt: '2026-11-01T00:00:00.000Z', status: 'delivered', metadata: { userId: 'usr_safety_owner', role: 'owner', senderId: 'usr_safety_owner', senderEmail: 'safety-owner@test.local' } }
+      ],
+      auditLog: [
+        { id: 'log_safe_1', timestamp: '2026-11-01T00:00:00.000Z', adminEmail: 'admin@test.local', action: 'INIT', category: 'security', details: 'Seeded log' }
+      ]
+    };
+
+    fs.writeFileSync(safetyDbFile, JSON.stringify(preCleanupSeed, null, 2), 'utf-8');
+    const staleTmpFile = path.join(safetyDir, `.${path.basename(safetyDbFile)}.99999.deadbeef.tmp`);
+    fs.writeFileSync(staleTmpFile, '{"partial": true', 'utf-8');
+
+    const safetyServer = await startIsolatedTestServer({
+      dataDir: safetyDir,
+      dbFile: safetyDbFile
+    });
+    try {
+      const snapshotFile = `${safetyDbFile}.pre-cleanup.bak`;
+      assert(fs.existsSync(snapshotFile), 'Safety 11.1a: Pre-cleanup recoverable snapshot created before startup cleanup');
+
+      const snapJson = JSON.parse(fs.readFileSync(snapshotFile, 'utf-8'));
+      assert(
+        Object.keys(snapJson.tokens || {}).length === 6 && !!snapJson.tokens.tok_safe_expired_1,
+        'Safety 11.1b: Pre-cleanup snapshot preserves original pre-cleanup tokens verbatim'
+      );
+
+      assert(!fs.existsSync(staleTmpFile), 'Safety 11.1c: Stale interrupted .tmp partial file cleaned safely on startup');
+
+      const postCleanupDb = JSON.parse(fs.readFileSync(safetyDbFile, 'utf-8'));
+      const postTokenKeys = Object.keys(postCleanupDb.tokens || {});
+      assert(
+        postTokenKeys.length === 2 &&
+        postTokenKeys.includes('tok_safe_active_1') &&
+        postTokenKeys.includes('tok_safe_active_2') &&
+        !postCleanupDb.tokens.tok_safe_expired_1 &&
+        !postCleanupDb.tokens.tok_safe_expired_2 &&
+        !postCleanupDb.tokens.tok_safe_legacy_str &&
+        !postCleanupDb.tokens.tok_safe_malformed_obj,
+        'Safety 11.1d: Startup cleanup removed ONLY expired/malformed tokens and kept all active sessions'
+      );
+
+      assert(
+        JSON.stringify(postCleanupDb.vaults.vault_safety_owner) === JSON.stringify(preCleanupSeed.vaults.vault_safety_owner),
+        'Safety 11.1e: All financial, budget, inventory, pharmacy, vehicle, fuel, maintenance, rental & settings records unchanged after cleanup'
+      );
+      assert(
+        JSON.stringify(postCleanupDb.users.usr_safety_owner) === JSON.stringify(preCleanupSeed.users.usr_safety_owner),
+        'Safety 11.1f: User account records unchanged after cleanup'
+      );
+      assert(
+        JSON.stringify(postCleanupDb.outbox) === JSON.stringify(preCleanupSeed.outbox) &&
+        JSON.stringify(postCleanupDb.auditLog) === JSON.stringify(preCleanupSeed.auditLog),
+        'Safety 11.1g: Outbox and audit log unchanged after cleanup'
+      );
+
+      const activeAuthRes = await request('/api/auth/me', { headers: { Authorization: 'Bearer tok_safe_active_1' } }, safetyServer.baseUrl);
+      assert(activeAuthRes.status === 200, 'Safety 11.1h: Active session remains valid after cleanup (HTTP 200)');
+
+      const activeVaultRes = await request('/api/cloud-sync/vault/vault_safety_owner', { headers: { Authorization: 'Bearer tok_safe_active_1' } }, safetyServer.baseUrl);
+      assert(
+        activeVaultRes.status === 200 &&
+        activeVaultRes.body.vault?.transactions?.length === 2 &&
+        activeVaultRes.body.vault?.vehicles?.length === 1 &&
+        activeVaultRes.body.vault?.rentalContracts?.length === 1,
+        'Safety 11.1i: Vault API returns intact financial, fleet & rental records post-cleanup'
+      );
+
+      const expiredAfterRes = await request('/api/auth/me', { headers: { Authorization: 'Bearer tok_safe_expired_1' } }, safetyServer.baseUrl);
+      assert(expiredAfterRes.status === 401, 'Safety 11.1j: Expired session rejected after cleanup (HTTP 401)');
+
+      // Protected snapshot extension must never be exposed over HTTP
+      const snapHttpRes = await request(`/${path.basename(snapshotFile)}`, { method: 'GET' }, safetyServer.baseUrl);
+      assert(snapHttpRes.status === 403, 'Safety 11.1k: .pre-cleanup.bak snapshot blocked over HTTP (HTTP 403)');
+    } finally {
+      await safetyServer.stop(false);
+    }
+
+    // 11.2 Simulate interrupted write / corrupted primary DB recovery from valid pre-cleanup snapshot
+    fs.writeFileSync(safetyDbFile, '{"version":"1.0.0","vaults": CORRUPTED_TRUNCATED_WRITE', 'utf-8');
+    const interruptedTmp = path.join(safetyDir, `.${path.basename(safetyDbFile)}.77777.ab12cd34.tmp`);
+    fs.writeFileSync(interruptedTmp, '{"incomplete":true', 'utf-8');
+
+    const recoveryServer = await startIsolatedTestServer({
+      dataDir: safetyDir,
+      dbFile: safetyDbFile
+    });
+    try {
+      const recoveredVaultRes = await request(
+        '/api/cloud-sync/vault/vault_safety_owner',
+        { headers: { Authorization: 'Bearer tok_safe_active_1' } },
+        recoveryServer.baseUrl
+      );
+      assert(
+        recoveredVaultRes.status === 200 &&
+        recoveredVaultRes.body.vault?.transactions?.length === 2 &&
+        recoveredVaultRes.body.vault?.stockData?.length === 1,
+        'Safety 11.2a: Interrupted/corrupted DB automatically recovered from pre-cleanup snapshot'
+      );
+      const corruptBackups = fs.readdirSync(safetyDir).filter(f => f.includes('.corrupt.') && f.endsWith('.bak'));
+      assert(corruptBackups.length >= 1, 'Safety 11.2b: Corrupt file preserved for forensic inspection without data loss');
+      assert(!fs.existsSync(interruptedTmp), 'Safety 11.2c: Partial interrupted .tmp file removed after recovery');
+    } finally {
+      await recoveryServer.stop(true);
+      try { fs.rmSync(safetyDir, { recursive: true, force: true }); } catch {}
+    }
+
+    // 11.3 Unavailable / corrupted database without snapshot must not crash server or overwrite existing DB file
+    const corruptNoSnapDir = path.join(os.tmpdir(), `forecaster_nosnap_${Date.now()}`);
+    fs.mkdirSync(corruptNoSnapDir, { recursive: true });
+    const corruptDbFile = path.join(corruptNoSnapDir, 'corrupt-nosnap-db.json');
+    const originalCorruptBytes = 'CORRUPTED_UNPARSEABLE_PRIMARY_DB_DO_NOT_OVERWRITE';
+    fs.writeFileSync(corruptDbFile, originalCorruptBytes, 'utf-8');
+
+    const safeFallbackServer = await startIsolatedTestServer({
+      dataDir: corruptNoSnapDir,
+      dbFile: corruptDbFile
+    });
+    try {
+      const statusRes = await request('/api/cloud-sync/status', { method: 'GET' }, safeFallbackServer.baseUrl);
+      assert(statusRes.status === 200 && statusRes.body.ok === true, 'Safety 11.3a: Server remains operational when DB is corrupted/unavailable without snapshot');
+      const diskAfter = fs.readFileSync(corruptDbFile, 'utf-8');
+      assert(
+        diskAfter === originalCorruptBytes,
+        'Safety 11.3b: Server operates write-protected and NEVER overwrites unreadable/corrupt DB file with empty state'
+      );
+    } finally {
+      await safeFallbackServer.stop(true);
+      try { fs.rmSync(corruptNoSnapDir, { recursive: true, force: true }); } catch {}
+    }
+
+    // 11.4 Frontend Compatibility in Vite Dev & HMR mode (dashboard, tabs, JS/TS modules, PWA, static assets)
+    const devCompatChecks = [
+      '/',
+      '/landing',
+      '/manifest.webmanifest',
+      '/manifest.json',
+      '/sw.js',
+      '/registerSW.js',
+      '/workbox-7e5eb42b.js',
+      '/favicon.ico',
+      '/icon.svg',
+      '/apple-touch-icon.png',
+      '/pwa-192x192.png',
+      '/pwa-512x512.png',
+      '/pwa-maskable-512x512.png',
+      '/styles/forecaster.css',
+      '/scripts/app-core.js',
+      '/scripts/app-modules.js',
+      '/scripts/extended-features.js',
+      '/scripts/pwa-bridge.js',
+      '/scripts/github-sync.js',
+      '/scripts/saas-subscription.js',
+      '/scripts/cloud-sync.js',
+      '/scripts/auth-manager.js',
+      '/@vite/client',
+      '/@vite/env',
+      '/src/main.tsx',
+      '/src/App.tsx',
+      '/src/index.css'
+    ];
+    for (const assetPath of devCompatChecks) {
+      const assetRes = await fetch(`${activeBaseUrl}${assetPath}`);
+      assert(
+        assetRes.status === 200,
+        `Compat-Dev 11.4a: Legitimate asset/module loads cleanly (HTTP 200) -> ${assetPath}`,
+        `Received status: ${assetRes.status}`
+      );
+    }
+
+    // Check Vite HMR-enabled server compatibility + TypeScript module path rule
+    const hmrServer = await startIsolatedTestServer({ env: { DISABLE_HMR: 'false' } });
+    try {
+      const viteClientRes = await fetch(`${hmrServer.baseUrl}/@vite/client`);
+      const viteClientText = await viteClientRes.text();
+      assert(
+        viteClientRes.status === 200 && viteClientText.includes('createHotContext'),
+        'Compat-HMR 11.4b: Vite HMR client loads cleanly when HMR is enabled (HTTP 200)'
+      );
+      const htmlRes = await fetch(`${hmrServer.baseUrl}/`);
+      const htmlBody = await htmlRes.text();
+      for (const tabId of ['dashboard', 'insights', 'transactions', 'rentals', 'vehicles', 'stock', 'accounts', 'reports']) {
+        assert(
+          htmlBody.includes(`switchView('${tabId}'`),
+          `Compat-Dev 11.4c: Navigation tab "${tabId}" preserved in dashboard HTML`
+        );
+      }
+      assert(
+        htmlBody.includes('auth-manager.js') && htmlBody.includes('manifest.webmanifest'),
+        'Compat-Dev 11.4d: Auth/profile scripts and PWA manifest links present in HTML'
+      );
+      // Verify server-side .ts stays blocked while frontend /src/ TS paths stay unblocked by guard
+      const blockedRootTs = await request('/vite.config.ts', { method: 'GET' }, hmrServer.baseUrl);
+      assert(blockedRootTs.status === 403, 'Compat-Dev 11.4e: Root config vite.config.ts stays blocked (HTTP 403)');
+    } finally {
+      await hmrServer.stop(true);
+    }
+
+    // 11.5 Frontend & Security Compatibility in Production Mode (NODE_ENV=production serving dist/)
+    if (fs.existsSync(path.resolve(process.cwd(), 'dist', 'index.html'))) {
+      const prodServer = await startIsolatedTestServer({
+        env: { NODE_ENV: 'production' }
+      });
+      try {
+        const prodAssetChecks = [
+          '/',
+          '/landing',
+          '/manifest.webmanifest',
+          '/manifest.json',
+          '/sw.js',
+          '/registerSW.js',
+          '/favicon.ico',
+          '/icon.svg',
+          '/pwa-192x192.png',
+          '/styles/forecaster.css',
+          '/scripts/app-core.js',
+          '/scripts/auth-manager.js',
+          '/scripts/cloud-sync.js',
+          '/scripts/pwa-bridge.js'
+        ];
+        for (const prodPath of prodAssetChecks) {
+          const pRes = await fetch(`${prodServer.baseUrl}${prodPath}`);
+          assert(
+            pRes.status === 200,
+            `Compat-Prod 11.5a: Production asset loads cleanly (HTTP 200) -> ${prodPath}`,
+            `Received status: ${pRes.status}`
+          );
+        }
+
+        for (const blockedProdPath of ['/data/cloud-ledger-db.json', '/backups/snap.json', '/.env', '/server.ts', '/package.json', '/data/test.pre-cleanup.bak']) {
+          const bRes = await request(blockedProdPath, { method: 'GET' }, prodServer.baseUrl);
+          assert(
+            bRes.status === 403,
+            `Compat-Prod 11.5b: Protected resource blocked in production (HTTP 403) -> ${blockedProdPath}`
+          );
+        }
+
+        // End-to-end Auth, Profile, Settings & Logout cycle in production mode
+        const prodEmail = `prod_compat_${Date.now()}@testcorp.local`;
+        const prodReg = await request('/api/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({ name: 'Prod Compat User', email: prodEmail, password: 'ProdStrong#2026!' })
+        }, prodServer.baseUrl);
+        assert(prodReg.status === 201 && !!prodReg.body.token, 'Compat-Prod 11.5c: Registration works in production mode');
+        const prodTok = prodReg.body.token;
+
+        const prodProf = await request('/api/auth/profile', {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${prodTok}` },
+          body: JSON.stringify({ name: 'Prod Updated Name' })
+        }, prodServer.baseUrl);
+        assert(prodProf.status === 200 && prodProf.body.user?.name === 'Prod Updated Name', 'Compat-Prod 11.5d: Profile update works in production mode');
+
+        const prodLogout = await request('/api/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${prodTok}` }
+        }, prodServer.baseUrl);
+        assert(prodLogout.status === 200, 'Compat-Prod 11.5e: Logout works in production mode');
+
+        const prodPostLogout = await request('/api/auth/me', {
+          headers: { Authorization: `Bearer ${prodTok}` }
+        }, prodServer.baseUrl);
+        assert(prodPostLogout.status === 401, 'Compat-Prod 11.5f: Logged-out token rejected in production mode (HTTP 401)');
+      } finally {
+        await prodServer.stop(true);
+      }
+    }
+
     console.log('\n======================================================');
     console.log(`🏆 ALL SECURITY REMEDIATION TESTS PASSED: ${passedTests}/${totalTests}`);
     console.log('======================================================\n');

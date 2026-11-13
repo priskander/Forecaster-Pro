@@ -13,7 +13,7 @@
     "test:security": "tsx scripts/test-security-remediation.ts",
     "test:backup": "tsx scripts/test-backup-restoration.ts",
     "test": "tsx scripts/test-security-remediation.ts && tsx scripts/test-backup-restoration.ts",
-    "package:source": "tar --exclude=node_modules --exclude=data --exclude=backups --exclude=dist --exclude=build --exclude=coverage --exclude=.git --exclude='.env' --exclude='.env.local' --exclude='.env.production' --exclude='.env.development' --exclude='.env.test' --exclude='*.db' --exclude='*.sqlite' --exclude='*.sqlite3' --exclude='*.bak' --exclude='*.backup' --exclude='*.dump' --exclude='*.tmp' --exclude='*.zip' --exclude='*.tar.gz' -czf forecaster-pro-source.tar.gz ."
+    "package:source": "tar --exclude=node_modules --exclude=data --exclude=backups --exclude=exports --exclude=tmp --exclude=temp --exclude=dist --exclude=build --exclude=coverage --exclude=.git --exclude=.aistudio --exclude='.env' --exclude='.env.local' --exclude='.env.production' --exclude='.env.production.local' --exclude='.env.development' --exclude='.env.development.local' --exclude='.env.test' --exclude='.env.test.local' --exclude='.env.staging' --exclude='session-store*' --exclude='*.db' --exclude='*.sqlite' --exclude='*.sqlite3' --exclude='*.bak' --exclude='*.backup' --exclude='*.dump' --exclude='*.sql.gz' --exclude='*.tmp' --exclude='*.secret' --exclude='*.zip' --exclude='*.tar.gz' --exclude='*.tgz' --exclude='*.pem' --exclude='*.key' --exclude='*.p12' --exclude='*.pfx' --exclude=forecaster-pro-source.tar.gz -czf forecaster-pro-source.tar.gz ."
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

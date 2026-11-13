@@ -7,10 +7,14 @@ coverage/
 .env*
 !.env.example
 
-# Local databases, runtime state, backups, and source archives
+# Local databases, runtime state, backups, keys, and source archives
 data/
 data/cloud-ledger-db.json
 backups/
+exports/
+tmp/
+temp/
+session-store*
 *.tmp
 *.db
 *.sqlite
@@ -18,8 +22,15 @@ backups/
 *.bak
 *.backup
 *.dump
+*.sql.gz
 *.zip
 *.tar.gz
+*.tgz
+*.pem
+*.key
+*.p12
+*.pfx
+*.secret
 forecaster-pro-source.tar.gz
 
 # Keep SQL migration scripts tracked (never exclude legitimate migrations)

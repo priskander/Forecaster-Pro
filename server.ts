@@ -260,16 +260,94 @@ interface CloudDatabase {
   auditLog?: AdminAuditLog[];
 }
 
-// In-memory cache + persistent disk store
-function loadDatabase(): CloudDatabase {
+// In-memory cache + atomic persistent disk store with snapshot recovery
+const DB_PRE_CLEANUP_SNAPSHOT = `${DB_FILE}.pre-cleanup.bak`;
+let dbPersistReadOnlyReason: string | null = null;
+
+function isValidDatabaseShape(candidate: any): candidate is CloudDatabase {
+  return Boolean(
+    candidate &&
+    typeof candidate === 'object' &&
+    !Array.isArray(candidate) &&
+    candidate.vaults &&
+    typeof candidate.vaults === 'object' &&
+    !Array.isArray(candidate.vaults)
+  );
+}
+
+function writeTextFileAtomically(targetPath: string, content: string): boolean {
+  const dir = path.dirname(targetPath);
+  const tempFile = path.join(
+    dir,
+    `.${path.basename(targetPath)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`
+  );
+  let fd: number | null = null;
   try {
-    if (fs.existsSync(DB_FILE)) {
-      const raw = fs.readFileSync(DB_FILE, 'utf-8');
-      return JSON.parse(raw);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
-  } catch (err) {
-    console.error('[CloudSync DB] Error reading database file:', err);
+    fd = fs.openSync(tempFile, 'w', 0o600);
+    fs.writeSync(fd, content, null, 'utf-8');
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = null;
+    fs.renameSync(tempFile, targetPath);
+    return true;
+  } catch (err: any) {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch {}
+    }
+    try {
+      if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+    } catch {}
+    console.error('[CloudSync DB] Atomic file write failed:', err?.message || 'Unknown error');
+    return false;
   }
+}
+
+function cleanupStaleTempFiles(): void {
+  try {
+    if (!fs.existsSync(DB_PARENT_DIR)) return;
+    const base = path.basename(DB_FILE);
+    for (const entry of fs.readdirSync(DB_PARENT_DIR)) {
+      if (
+        (entry === `${base}.tmp` || (entry.startsWith(`.${base}.`) && entry.endsWith('.tmp'))) &&
+        entry !== base
+      ) {
+        try {
+          fs.unlinkSync(path.join(DB_PARENT_DIR, entry));
+        } catch {}
+      }
+    }
+  } catch {}
+}
+
+function createPreCleanupSnapshot(preStateRaw?: string): boolean {
+  try {
+    let snapshotContent = preStateRaw;
+    if (!snapshotContent && fs.existsSync(DB_FILE)) {
+      snapshotContent = fs.readFileSync(DB_FILE, 'utf-8');
+      const parsed = JSON.parse(snapshotContent);
+      if (!isValidDatabaseShape(parsed)) {
+        return false;
+      }
+    }
+    if (!snapshotContent) return false;
+    return writeTextFileAtomically(DB_PRE_CLEANUP_SNAPSHOT, snapshotContent);
+  } catch (err: any) {
+    console.error('[CloudSync DB] Failed to create pre-cleanup snapshot:', err?.message || 'Unknown error');
+    return false;
+  }
+}
+
+interface DatabaseLoadResult {
+  db: CloudDatabase;
+  loadedFromDisk: boolean;
+  recoveredFromSnapshot: boolean;
+  unavailableError: string | null;
+}
+
+function createEmptyDatabase(): CloudDatabase {
   return {
     version: '1.0.0',
     vaults: {},
@@ -279,14 +357,72 @@ function loadDatabase(): CloudDatabase {
   };
 }
 
-function saveDatabase(db: CloudDatabase): void {
-  try {
-    const tempFile = `${DB_FILE}.tmp`;
-    fs.writeFileSync(tempFile, JSON.stringify(db, null, 2), 'utf-8');
-    fs.renameSync(tempFile, DB_FILE);
-  } catch (err) {
-    console.error('[CloudSync DB] Error writing database file:', err);
+function loadDatabase(): DatabaseLoadResult {
+  if (fs.existsSync(DB_FILE)) {
+    try {
+      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (!isValidDatabaseShape(parsed)) {
+        throw new Error('Invalid database schema shape.');
+      }
+      cleanupStaleTempFiles();
+      return { db: parsed, loadedFromDisk: true, recoveredFromSnapshot: false, unavailableError: null };
+    } catch (err: any) {
+      console.error('[CloudSync DB] Error reading database file:', err?.message || 'Unknown error');
+      // Attempt automatic recovery from pre-cleanup snapshot if available and valid
+      if (fs.existsSync(DB_PRE_CLEANUP_SNAPSHOT)) {
+        try {
+          const snapRaw = fs.readFileSync(DB_PRE_CLEANUP_SNAPSHOT, 'utf-8');
+          const snapParsed = JSON.parse(snapRaw);
+          if (isValidDatabaseShape(snapParsed)) {
+            try {
+              const corruptCopy = `${DB_FILE}.corrupt.${Date.now()}.bak`;
+              fs.copyFileSync(DB_FILE, corruptCopy);
+            } catch {}
+            const restored = writeTextFileAtomically(DB_FILE, snapRaw);
+            if (restored) {
+              cleanupStaleTempFiles();
+              console.warn('[CloudSync DB] Recovered primary database from pre-cleanup snapshot.');
+              return { db: snapParsed, loadedFromDisk: true, recoveredFromSnapshot: true, unavailableError: null };
+            }
+          }
+        } catch (snapErr: any) {
+          console.error('[CloudSync DB] Snapshot recovery failed:', snapErr?.message || 'Unknown error');
+        }
+      }
+      return {
+        db: createEmptyDatabase(),
+        loadedFromDisk: false,
+        recoveredFromSnapshot: false,
+        unavailableError: 'Existing database file could not be read or parsed; write-protection enabled.'
+      };
+    }
   }
+
+  // Primary DB missing: check if an interrupted cleanup/write left a recoverable pre-cleanup snapshot
+  if (fs.existsSync(DB_PRE_CLEANUP_SNAPSHOT)) {
+    try {
+      const snapRaw = fs.readFileSync(DB_PRE_CLEANUP_SNAPSHOT, 'utf-8');
+      const snapParsed = JSON.parse(snapRaw);
+      if (isValidDatabaseShape(snapParsed)) {
+        const restored = writeTextFileAtomically(DB_FILE, snapRaw);
+        if (restored) {
+          console.warn('[CloudSync DB] Restored missing primary database from pre-cleanup snapshot.');
+          return { db: snapParsed, loadedFromDisk: true, recoveredFromSnapshot: true, unavailableError: null };
+        }
+      }
+    } catch {}
+  }
+
+  return { db: createEmptyDatabase(), loadedFromDisk: false, recoveredFromSnapshot: false, unavailableError: null };
+}
+
+function saveDatabase(targetDb: CloudDatabase): boolean {
+  if (dbPersistReadOnlyReason) {
+    console.warn('[CloudSync DB] Save skipped while database is write-protected.');
+    return false;
+  }
+  return writeTextFileAtomically(DB_FILE, JSON.stringify(targetDb, null, 2));
 }
 
 function hashPassword(password: string, salt: string): string {
@@ -475,10 +611,26 @@ Forecaster Pro Team`;
   return emailRecord;
 }
 
-let db = loadDatabase();
-if (!db.users) db.users = {};
-if (!db.tokens) db.tokens = {};
-if (!db.outbox) db.outbox = [];
+const dbLoadResult = loadDatabase();
+let db = dbLoadResult.db;
+if (dbLoadResult.unavailableError) {
+  dbPersistReadOnlyReason = dbLoadResult.unavailableError;
+  console.error('[CloudSync DB] Startup load entered write-protected mode to prevent overwriting existing data.');
+}
+let startupStructuralChanged = !dbLoadResult.loadedFromDisk && !dbPersistReadOnlyReason;
+
+if (!db.users) {
+  db.users = {};
+  if (dbLoadResult.loadedFromDisk) startupStructuralChanged = true;
+}
+if (!db.tokens) {
+  db.tokens = {};
+  if (dbLoadResult.loadedFromDisk) startupStructuralChanged = true;
+}
+if (!db.outbox) {
+  db.outbox = [];
+  if (dbLoadResult.loadedFromDisk) startupStructuralChanged = true;
+}
 
 // Secure Initial Administrator Provisioning
 const defaultEmail = (process.env.INITIAL_ADMIN_EMAIL || '').trim().toLowerCase();
@@ -511,11 +663,21 @@ if (!defaultUser) {
       lastLogin: new Date().toISOString()
     };
     db.users[user.id] = user;
-    saveDatabase(db);
+    startupStructuralChanged = true;
     console.log('[Security] Initial administrator account provisioned securely.');
   }
 } else {
   // Existing administrator account: NEVER overwrite or reset custom credentials on server restart
+  if (
+    defaultUser.role !== 'main_admin' ||
+    !defaultUser.isPrimary ||
+    !defaultUser.isMainAdmin ||
+    !defaultUser.status ||
+    !defaultUser.tier ||
+    !defaultUser.vaultId
+  ) {
+    startupStructuralChanged = true;
+  }
   defaultUser.role = 'main_admin';
   defaultUser.isPrimary = true;
   defaultUser.isMainAdmin = true;
@@ -658,13 +820,16 @@ function logAdminAction(adminEmail: string, action: string, category: AdminAudit
 Object.values(db.users).forEach(u => {
   if (u.temporaryPassword !== undefined) {
     delete u.temporaryPassword;
+    startupStructuralChanged = true;
   }
   if (u.isMainAdmin || u.role === 'main_admin' || u.id === 'usr_peter_badir' || (defaultEmail && u.email.toLowerCase() === defaultEmail)) {
+    if (u.role !== 'main_admin' || !u.isMainAdmin) startupStructuralChanged = true;
     u.role = 'main_admin';
     u.isMainAdmin = true;
     u.tier = u.tier || 'Master Admin Suite';
   } else if (!u.role) {
     u.role = u.isPrimary ? 'owner' : 'member';
+    startupStructuralChanged = true;
   }
   if (!u.vaultId) {
     if (u.parentId) {
@@ -675,6 +840,7 @@ Object.values(db.users).forEach(u => {
     } else {
       u.vaultId = 'vault_' + u.id;
     }
+    startupStructuralChanged = true;
   }
   // Ensure the vault exists in db.vaults
   if (!db.vaults[u.vaultId]) {
@@ -688,14 +854,19 @@ Object.values(db.users).forEach(u => {
       ],
       accountTransfers: []
     };
+    startupStructuralChanged = true;
   }
 });
 
 // 1. Dedicated Demo Showcase Vault (Exclusively for Landing Page Demo Visitors)
 const DEMO_VAULT_ID = 'demo-showcase-vault';
+const existingDemoVault = db.vaults[DEMO_VAULT_ID];
+if (!existingDemoVault) {
+  startupStructuralChanged = true;
+}
 db.vaults[DEMO_VAULT_ID] = {
   vaultId: DEMO_VAULT_ID,
-  updatedAt: new Date().toISOString(),
+  updatedAt: existingDemoVault?.updatedAt || new Date().toISOString(),
   transactions: [
     { id: 'tx_demo_1', date: '2026-10-01', description: 'Direct Deposit Monthly Salary (Demo)', category: 'Salary', type: 'income', amount: 3100.00, accountId: 'acc_demo_cib' },
     { id: 'tx_demo_2', date: '2026-10-02', description: 'Apartment Premium Rental Rent (Demo)', category: 'Rent', type: 'expense', amount: 800.00, accountId: 'acc_demo_cib' },
@@ -903,17 +1074,106 @@ if (!db.vaults[DEFAULT_VAULT_ID]) {
     maint: [],
     budgetLimits: { income: 0, expense: 0 }
   };
+  startupStructuralChanged = true;
 } else {
   // Ensure non-demo primary vault never retains forged demo records
   const v = db.vaults[DEFAULT_VAULT_ID];
-  if (Array.isArray(v.transactions)) v.transactions = v.transactions.filter((t: any) => t && !DEMO_SEED_IDS.has(t.id));
-  if (Array.isArray(v.vehicles)) v.vehicles = v.vehicles.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
-  if (Array.isArray(v.fuels)) v.fuels = v.fuels.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
-  if (Array.isArray(v.maint)) v.maint = v.maint.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
-  if (Array.isArray(v.stockData)) v.stockData = v.stockData.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
-  if (Array.isArray(v.pharmacyData)) v.pharmacyData = v.pharmacyData.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
+  const filterNonDemo = (arr: any[] | undefined): any[] | undefined => {
+    if (!Array.isArray(arr)) return arr;
+    const next = arr.filter((item: any) => item && !DEMO_SEED_IDS.has(item.id));
+    if (next.length !== arr.length) startupStructuralChanged = true;
+    return next;
+  };
+  v.transactions = filterNonDemo(v.transactions) || [];
+  v.vehicles = filterNonDemo(v.vehicles);
+  v.fuels = filterNonDemo(v.fuels);
+  v.maint = filterNonDemo(v.maint);
+  v.stockData = filterNonDemo(v.stockData);
+  v.pharmacyData = filterNonDemo(v.pharmacyData);
 }
-saveDatabase(db);
+
+// Safely prune ONLY malformed or already-expired tokens on startup with pre-cleanup snapshot & atomic update
+function cleanupExpiredSessionsOnStartup(targetDb: CloudDatabase): {
+  prunedCount: number;
+  preservedCount: number;
+  snapshotCreated: boolean;
+  aborted: boolean;
+} {
+  if (dbPersistReadOnlyReason) {
+    console.warn('[CloudSync DB] Skipping startup session cleanup because database is write-protected.');
+    return {
+      prunedCount: 0,
+      preservedCount: Object.keys(targetDb.tokens || {}).length,
+      snapshotCreated: false,
+      aborted: true
+    };
+  }
+  if (!targetDb.tokens || typeof targetDb.tokens !== 'object') {
+    targetDb.tokens = {};
+    return { prunedCount: 0, preservedCount: 0, snapshotCreated: false, aborted: false };
+  }
+
+  const now = Date.now();
+  const keysToRemove: string[] = [];
+  let preservedCount = 0;
+
+  for (const [tokKey, entry] of Object.entries(targetDb.tokens)) {
+    const isMalformed =
+      typeof entry === 'string' ||
+      !entry ||
+      typeof entry !== 'object' ||
+      typeof (entry as any).userId !== 'string' ||
+      !(entry as any).userId.trim() ||
+      typeof (entry as any).expiresAt !== 'number' ||
+      !Number.isFinite((entry as any).expiresAt);
+    const isExpired = !isMalformed && (entry as any).expiresAt <= now;
+
+    if (isMalformed || isExpired) {
+      keysToRemove.push(tokKey);
+    } else {
+      preservedCount++;
+    }
+  }
+
+  if (keysToRemove.length === 0) {
+    return { prunedCount: 0, preservedCount, snapshotCreated: false, aborted: false };
+  }
+
+  // Create recoverable snapshot BEFORE modifying the live database
+  const snapshotCreated = fs.existsSync(DB_FILE)
+    ? createPreCleanupSnapshot()
+    : createPreCleanupSnapshot(JSON.stringify(targetDb, null, 2));
+
+  if (!snapshotCreated) {
+    console.error('[CloudSync DB] Aborting startup session cleanup: unable to write recoverable pre-cleanup snapshot.');
+    return { prunedCount: 0, preservedCount, snapshotCreated: false, aborted: true };
+  }
+
+  const previousTokens = { ...targetDb.tokens };
+  try {
+    for (const tokKey of keysToRemove) {
+      delete targetDb.tokens[tokKey];
+    }
+    if (!saveDatabase(targetDb)) {
+      targetDb.tokens = previousTokens;
+      console.error('[CloudSync DB] Startup session cleanup write failed; rolled back in-memory token state.');
+      return { prunedCount: 0, preservedCount, snapshotCreated, aborted: true };
+    }
+    return { prunedCount: keysToRemove.length, preservedCount, snapshotCreated, aborted: false };
+  } catch (err: any) {
+    targetDb.tokens = previousTokens;
+    console.error('[CloudSync DB] Startup session cleanup failed:', err?.message || 'Unknown error');
+    return { prunedCount: 0, preservedCount, snapshotCreated, aborted: true };
+  }
+}
+
+const startupCleanupResult = cleanupExpiredSessionsOnStartup(db);
+if (!dbPersistReadOnlyReason && startupStructuralChanged && startupCleanupResult.prunedCount === 0) {
+  if (fs.existsSync(DB_FILE)) {
+    createPreCleanupSnapshot();
+  }
+  saveDatabase(db);
+}
 
 // Rate Limiting Storage & Middleware
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -1133,13 +1393,78 @@ async function startServer() {
     next();
   });
 
-  // CSRF protection for mutation endpoints from untrusted cross-origin contexts
+  // CSRF protection & no-cache policy for API routes
   app.use((req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
       const origin = req.headers.origin;
       if (origin && !isOriginAllowed(origin)) {
         return res.status(403).json({ ok: false, error: 'CSRF policy: Untrusted origin blocked from mutating application data.' });
       }
+    }
+    next();
+  });
+
+  // Strict Database, Backup, Environment & Source Protection Guard (runs before Vite/static middlewares)
+  app.use((req, res, next) => {
+    let decodedPath = req.path || '/';
+    try {
+      decodedPath = decodeURIComponent(decodedPath);
+    } catch {
+      return res.status(400).json({ ok: false, error: 'Malformed request path.' });
+    }
+    const normalizedPath = path.posix.normalize(decodedPath.replace(/\\/g, '/')).toLowerCase();
+    const isViteInternal =
+      normalizedPath.startsWith('/@vite/') ||
+      normalizedPath.startsWith('/@react-refresh') ||
+      normalizedPath.startsWith('/@id/') ||
+      normalizedPath.startsWith('/node_modules/');
+    const isFrontendSrcModule =
+      normalizedPath.startsWith('/src/') && /\.(ts|tsx|js|jsx|css|mjs)$/i.test(normalizedPath);
+    const isProtectedFsPath =
+      normalizedPath.includes('/@fs/') && (
+        normalizedPath.includes('/data/') ||
+        normalizedPath.includes('/backups/') ||
+        normalizedPath.includes('/exports/') ||
+        normalizedPath.includes('/tmp/') ||
+        normalizedPath.includes('/.env') ||
+        normalizedPath.includes('cloud-ledger-db') ||
+        normalizedPath.includes('/scripts/') ||
+        /\/(server\.ts|vite\.config\.ts|package\.json|tsconfig\.json)(\/|$)/i.test(normalizedPath)
+      );
+    const isBlockedServerTs =
+      /\.ts$/i.test(normalizedPath) &&
+      !isViteInternal &&
+      !isFrontendSrcModule;
+    const isProtectedPath =
+      normalizedPath === '/data' ||
+      normalizedPath.startsWith('/data/') ||
+      normalizedPath === '/backups' ||
+      normalizedPath.startsWith('/backups/') ||
+      normalizedPath === '/exports' ||
+      normalizedPath.startsWith('/exports/') ||
+      normalizedPath === '/tmp' ||
+      normalizedPath.startsWith('/tmp/') ||
+      normalizedPath === '/.git' ||
+      normalizedPath.startsWith('/.git/') ||
+      normalizedPath === '/.aistudio' ||
+      normalizedPath.startsWith('/.aistudio/') ||
+      normalizedPath.includes('/.env') ||
+      normalizedPath.includes('cloud-ledger-db') ||
+      isProtectedFsPath ||
+      /\.(db|sqlite|sqlite3|bak|backup|dump|tmp|zip|tar\.gz|tgz|pem|key|p12|pfx|secret)$/i.test(normalizedPath) ||
+      isBlockedServerTs ||
+      /^\/(server\.ts|package\.json|package-lock\.json|bun\.lock|tsconfig\.json|vite\.config\.ts|\.gitignore|metadata\.json)$/i.test(normalizedPath);
+
+    if (isProtectedPath) {
+      return res.status(403).json({
+        ok: false,
+        error: 'Access forbidden: Database snapshots, backups, and sensitive runtime files are not publicly accessible.'
+      });
     }
     next();
   });
@@ -1193,6 +1518,7 @@ async function startServer() {
           existing.vaultId = parent?.vaultId || 'shared-main-vault';
           if (cleanPropertyRole) existing.propertyRole = cleanPropertyRole;
 
+          revokeUserSessions(existing.id);
           const token = createSessionToken(existing.id);
           saveDatabase(db);
 
@@ -1347,6 +1673,7 @@ async function startServer() {
       }
 
       if (usedTempResetCredential && user.resetTempPasswordHash && user.resetTempPasswordSalt) {
+        revokeUserSessions(user.id);
         user.passwordHash = user.resetTempPasswordHash;
         user.salt = user.resetTempPasswordSalt;
         user.mustChangePassword = true;
@@ -1427,11 +1754,7 @@ async function startServer() {
       }
 
       if (!db.tokens) db.tokens = {};
-      const token = 'tok_demo_' + crypto.randomBytes(24).toString('hex');
-      db.tokens[token] = {
-        userId: demoUser.id,
-        expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000) // 30 days session
-      } as any;
+      const token = createSessionToken(demoUser.id, TOKEN_TTL_MS);
 
       demoUser.lastLogin = new Date().toISOString();
       saveDatabase(db);
@@ -1804,11 +2127,10 @@ async function startServer() {
   // Delete / Revoke sub-user
   app.delete('/api/auth/sub-users/:id', (req, res) => {
     try {
-      const authHeader = req.headers.authorization || '';
-      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-      const caller = resolveTokenUser(token);
+      const caller = getAuthenticatedUser(req, res);
+      if (!caller) return;
 
-      if (!caller || caller.isDemo || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
+      if (caller.isDemo || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
         return res.status(403).json({ ok: false, error: 'Access denied: Demo accounts and non-owners cannot remove sub-users.' });
       }
 
@@ -1844,11 +2166,10 @@ async function startServer() {
   // Resend invitation email with new temporary password
   app.post('/api/auth/sub-users/:id/resend-email', (req, res) => {
     try {
-      const authHeader = req.headers.authorization || '';
-      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-      const caller = resolveTokenUser(token);
+      const caller = getAuthenticatedUser(req, res);
+      if (!caller) return;
 
-      if (!caller || caller.isDemo || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
+      if (caller.isDemo || (!caller.isPrimary && caller.role !== 'owner' && caller.role !== 'main_admin')) {
         return res.status(403).json({ ok: false, error: 'Only the primary user can resend sub-user credentials.' });
       }
 
@@ -2030,14 +2351,20 @@ async function startServer() {
     }
   });
 
-  // Logout
+  // Logout (Invalidates server-side session token immediately; optional allSessions revokes all user sessions)
   app.post('/api/auth/logout', (req, res) => {
     try {
       const authHeader = req.headers.authorization || '';
       const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+      const allSessions = req.body?.allSessions === true;
 
       if (token && db.tokens && db.tokens[token]) {
+        const entry: any = db.tokens[token];
+        const userId = typeof entry === 'string' ? entry : entry?.userId;
         delete db.tokens[token];
+        if (allSessions && userId) {
+          revokeUserSessions(userId);
+        }
         saveDatabase(db);
       }
 
@@ -3290,7 +3617,7 @@ async function startServer() {
         return res.status(404).json({ ok: false, error: 'User not found.' });
       }
 
-      const { role, tier, status, newPassword } = req.body || {};
+      const { role, tier, status, newPassword, revokeSessions } = req.body || {};
 
       // Protection for Master Admin account
       const isTargetMaster = !!targetUser.isMainAdmin || targetUser.role === 'main_admin' || targetUser.id === 'usr_peter_badir';
@@ -3306,6 +3633,9 @@ async function startServer() {
           revokeUserSessions(targetUser.id);
         }
       }
+      if (revokeSessions === true) {
+        revokeUserSessions(targetUser.id);
+      }
       if (newPassword !== undefined && String(newPassword).length > 0) {
         const pwdCheck = validateStrongPassword(String(newPassword));
         if (!pwdCheck.valid) {
@@ -3320,7 +3650,7 @@ async function startServer() {
       }
 
       logAdminAction(admin.email, 'USER_ACCOUNT_MANAGED', 'user_management',
-        `Admin modified user ${targetUser.email} (Role: ${targetUser.role}, Tier: ${targetUser.tier}, Status: ${targetUser.status || 'active'})`);
+        `Admin modified user ${targetUser.email} (Role: ${targetUser.role}, Tier: ${targetUser.tier}, Status: ${targetUser.status || 'active'}, RevokedSessions: ${revokeSessions === true || status === 'suspended'})`);
 
       saveDatabase(db);
       res.json({
@@ -3483,6 +3813,10 @@ async function startServer() {
     const candidateRoot = path.resolve(__dirname, 'landing.html');
     const file = fs.existsSync(candidateDist) ? candidateDist : candidateRoot;
     res.sendFile(file);
+  });
+
+  app.use('/api', (req, res) => {
+    res.status(404).json({ ok: false, error: 'API endpoint not found.' });
   });
 
   /* -------------------------------------------------------------------------
