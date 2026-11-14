@@ -4,10 +4,20 @@
  * Never touches or modifies production users, real credentials, or data/cloud-ledger-db.json.
  */
 
+import { execFileSync, spawnSync } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
+import http from 'http';
 import os from 'os';
 import path from 'path';
+import {
+  inspectTarEntries,
+  inspectZipEntries,
+  packageSourceArchives,
+  verifyArchiveFile,
+  writeTarArchive,
+  writeZipArchive
+} from './package-source';
 import { startIsolatedTestServer } from './test-harness';
 
 let activeBaseUrl = '';
@@ -695,36 +705,63 @@ async function runSecurityTestSuite() {
     });
     assert(nonAdminReq.status === 403, 'Sensitive 6.2: Non-admin user request to /api/admin/dashboard returns HTTP 403');
 
-    const demoLogin = await request('/api/auth/login', {
+    // 6.3 Disabled demo mode rejection on default server + isolated demo confinement verification
+    const defaultDemoEndpointRes = await request('/api/auth/demo-login', { method: 'POST' });
+    assert(
+      defaultDemoEndpointRes.status === 403,
+      'Demo 6.0a: /api/auth/demo-login is disabled by default (HTTP 403)'
+    );
+
+    const legacyDemoPwdLogin = await request('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email: 'demo@forecasterpro.com', password: 'DemoPassword123!' })
     });
-    assert(demoLogin.status === 200 && demoLogin.body.user.isDemo === true, 'Demo 6.1: Demo user authenticates into demo-showcase-vault');
-    const demoToken = demoLogin.body.token;
+    assert(
+      legacyDemoPwdLogin.status === 401 || legacyDemoPwdLogin.status === 403,
+      'Demo 6.0b: Legacy hardcoded demo password is never provisioned or accepted by default'
+    );
 
-    const demoAdminReq = await request('/api/admin/dashboard', {
-      headers: { Authorization: `Bearer ${demoToken}` }
+    const demoConfineServer = await startIsolatedTestServer({
+      env: { ENABLE_DEMO_MODE: 'true' }
     });
-    assert(demoAdminReq.status === 403, 'Demo 6.2: Demo user FORBIDDEN from administrator dashboard (HTTP 403)');
+    try {
+      const demoLogin = await request('/api/auth/demo-login', { method: 'POST' }, demoConfineServer.baseUrl);
+      assert(
+        demoLogin.status === 200 &&
+        demoLogin.body.user?.isDemo === true &&
+        demoLogin.body.user?.isPrimary === false &&
+        demoLogin.body.user?.isMainAdmin === false &&
+        demoLogin.body.user?.vaultId === 'demo-showcase-vault',
+        'Demo 6.1: Opt-in demo user authenticates into isolated demo-showcase-vault without owner or primary flags'
+      );
+      const demoToken = demoLogin.body.token;
 
-    const demoVaultHack = await request(`/api/cloud-sync/vault/${workspaceVaultId}`, {
-      headers: { Authorization: `Bearer ${demoToken}` }
-    });
-    assert(demoVaultHack.status === 403, 'Demo 6.3: Demo user FORBIDDEN from accessing production workspaces (HTTP 403)');
+      const demoAdminReq = await request('/api/admin/dashboard', {
+        headers: { Authorization: `Bearer ${demoToken}` }
+      }, demoConfineServer.baseUrl);
+      assert(demoAdminReq.status === 403, 'Demo 6.2: Demo user FORBIDDEN from administrator dashboard (HTTP 403)');
 
-    const demoSubUserHack = await request('/api/auth/sub-users', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${demoToken}` },
-      body: JSON.stringify({ name: 'Demo Hack Sub', email: 'hack@demo.local', role: 'member' })
-    });
-    assert(demoSubUserHack.status === 403, 'Demo 6.4: Demo user FORBIDDEN from managing sub-users (HTTP 403)');
+      const demoVaultHack = await request(`/api/cloud-sync/vault/${workspaceVaultId}`, {
+        headers: { Authorization: `Bearer ${demoToken}` }
+      }, demoConfineServer.baseUrl);
+      assert(demoVaultHack.status === 403, 'Demo 6.3: Demo user FORBIDDEN from accessing production workspaces (HTTP 403)');
 
-    const demoRevokeHack = await request('/api/auth/revoke-all-sessions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${demoToken}` },
-      body: JSON.stringify({ scope: 'all' })
-    });
-    assert(demoRevokeHack.status === 403, 'Demo 6.5: Demo user FORBIDDEN from bulk session revocation (HTTP 403)');
+      const demoSubUserHack = await request('/api/auth/sub-users', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${demoToken}` },
+        body: JSON.stringify({ name: 'Demo Hack Sub', email: 'hack@demo.local', role: 'member' })
+      }, demoConfineServer.baseUrl);
+      assert(demoSubUserHack.status === 403, 'Demo 6.4: Demo user FORBIDDEN from managing sub-users (HTTP 403)');
+
+      const demoRevokeHack = await request('/api/auth/revoke-all-sessions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${demoToken}` },
+        body: JSON.stringify({ scope: 'all' })
+      }, demoConfineServer.baseUrl);
+      assert(demoRevokeHack.status === 403, 'Demo 6.5: Demo user FORBIDDEN from bulk session revocation (HTTP 403)');
+    } finally {
+      await demoConfineServer.stop(true);
+    }
 
     // =========================================================================
     // 7. Strict Configurable CORS, Production Fail-Closed & CSRF Protection
@@ -1597,6 +1634,768 @@ async function runSecurityTestSuite() {
         await prodServer.stop(true);
       }
     }
+
+    // =========================================================================
+    // 12. Source Archive Data Protection, Production Build Validation & Path Bypass Resistance
+    // =========================================================================
+    console.log('\n--- Test Category 12: Source ZIP/TAR Protection, Production Startup Validation & Path Guard ---');
+
+    // 12.1 Isolated synthetic project packaging test (ZIP & TAR exclusions, self-exclusion, live DB untouched)
+    const pkgTestRoot = path.join(os.tmpdir(), `forecaster_pkg_${Date.now()}`);
+    const pkgOutDir = path.join(pkgTestRoot, 'archive-out');
+    fs.mkdirSync(path.join(pkgTestRoot, 'data'), { recursive: true });
+    fs.mkdirSync(path.join(pkgTestRoot, 'backups'), { recursive: true });
+    fs.mkdirSync(path.join(pkgTestRoot, 'exports'), { recursive: true });
+    fs.mkdirSync(path.join(pkgTestRoot, 'tmp'), { recursive: true });
+    fs.mkdirSync(path.join(pkgTestRoot, 'dist'), { recursive: true });
+    fs.mkdirSync(path.join(pkgTestRoot, 'node_modules', 'pkg'), { recursive: true });
+    fs.mkdirSync(path.join(pkgTestRoot, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(pkgTestRoot, 'src'), { recursive: true });
+    fs.mkdirSync(pkgOutDir, { recursive: true });
+
+    const synthDbContent = JSON.stringify({ version: '1.0.0', vaults: { v1: { transactions: [{ id: 'synth_1', amount: 123 }] } } }, null, 2);
+    const synthDbPath = path.join(pkgTestRoot, 'data', 'cloud-ledger-db.json');
+    fs.writeFileSync(synthDbPath, synthDbContent, 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'data', 'cloud-ledger-db.json.pre-cleanup.bak'), synthDbContent, 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'backups', 'org-backup.json'), '{"secret":"backup"}', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'exports', 'financial.csv'), 'secret,100', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'tmp', 'scratch.json'), '{}', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'session-store.json'), '{"tok":"secret"}', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, '.env'), 'INITIAL_ADMIN_PASSWORD=SyntheticSecret#2026!', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, '.env.local'), 'SECRET=1', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, '.env.production'), 'SECRET=2', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, '.env.example'), 'INITIAL_ADMIN_PASSWORD="REPLACE_ME"\n', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'private.key'), 'PRIVATE KEY', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'dist', 'index.html'), '<html></html>', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1;', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'package.json'), '{"name":"synth"}', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'server.ts'), 'console.log("ok");', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'src', 'App.tsx'), 'export default function App() { return null; }', 'utf-8');
+    // Pre-existing generated archives inside source dir must also be excluded on subsequent runs
+    fs.writeFileSync(path.join(pkgTestRoot, 'forecaster-pro-source.zip'), 'old-zip', 'utf-8');
+    fs.writeFileSync(path.join(pkgTestRoot, 'forecaster-pro-source.tar.gz'), 'old-tar', 'utf-8');
+
+    try {
+      const preSynthDbSha = crypto.createHash('sha256').update(fs.readFileSync(synthDbPath)).digest('hex');
+
+      // Run packaging inside pkgTestRoot itself (so outDir === sourceDir tests self-exclusion too)
+      const pkgReport1 = packageSourceArchives({ sourceDir: pkgTestRoot, outDir: pkgTestRoot, format: 'both' });
+      assert(pkgReport1.archives.length === 2, 'Archive 12.1a: Both .zip and .tar.gz archives created & verified');
+      assert(pkgReport1.liveDbPreserved === true, 'Archive 12.1b: Report confirms live DB preserved during packaging');
+
+      const postSynthDbSha1 = crypto.createHash('sha256').update(fs.readFileSync(synthDbPath)).digest('hex');
+      assert(
+        postSynthDbSha1 === preSynthDbSha && fs.existsSync(synthDbPath),
+        'Archive 12.1c: Synthetic runtime data/cloud-ledger-db.json remains byte-identical on disk'
+      );
+
+      const zipEntries = inspectZipEntries(path.join(pkgTestRoot, 'forecaster-pro-source.zip'));
+      const tarEntries = inspectTarEntries(path.join(pkgTestRoot, 'forecaster-pro-source.tar.gz'));
+
+      // Cross-verify standard ZIP compatibility with system unzip -t
+      execFileSync('unzip', ['-t', path.join(pkgTestRoot, 'forecaster-pro-source.zip')], { stdio: 'pipe' });
+      assert(true, 'Archive 12.1d: Generated ZIP passes system unzip -t integrity verification');
+
+      for (const [label, entries] of [['ZIP', zipEntries], ['TAR', tarEntries]] as const) {
+        assert(!entries.some(e => e.includes('cloud-ledger-db')), `Archive 12.1e (${label}): Excludes data/cloud-ledger-db.json and snapshots`);
+        assert(!entries.some(e => e.startsWith('data/') || e.startsWith('backups/') || e.startsWith('exports/') || e.startsWith('tmp/')), `Archive 12.1f (${label}): Excludes data/, backups/, exports/, tmp/`);
+        assert(!entries.some(e => e === '.env' || e === '.env.local' || e === '.env.production' || e.includes('session-store') || e.endsWith('.key')), `Archive 12.1g (${label}): Excludes private .env*, session stores & keys`);
+        assert(!entries.some(e => e.startsWith('dist/') || e.startsWith('node_modules/') || e.startsWith('.git/') || e.endsWith('.zip') || e.endsWith('.tar.gz')), `Archive 12.1h (${label}): Excludes dist/, node_modules/, .git/ & nested archives`);
+        assert(entries.includes('.env.example') && entries.includes('server.ts') && entries.includes('src/App.tsx'), `Archive 12.1i (${label}): Preserves .env.example template and source code`);
+      }
+
+      // Run packaging a second time into same directory -> confirms newly created archives are not nested into next run
+      const pkgReport2 = packageSourceArchives({ sourceDir: pkgTestRoot, outDir: pkgTestRoot, format: 'both' });
+      assert(pkgReport2.archives.every(a => a.valid && a.entryCount === pkgReport1.archives[0].entryCount), 'Archive 12.1j: Repeated packaging excludes prior generated archives deterministically');
+
+      // 12.2 Negative test: verifier MUST FAIL and remove archive when a protected file is injected into ZIP or TAR
+      const poisonedZip = path.join(pkgOutDir, 'poisoned.zip');
+      writeZipArchive(pkgTestRoot, ['package.json', 'data/cloud-ledger-db.json'], poisonedZip);
+      let poisonedZipFailed = false;
+      try {
+        verifyArchiveFile(poisonedZip, { deleteOnFailure: true });
+      } catch (err: any) {
+        poisonedZipFailed = String(err?.message || '').includes('data/cloud-ledger-db.json');
+      }
+      assert(poisonedZipFailed && !fs.existsSync(poisonedZip), 'Archive 12.2a: Verifier FAILS and deletes ZIP if data/cloud-ledger-db.json is included');
+
+      const poisonedTar = path.join(pkgOutDir, 'poisoned.tar.gz');
+      writeTarArchive(pkgTestRoot, ['package.json', '.env'], poisonedTar);
+      let poisonedTarFailed = false;
+      try {
+        verifyArchiveFile(poisonedTar, { deleteOnFailure: true });
+      } catch (err: any) {
+        poisonedTarFailed = String(err?.message || '').includes('.env');
+      }
+      assert(poisonedTarFailed && !fs.existsSync(poisonedTar), 'Archive 12.2b: Verifier FAILS and deletes TAR if private .env is included');
+    } finally {
+      try { fs.rmSync(pkgTestRoot, { recursive: true, force: true }); } catch {}
+    }
+
+    // 12.3 Production Startup Validation (missing dist, dist with only favicon.ico, incomplete dist, valid dist)
+    const prodValBase = path.join(os.tmpdir(), `forecaster_prod_val_${Date.now()}`);
+    const tsxBin = path.resolve(process.cwd(), 'node_modules/tsx/dist/cli.mjs');
+
+    const runProdBootExpectFail = (distPath: string, dbPath: string) => {
+      const childEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        NODE_ENV: 'production',
+        DIST_DIR: distPath,
+        DATA_DIR: path.dirname(dbPath),
+        DB_FILE: dbPath,
+        PORT: '0',
+        HOST: '127.0.0.1'
+      };
+      return spawnSync(process.execPath, [tsxBin, 'server.ts'], {
+        cwd: process.cwd(),
+        env: childEnv,
+        encoding: 'utf-8',
+        timeout: 15000
+      });
+    };
+
+    try {
+      // 12.3a Missing dist directory completely
+      const missingDist = path.join(prodValBase, 'missing-dist');
+      const missingDb = path.join(prodValBase, 'db-missing', 'test.json');
+      const missingRes = runProdBootExpectFail(missingDist, missingDb);
+      assert(
+        missingRes.status !== 0 && (missingRes.stderr || '').includes('PRODUCTION STARTUP ABORTED'),
+        'ProdBoot 12.3a: Production startup refuses to run when DIST_DIR is missing'
+      );
+
+      // 12.3b dist containing ONLY favicon.ico (missing dist/index.html) - exact issue from Nov 13 review
+      const faviconOnlyDist = path.join(prodValBase, 'favicon-only-dist');
+      fs.mkdirSync(faviconOnlyDist, { recursive: true });
+      fs.writeFileSync(path.join(faviconOnlyDist, 'favicon.ico'), 'fake-ico', 'utf-8');
+      const favDb = path.join(prodValBase, 'db-fav', 'test.json');
+      const favRes = runProdBootExpectFail(faviconOnlyDist, favDb);
+      assert(
+        favRes.status !== 0 &&
+        (favRes.stderr || '').includes('index.html') &&
+        (favRes.stderr || '').includes('npm run build'),
+        'ProdBoot 12.3b: Production startup aborts with clear error when dist/ contains favicon.ico without dist/index.html'
+      );
+
+      // 12.3c Incomplete build (has dist/index.html + landing.html but missing required JS/PWA assets)
+      const incompleteDist = path.join(prodValBase, 'incomplete-dist');
+      fs.mkdirSync(incompleteDist, { recursive: true });
+      fs.writeFileSync(path.join(incompleteDist, 'index.html'), '<!doctype html><html><body></body></html>', 'utf-8');
+      fs.writeFileSync(path.join(incompleteDist, 'landing.html'), '<!doctype html><html><body></body></html>', 'utf-8');
+      const incDb = path.join(prodValBase, 'db-inc', 'test.json');
+      const incRes = runProdBootExpectFail(incompleteDist, incDb);
+      assert(
+        incRes.status !== 0 && (incRes.stderr || '').includes('Missing required production artifact'),
+        'ProdBoot 12.3c: Production startup aborts when required built frontend/PWA assets are missing'
+      );
+
+      // 12.3d Valid dist/ starts cleanly in production mode
+      if (fs.existsSync(path.resolve(process.cwd(), 'dist', 'index.html'))) {
+        const validProd = await startIsolatedTestServer({ env: { NODE_ENV: 'production' } });
+        try {
+          const validRoot = await fetch(`${validProd.baseUrl}/`);
+          const validLanding = await fetch(`${validProd.baseUrl}/landing`);
+          assert(validRoot.status === 200 && validLanding.status === 200, 'ProdBoot 12.3d: Production startup succeeds with valid dist/ and serves / and /landing (HTTP 200)');
+        } finally {
+          await validProd.stop(true);
+        }
+      }
+    } finally {
+      try { fs.rmSync(prodValBase, { recursive: true, force: true }); } catch {}
+    }
+
+    // 12.4 Raw HTTP Security Regression for URL-encoding, double-encoding, traversal, backslashes & case variations
+    const sendRawHttpGet = (baseUrl: string, rawPath: string): Promise<{ status: number; body: string }> => {
+      return new Promise((resolve, reject) => {
+        const parsed = new URL(baseUrl);
+        const req = http.request(
+          {
+            hostname: parsed.hostname,
+            port: Number(parsed.port),
+            path: rawPath,
+            method: 'GET'
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', c => chunks.push(Buffer.from(c)));
+            res.on('end', () => resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString('utf-8') }));
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+    };
+
+    const adversarialRawPaths = [
+      // URL-encoded
+      '/%64ata/cloud-ledger-db.json',
+      '/data%2fcloud-ledger-db.json',
+      '/%2eenv',
+      '/%2eenv.example',
+      // Double-encoded
+      '/%2564ata/cloud-ledger-db.json',
+      '/data%252fcloud-ledger-db.json',
+      '/%252eenv',
+      '/%252e%252e/data/cloud-ledger-db.json',
+      // Path traversal
+      '/public/../data/cloud-ledger-db.json',
+      '/scripts/../../.env',
+      '/assets/..%2f..%2fdata/cloud-ledger-db.json',
+      '/src/../data/cloud-ledger-db.json',
+      '/foo/bar/../../server.ts',
+      // Backslash separators
+      '/data%5ccloud-ledger-db.json',
+      '/data%255ccloud-ledger-db.json',
+      '/scripts%5c..%5cdata%5ccloud-ledger-db.json',
+      '/backups%5csnapshot.json',
+      '/data\\cloud-ledger-db.json',
+      // Case variations
+      '/DATA/CLOUD-LEDGER-DB.JSON',
+      '/Backups/Snapshot.JSON',
+      '/Server.TS',
+      '/.ENV',
+      '/Package.JSON',
+      '/Scripts/Test-Security-Remediation.TS',
+      '/@FS/app/applet/DATA/cloud-ledger-db.json'
+    ];
+
+    for (const rawAttackPath of adversarialRawPaths) {
+      const atkRes = await sendRawHttpGet(activeBaseUrl, rawAttackPath);
+      assert(
+        atkRes.status === 403,
+        `PathGuard 12.4a: Adversarial request blocked (HTTP 403) -> ${rawAttackPath}`,
+        `Received status: ${atkRes.status}`
+      );
+    }
+
+    for (const validAsset of ['/', '/landing', '/scripts/app-core.js', '/scripts/auth-manager.js', '/styles/forecaster.css', '/manifest.webmanifest', '/sw.js', '/favicon.ico', '/src/main.tsx', '/@vite/client']) {
+      const okRes = await sendRawHttpGet(activeBaseUrl, validAsset);
+      assert(okRes.status === 200, `PathGuard 12.4b: Legitimate frontend asset accessible (HTTP 200) -> ${validAsset}`);
+    }
+
+    // =========================================================================
+    // 13. Phase 1.1.2: Secure Administrator & Demo Account Provisioning
+    // =========================================================================
+    console.log('\n--- Test Category 13: Phase 1.1.2 Secure Administrator & Demo Provisioning ---');
+
+    const randomStrongSecret = () =>
+      `Sec#${crypto.randomBytes(8).toString('hex')}!A9`;
+
+    // 13.1 Missing admin credentials
+    const missingAdminSrv = await startIsolatedTestServer();
+    try {
+      const dbRaw = JSON.parse(fs.readFileSync(missingAdminSrv.dbFile, 'utf-8'));
+      const adminUsers = Object.values(dbRaw.users || {}).filter(
+        (u: any) => !u.isDemo && (u.isMainAdmin || u.role === 'main_admin')
+      );
+      assert(
+        adminUsers.length === 0,
+        'AdminProv 13.1a: Missing env credentials provisions ZERO administrator accounts'
+      );
+      const statusMissing = await request('/api/public/system-status', {}, missingAdminSrv.baseUrl);
+      assert(
+        statusMissing.status === 200 && statusMissing.body.demoModeEnabled === false,
+        'DemoSec 13.6a: Demo mode reports disabled by default in system status'
+      );
+      assert(
+        !dbRaw.users?.['usr_demo_showcase'] && !dbRaw.vaults?.['demo-showcase-vault'],
+        'DemoSec 13.6b: Disabled demo mode neither seeds usr_demo_showcase nor demo-showcase-vault'
+      );
+    } finally {
+      await missingAdminSrv.stop(true);
+    }
+
+    // 13.2 Weak admin passwords rejected
+    for (const weakPwd of ['short!A1', 'alllowercase123!', 'NO_LOWER_CASE_123!', 'NoDigitsHere!Aa', 'NoSymbolHere123A']) {
+      const weakAdminSrv = await startIsolatedTestServer({
+        env: {
+          INITIAL_ADMIN_EMAIL: 'weak-check@testcorp.local',
+          INITIAL_ADMIN_PASSWORD: weakPwd
+        }
+      });
+      try {
+        const dbWeak = JSON.parse(fs.readFileSync(weakAdminSrv.dbFile, 'utf-8'));
+        const admins = Object.values(dbWeak.users || {}).filter(
+          (u: any) => !u.isDemo && (u.isMainAdmin || u.role === 'main_admin')
+        );
+        assert(
+          admins.length === 0,
+          `AdminProv 13.2: Weak INITIAL_ADMIN_PASSWORD refused cleanly (case ${weakPwd.length} chars)`
+        );
+      } finally {
+        await weakAdminSrv.stop(true);
+      }
+    }
+
+    // 13.3 - 13.5 First-time provisioning, repeated provisioning refusal, existing admin protection, password hashing & log redaction
+    const p1Email = `admin_one_${Date.now()}@testcorp.local`;
+    const p1Pass = randomStrongSecret();
+    const p1CustomPass = randomStrongSecret();
+    const p2Email = `admin_two_${Date.now()}@testcorp.local`;
+    const p2Pass = randomStrongSecret();
+
+    const adminProvDir = path.join(os.tmpdir(), `forecaster_p112_admin_${Date.now()}`);
+    fs.mkdirSync(adminProvDir, { recursive: true });
+    const adminProvDb = path.join(adminProvDir, 'admin-prov.json');
+
+    let p1Token = '';
+    const provSrv1 = await startIsolatedTestServer({
+      dataDir: adminProvDir,
+      dbFile: adminProvDb,
+      env: {
+        INITIAL_ADMIN_EMAIL: p1Email,
+        INITIAL_ADMIN_PASSWORD: p1Pass
+      }
+    });
+    try {
+      // Check logs do not leak secret
+      const combinedLogs = provSrv1.stdout.join('') + provSrv1.stderr.join('');
+      assert(
+        !combinedLogs.includes(p1Pass),
+        'HashLog 13.9a: Server startup logs never emit plaintext administrator password'
+      );
+
+      const diskDb = JSON.parse(fs.readFileSync(adminProvDb, 'utf-8'));
+      const provisionedAdmin: any = Object.values(diskDb.users || {}).find(
+        (u: any) => u.email === p1Email
+      );
+      assert(
+        !!provisionedAdmin &&
+        provisionedAdmin.role === 'main_admin' &&
+        provisionedAdmin.isMainAdmin === true &&
+        provisionedAdmin.mustChangePassword === true &&
+        typeof provisionedAdmin.passwordHash === 'string' &&
+        provisionedAdmin.passwordHash.length === 128 &&
+        typeof provisionedAdmin.salt === 'string' &&
+        provisionedAdmin.salt.length === 32 &&
+        provisionedAdmin.passwordHash !== p1Pass &&
+        provisionedAdmin.temporaryPassword === undefined,
+        'HashLog 13.9b: Provisioned admin password is stored with per-user scrypt hash + 16-byte salt (no plaintext)'
+      );
+
+      const firstLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: p1Email, password: p1Pass }) },
+        provSrv1.baseUrl
+      );
+      assert(
+        firstLogin.status === 200 &&
+        firstLogin.body.mustChangePassword === true &&
+        firstLogin.body.user?.isMainAdmin === true &&
+        !JSON.stringify(firstLogin.body).includes(p1Pass),
+        'AdminProv 13.3: Initial administrator logs in securely with mustChangePassword=true and no secret echo'
+      );
+      p1Token = firstLogin.body.token;
+
+      // Rotate to custom password before restart
+      const rotRes = await request(
+        '/api/auth/change-password',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${p1Token}` },
+          body: JSON.stringify({ currentPassword: p1Pass, newPassword: p1CustomPass })
+        },
+        provSrv1.baseUrl
+      );
+      assert(rotRes.status === 200, 'AdminProv 13.5a: Initial administrator rotates password');
+    } finally {
+      await provSrv1.stop(false);
+    }
+
+    // 13.4 & 13.5b Restart with DIFFERENT INITIAL_ADMIN_EMAIL / INITIAL_ADMIN_PASSWORD when admin already exists
+    const provSrv2 = await startIsolatedTestServer({
+      dataDir: adminProvDir,
+      dbFile: adminProvDb,
+      env: {
+        INITIAL_ADMIN_EMAIL: p2Email,
+        INITIAL_ADMIN_PASSWORD: p2Pass
+      }
+    });
+    try {
+      const diskAfterRestart = JSON.parse(fs.readFileSync(adminProvDb, 'utf-8'));
+      const allAdmins = Object.values(diskAfterRestart.users || {}).filter(
+        (u: any) => !u.isDemo && (u.isMainAdmin || u.role === 'main_admin')
+      );
+      assert(
+        allAdmins.length === 1 && (allAdmins[0] as any).email === p1Email,
+        'AdminProv 13.4a: Repeated startup with different INITIAL_ADMIN_* refuses creating a 2nd admin'
+      );
+
+      const p2Login = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: p2Email, password: p2Pass }) },
+        provSrv2.baseUrl
+      );
+      assert(p2Login.status === 401, 'AdminProv 13.4b: Second env-configured admin cannot authenticate (HTTP 401)');
+
+      const customLoginRes = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: p1Email, password: p1CustomPass }) },
+        provSrv2.baseUrl
+      );
+      assert(
+        customLoginRes.status === 200 && customLoginRes.body.user?.isMainAdmin === true,
+        'AdminProv 13.5b: Existing administrator custom password preserved across restart'
+      );
+      const liveAdminTok = customLoginRes.body.token;
+
+      // Guarded HTTP /api/admin/provision blocks repeated provisioning even by authenticated admin (409)
+      const repeatHttpProv = await request(
+        '/api/admin/provision',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${liveAdminTok}` },
+          body: JSON.stringify({ email: p2Email, password: p2Pass })
+        },
+        provSrv2.baseUrl
+      );
+      assert(
+        repeatHttpProv.status === 409,
+        'AdminProv 13.4c: POST /api/admin/provision fails closed (HTTP 409) once an admin exists'
+      );
+
+      // 13.8 Unauthorized provisioning & role escalation protection
+      const unauthProv = await request(
+        '/api/admin/provision',
+        {
+          method: 'POST',
+          body: JSON.stringify({ email: p2Email, password: p2Pass })
+        },
+        provSrv2.baseUrl
+      );
+      assert(unauthProv.status === 401, 'UnauthProv 13.8a: Unauthenticated POST /api/admin/provision returns HTTP 401');
+
+      const regEscalation = await request(
+        '/api/auth/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            name: 'Escalation Prober',
+            email: `esc_${Date.now()}@testcorp.local`,
+            password: randomStrongSecret(),
+            role: 'main_admin',
+            isMainAdmin: true
+          })
+        },
+        provSrv2.baseUrl
+      );
+      assert(
+        regEscalation.status === 201 &&
+        regEscalation.body.user?.role === 'owner' &&
+        !regEscalation.body.user?.isMainAdmin,
+        'UnauthProv 13.8b: Public registration ignores forged role/isMainAdmin fields'
+      );
+      const ownerEscTok = regEscalation.body.token;
+      const escUserId = regEscalation.body.user.id;
+
+      const ownerCallProv = await request(
+        '/api/admin/provision',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ownerEscTok}` },
+          body: JSON.stringify({ email: p2Email, password: p2Pass })
+        },
+        provSrv2.baseUrl
+      );
+      assert(ownerCallProv.status === 403, 'UnauthProv 13.8c: Non-admin owner calling POST /api/admin/provision rejected (HTTP 403)');
+
+      const promoteViaAdminUpdate = await request(
+        `/api/admin/users/${escUserId}/update`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${liveAdminTok}` },
+          body: JSON.stringify({ role: 'main_admin' })
+        },
+        provSrv2.baseUrl
+      );
+      assert(
+        promoteViaAdminUpdate.status === 403,
+        'UnauthProv 13.8d: Promoting regular account to main_admin via user update endpoint blocked (HTTP 403)'
+      );
+    } finally {
+      await provSrv2.stop(true);
+      try { fs.rmSync(adminProvDir, { recursive: true, force: true }); } catch {}
+    }
+
+    // 13.5c Existing non-admin owner sharing INITIAL_ADMIN_EMAIL is never escalated/hijacked
+    const hijackDir = path.join(os.tmpdir(), `forecaster_hijack_${Date.now()}`);
+    fs.mkdirSync(hijackDir, { recursive: true });
+    const hijackDb = path.join(hijackDir, 'hijack.json');
+    const sharedEmail = `ordinary_owner_${Date.now()}@testcorp.local`;
+    const ownerSalt = crypto.randomBytes(16).toString('hex');
+    const ownerSecret = randomStrongSecret();
+    fs.writeFileSync(
+      hijackDb,
+      JSON.stringify({
+        version: '1.0.0',
+        vaults: {
+          vault_ord_1: { vaultId: 'vault_ord_1', updatedAt: new Date().toISOString(), transactions: [], accounts: [], accountTransfers: [] }
+        },
+        users: {
+          usr_ord_1: {
+            id: 'usr_ord_1',
+            name: 'Ordinary Owner',
+            email: sharedEmail,
+            passwordHash: crypto.scryptSync(ownerSecret, ownerSalt, 64).toString('hex'),
+            salt: ownerSalt,
+            tier: 'Free Tier',
+            role: 'owner',
+            isPrimary: true,
+            isMainAdmin: false,
+            vaultId: 'vault_ord_1',
+            createdAt: new Date().toISOString(),
+            lastLogin: new Date().toISOString()
+          }
+        },
+        tokens: {},
+        outbox: []
+      }, null, 2),
+      'utf-8'
+    );
+    const hijackSrv = await startIsolatedTestServer({
+      dataDir: hijackDir,
+      dbFile: hijackDb,
+      env: {
+        INITIAL_ADMIN_EMAIL: sharedEmail,
+        INITIAL_ADMIN_PASSWORD: randomStrongSecret()
+      }
+    });
+    try {
+      const ordLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: sharedEmail, password: ownerSecret }) },
+        hijackSrv.baseUrl
+      );
+      assert(
+        ordLogin.status === 200 &&
+        ordLogin.body.user?.role === 'owner' &&
+        ordLogin.body.user?.isMainAdmin === false,
+        'AdminProv 13.5c: Non-admin user matching INITIAL_ADMIN_EMAIL is NEVER escalated to main_admin or overwritten'
+      );
+    } finally {
+      await hijackSrv.stop(true);
+      try { fs.rmSync(hijackDir, { recursive: true, force: true }); } catch {}
+    }
+
+    // 13.7 Demo Mode Enabled: High-entropy auto-secret, explicit secret, restore/manage block, and non-demo overwrite protection
+    const customDemoEmail = `demo_custom_${Date.now()}@demo.local`;
+    const customDemoPass = randomStrongSecret();
+    const demoAutoSrv = await startIsolatedTestServer({
+      env: {
+        ENABLE_DEMO_MODE: 'true'
+      }
+    });
+    try {
+      const demoStatus = await request('/api/public/system-status', {}, demoAutoSrv.baseUrl);
+      assert(demoStatus.status === 200 && demoStatus.body.demoModeEnabled === true, 'DemoSec 13.7a: system-status reports demoModeEnabled=true when enabled');
+
+      const autoLogs = demoAutoSrv.stdout.join('') + demoAutoSrv.stderr.join('');
+      const autoDb = JSON.parse(fs.readFileSync(demoAutoSrv.dbFile, 'utf-8'));
+      const autoDemoRec = autoDb.users?.['usr_demo_showcase'];
+      assert(
+        !!autoDemoRec &&
+        autoDemoRec.isDemo === true &&
+        autoDemoRec.isPrimary === false &&
+        autoDemoRec.isMainAdmin === false &&
+        autoDemoRec.role === 'manager' &&
+        typeof autoDemoRec.passwordHash === 'string' &&
+        autoDemoRec.passwordHash.length === 128 &&
+        !autoLogs.includes(autoDemoRec.passwordHash),
+        'DemoSec 13.7b: Enabled demo without DEMO_USER_PASSWORD uses non-owner role + scrypt hash'
+      );
+
+      // Predictable DemoPassword123! must NOT authenticate even when demo mode is enabled
+      const legacyPassAttempt = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: 'demo@forecasterpro.com', password: 'DemoPassword123!' }) },
+        demoAutoSrv.baseUrl
+      );
+      assert(legacyPassAttempt.status === 401, 'DemoSec 13.7c: Predictable DemoPassword123! rejected even when demo mode enabled');
+
+      const demoOneClick = await request('/api/auth/demo-login', { method: 'POST' }, demoAutoSrv.baseUrl);
+      assert(
+        demoOneClick.status === 200 &&
+        demoOneClick.body.user?.isPrimary === false &&
+        demoOneClick.body.user?.isMainAdmin === false,
+        'DemoSec 13.7d: Demo login succeeds with strictly non-privileged user profile'
+      );
+      const dTok = demoOneClick.body.token;
+
+      // Demo cannot restore backups or perform owner-only manage operations even on demo-showcase-vault
+      const demoRestoreBlock = await request(
+        '/api/backup/restore',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${dTok}` },
+          body: JSON.stringify({ vaultId: 'demo-showcase-vault', backupData: { transactions: [] } })
+        },
+        demoAutoSrv.baseUrl
+      );
+      assert(demoRestoreBlock.status === 403, 'DemoSec 13.7e: Demo user blocked from restore privilege inside demo vault (HTTP 403)');
+
+      const demoProvBlock = await request(
+        '/api/admin/provision',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${dTok}` },
+          body: JSON.stringify({ email: 'evil@test.local', password: randomStrongSecret() })
+        },
+        demoAutoSrv.baseUrl
+      );
+      assert(demoProvBlock.status === 403, 'UnauthProv 13.8e: Demo user calling POST /api/admin/provision blocked (HTTP 403)');
+    } finally {
+      await demoAutoSrv.stop(true);
+    }
+
+    // Explicit DEMO_USER_EMAIL + DEMO_USER_PASSWORD & non-demo overwrite protection
+    const demoExplicitSrv = await startIsolatedTestServer({
+      env: {
+        ENABLE_DEMO_MODE: 'true',
+        DEMO_USER_EMAIL: customDemoEmail,
+        DEMO_USER_PASSWORD: customDemoPass
+      }
+    });
+    try {
+      const explicitDemoLogs = demoExplicitSrv.stdout.join('') + demoExplicitSrv.stderr.join('');
+      assert(!explicitDemoLogs.includes(customDemoPass), 'HashLog 13.9c: Server logs never emit DEMO_USER_PASSWORD');
+      const expLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: customDemoEmail, password: customDemoPass }) },
+        demoExplicitSrv.baseUrl
+      );
+      assert(
+        expLogin.status === 200 &&
+        expLogin.body.user?.isDemo === true &&
+        expLogin.body.user?.isPrimary === false &&
+        expLogin.body.user?.vaultId === 'demo-showcase-vault',
+        'DemoSec 13.7f: Configured high-entropy DEMO_USER_PASSWORD authenticates non-privileged demo user'
+      );
+    } finally {
+      await demoExplicitSrv.stop(true);
+    }
+
+    // Weak DEMO_USER_PASSWORD is skipped safely (no weak password stored)
+    const demoWeakSrv = await startIsolatedTestServer({
+      env: {
+        ENABLE_DEMO_MODE: 'true',
+        DEMO_USER_PASSWORD: 'weak'
+      }
+    });
+    try {
+      const weakDemoDb = JSON.parse(fs.readFileSync(demoWeakSrv.dbFile, 'utf-8'));
+      assert(
+        !weakDemoDb.users?.['usr_demo_showcase'],
+        'DemoSec 13.7h: Weak explicit DEMO_USER_PASSWORD refuses provisioning demo account'
+      );
+      const weakDemoLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: 'demo@forecasterpro.com', password: 'weak' }) },
+        demoWeakSrv.baseUrl
+      );
+      assert(weakDemoLogin.status === 401, 'DemoSec 13.7i: Weak explicit DEMO_USER_PASSWORD cannot authenticate');
+    } finally {
+      await demoWeakSrv.stop(true);
+    }
+
+    // Non-demo user collision protection with DEMO_USER_EMAIL
+    const demoCollisionDir = path.join(os.tmpdir(), `forecaster_democol_${Date.now()}`);
+    fs.mkdirSync(demoCollisionDir, { recursive: true });
+    const demoCollisionDb = path.join(demoCollisionDir, 'demo-col.json');
+    const legitUserEmail = `realuser_${Date.now()}@testcorp.local`;
+    const legitUserPass = randomStrongSecret();
+    const legitSalt = crypto.randomBytes(16).toString('hex');
+    fs.writeFileSync(
+      demoCollisionDb,
+      JSON.stringify({
+        version: '1.0.0',
+        vaults: {
+          vault_real_1: { vaultId: 'vault_real_1', updatedAt: new Date().toISOString(), transactions: [], accounts: [], accountTransfers: [] }
+        },
+        users: {
+          usr_real_1: {
+            id: 'usr_real_1',
+            name: 'Real Owner',
+            email: legitUserEmail,
+            passwordHash: crypto.scryptSync(legitUserPass, legitSalt, 64).toString('hex'),
+            salt: legitSalt,
+            tier: 'Pro Tier',
+            role: 'owner',
+            isPrimary: true,
+            isDemo: false,
+            vaultId: 'vault_real_1',
+            createdAt: new Date().toISOString(),
+            lastLogin: new Date().toISOString()
+          }
+        },
+        tokens: {},
+        outbox: []
+      }, null, 2),
+      'utf-8'
+    );
+    const demoCollisionSrv = await startIsolatedTestServer({
+      dataDir: demoCollisionDir,
+      dbFile: demoCollisionDb,
+      env: {
+        ENABLE_DEMO_MODE: 'true',
+        DEMO_USER_EMAIL: legitUserEmail,
+        DEMO_USER_PASSWORD: randomStrongSecret()
+      }
+    });
+    try {
+      const legitCheck = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: legitUserEmail, password: legitUserPass }) },
+        demoCollisionSrv.baseUrl
+      );
+      assert(
+        legitCheck.status === 200 &&
+        legitCheck.body.user?.isDemo === false &&
+        legitCheck.body.user?.role === 'owner' &&
+        legitCheck.body.user?.vaultId === 'vault_real_1',
+        'DemoSec 13.7g: Provisioning demo user NEVER overwrites or converts an existing non-demo account'
+      );
+    } finally {
+      await demoCollisionSrv.stop(true);
+      try { fs.rmSync(demoCollisionDir, { recursive: true, force: true }); } catch {}
+    }
+
+    // 13.10 Hardcoded credential scan across runtime source & frontend assets
+    const forbiddenLiterals = ['DemoPassword123!', 'usr_peter_badir', 'peter@badir.com'];
+    const filesToScan = [
+      path.resolve(process.cwd(), 'server.ts'),
+      path.resolve(process.cwd(), 'index.html'),
+      path.resolve(process.cwd(), 'landing.html'),
+      path.resolve(process.cwd(), '.env.example')
+    ];
+    const collectJsFiles = (dir: string) => {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) collectJsFiles(full);
+        else if (/\.(js|ts|tsx|jsx|html)$/.test(entry.name)) filesToScan.push(full);
+      }
+    };
+    collectJsFiles(path.resolve(process.cwd(), 'src'));
+    collectJsFiles(path.resolve(process.cwd(), 'public'));
+
+    const detectedCredHits: string[] = [];
+    for (const filePath of filesToScan) {
+      const text = fs.readFileSync(filePath, 'utf-8');
+      for (const literal of forbiddenLiterals) {
+        if (text.includes(literal)) {
+          detectedCredHits.push(`${path.relative(process.cwd(), filePath)} contains ${literal}`);
+        }
+      }
+      if (/Password123!/.test(text)) {
+        detectedCredHits.push(`${path.relative(process.cwd(), filePath)} contains Password123!`);
+      }
+    }
+    assert(
+      detectedCredHits.length === 0,
+      'CredScan 13.10: Zero hardcoded privileged/demo credentials or legacy IDs in server, frontend, or .env.example',
+      detectedCredHits.join('; ')
+    );
 
     console.log('\n======================================================');
     console.log(`🏆 ALL SECURITY REMEDIATION TESTS PASSED: ${passedTests}/${totalTests}`);

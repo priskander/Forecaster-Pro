@@ -53,6 +53,10 @@ export async function startIsolatedTestServer(options: IsolatedServerOptions = {
   delete childEnv.APP_URL;
   delete childEnv.INITIAL_ADMIN_EMAIL;
   delete childEnv.INITIAL_ADMIN_PASSWORD;
+  delete childEnv.ENABLE_DEMO_MODE;
+  delete childEnv.DEMO_USER_EMAIL;
+  delete childEnv.DEMO_USER_PASSWORD;
+  delete childEnv.DIST_DIR;
   childEnv.NODE_ENV = 'development';
   childEnv.DISABLE_HMR = 'true';
   childEnv.PORT = String(port);

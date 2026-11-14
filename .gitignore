@@ -32,6 +32,7 @@ session-store*
 *.pfx
 *.secret
 forecaster-pro-source.tar.gz
+forecaster-pro-source.zip
 
 # Keep SQL migration scripts tracked (never exclude legitimate migrations)
 !migrations/**/*.sql

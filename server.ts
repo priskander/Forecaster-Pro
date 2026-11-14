@@ -33,10 +33,80 @@ const DB_FILE = process.env.DB_FILE
   ? path.resolve(process.env.DB_FILE)
   : path.resolve(DATA_DIR, 'cloud-ledger-db.json');
 
+const DIST_DIR = process.env.DIST_DIR
+  ? path.resolve(process.env.DIST_DIR)
+  : path.resolve(__dirname, 'dist');
+
 // Ensure database storage directory exists
 const DB_PARENT_DIR = path.dirname(DB_FILE);
 if (!fs.existsSync(DB_PARENT_DIR)) {
   fs.mkdirSync(DB_PARENT_DIR, { recursive: true });
+}
+
+const REQUIRED_PRODUCTION_ASSETS = [
+  'index.html',
+  'landing.html',
+  'manifest.webmanifest',
+  'sw.js',
+  'styles/forecaster.css',
+  'scripts/app-core.js',
+  'scripts/app-modules.js',
+  'scripts/extended-features.js',
+  'scripts/pwa-bridge.js',
+  'scripts/github-sync.js',
+  'scripts/saas-subscription.js',
+  'scripts/cloud-sync.js',
+  'scripts/auth-manager.js'
+];
+
+function validateProductionBuild(distDir: string): { valid: boolean; errors: string[]; distDir: string } {
+  const errors: string[] = [];
+  try {
+    if (!fs.existsSync(distDir)) {
+      errors.push(`Production build directory does not exist: ${distDir}`);
+      return { valid: false, errors, distDir };
+    }
+    const dirStat = fs.statSync(distDir);
+    if (!dirStat.isDirectory()) {
+      errors.push(`Production build path is not a directory: ${distDir}`);
+      return { valid: false, errors, distDir };
+    }
+  } catch (err: any) {
+    errors.push(`Cannot inspect production build directory (${distDir}): ${err?.message || 'Unknown error'}`);
+    return { valid: false, errors, distDir };
+  }
+
+  for (const relAsset of REQUIRED_PRODUCTION_ASSETS) {
+    const assetPath = path.join(distDir, relAsset);
+    try {
+      if (!fs.existsSync(assetPath)) {
+        errors.push(`Missing required production artifact: ${relAsset}`);
+        continue;
+      }
+      const stat = fs.statSync(assetPath);
+      if (!stat.isFile() || stat.size === 0) {
+        errors.push(`Invalid or empty production artifact: ${relAsset}`);
+        continue;
+      }
+      fs.accessSync(assetPath, fs.constants.R_OK);
+    } catch (err: any) {
+      errors.push(`Unreadable production artifact (${relAsset}): ${err?.message || 'Permission denied'}`);
+    }
+  }
+
+  const indexPath = path.join(distDir, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    try {
+      const html = fs.readFileSync(indexPath, 'utf-8');
+      if (!/<html/i.test(html)) {
+        errors.push('Production index.html does not contain valid HTML document markup.');
+      }
+    } catch (err: any) {
+      errors.push(`Cannot read production index.html: ${err?.message || 'Unknown error'}`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors, distDir };
 }
 
 import crypto from 'crypto';
@@ -493,6 +563,11 @@ function isOriginAllowed(origin: string | undefined): boolean {
   return false;
 }
 
+function isDemoModeEnabled(): boolean {
+  const raw = (process.env.ENABLE_DEMO_MODE || '').trim().toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes';
+}
+
 function generateTemporaryPassword(): string {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   const digits = '23456789';
@@ -632,88 +707,184 @@ if (!db.outbox) {
   if (dbLoadResult.loadedFromDisk) startupStructuralChanged = true;
 }
 
-// Secure Initial Administrator Provisioning
-const defaultEmail = (process.env.INITIAL_ADMIN_EMAIL || '').trim().toLowerCase();
-let defaultUser = defaultEmail
-  ? Object.values(db.users).find(u => u.email.toLowerCase() === defaultEmail)
-  : Object.values(db.users).find(u => u.isMainAdmin || u.role === 'main_admin');
-const initialAdminSecret = process.env.INITIAL_ADMIN_PASSWORD ? process.env.INITIAL_ADMIN_PASSWORD.trim() : '';
-
-if (!defaultUser) {
-  if (!defaultEmail || !initialAdminSecret) {
-    console.warn('[Security] Administrator bootstrap skipped: INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD must be configured to provision an initial administrator.');
-  } else if (initialAdminSecret.length < 10 || !validateStrongPassword(initialAdminSecret).valid) {
-    console.warn('[Security] Administrator bootstrap skipped: INITIAL_ADMIN_PASSWORD must be at least 10 characters and meet strong complexity requirements.');
-  } else {
-    const salt = crypto.randomBytes(16).toString('hex');
-    const user: UserRecord = {
-      id: 'usr_main_admin_bootstrap',
-      name: 'System Administrator',
-      email: defaultEmail,
-      passwordHash: hashPassword(initialAdminSecret, salt),
-      salt,
-      tier: 'Master Admin Suite',
-      role: 'main_admin',
-      isPrimary: true,
-      isMainAdmin: true,
-      status: 'active',
-      vaultId: 'shared-main-vault',
-      mustChangePassword: true,
-      createdAt: new Date().toISOString(),
-      lastLogin: new Date().toISOString()
-    };
-    db.users[user.id] = user;
-    startupStructuralChanged = true;
-    console.log('[Security] Initial administrator account provisioned securely.');
-  }
-} else {
-  // Existing administrator account: NEVER overwrite or reset custom credentials on server restart
-  if (
-    defaultUser.role !== 'main_admin' ||
-    !defaultUser.isPrimary ||
-    !defaultUser.isMainAdmin ||
-    !defaultUser.status ||
-    !defaultUser.tier ||
-    !defaultUser.vaultId
-  ) {
-    startupStructuralChanged = true;
-  }
-  defaultUser.role = 'main_admin';
-  defaultUser.isPrimary = true;
-  defaultUser.isMainAdmin = true;
-  defaultUser.status = defaultUser.status || 'active';
-  defaultUser.tier = defaultUser.tier || 'Master Admin Suite';
-  defaultUser.vaultId = defaultUser.vaultId || 'shared-main-vault';
+// Secure Initial Administrator & Opt-In Demo Provisioning
+function hasNonDemoMainAdmin(targetDb: CloudDatabase): boolean {
+  return Object.values(targetDb.users || {}).some(
+    u => !u.isDemo && (!!u.isMainAdmin || u.role === 'main_admin')
+  );
 }
 
-// Seed dedicated Demo Showcase User for Landing Page visitors
-const demoEmail = 'demo@forecasterpro.com';
-let demoUser = Object.values(db.users).find(u => u.email.toLowerCase() === demoEmail.toLowerCase());
-if (!demoUser) {
+function provisionInitialAdministrator(
+  targetDb: CloudDatabase,
+  rawEmail?: string,
+  rawPassword?: string
+): { provisioned: boolean; reason?: string; adminUserId?: string } {
+  if (!targetDb.users) targetDb.users = {};
+
+  // Allow initial provisioning ONLY when zero non-demo administrators exist
+  if (hasNonDemoMainAdmin(targetDb)) {
+    return {
+      provisioned: false,
+      reason: 'An administrator account already exists.'
+    };
+  }
+
+  const cleanEmail = (rawEmail || '').trim().toLowerCase();
+  const secret = rawPassword ? rawPassword.trim() : '';
+
+  if (!cleanEmail || !secret) {
+    return {
+      provisioned: false,
+      reason: 'INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD must be configured to provision an initial administrator.'
+    };
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(cleanEmail)) {
+    return {
+      provisioned: false,
+      reason: 'INITIAL_ADMIN_EMAIL must be a valid email address.'
+    };
+  }
+
+  const pwdValidation = validateStrongPassword(secret);
+  if (secret.length < 10 || !pwdValidation.valid) {
+    return {
+      provisioned: false,
+      reason: 'INITIAL_ADMIN_PASSWORD must be at least 10 characters and meet strong complexity requirements (uppercase, lowercase, number, and symbol).'
+    };
+  }
+
+  // Never hijack or escalate an existing non-admin account sharing the configured email
+  const collidingUser = Object.values(targetDb.users).find(
+    u => u.email.toLowerCase() === cleanEmail
+  );
+  if (collidingUser) {
+    return {
+      provisioned: false,
+      reason: 'Cannot provision initial administrator: configured email belongs to an existing account.'
+    };
+  }
+
   const salt = crypto.randomBytes(16).toString('hex');
   const user: UserRecord = {
+    id: 'usr_main_admin_' + crypto.randomBytes(6).toString('hex'),
+    name: 'System Administrator',
+    email: cleanEmail,
+    passwordHash: hashPassword(secret, salt),
+    salt,
+    tier: 'Master Admin Suite',
+    role: 'main_admin',
+    isPrimary: true,
+    isMainAdmin: true,
+    status: 'active',
+    vaultId: 'shared-main-vault',
+    mustChangePassword: true,
+    createdAt: new Date().toISOString(),
+    lastLogin: ''
+  };
+  targetDb.users[user.id] = user;
+  return {
+    provisioned: true,
+    adminUserId: user.id
+  };
+}
+
+function provisionDemoUser(
+  targetDb: CloudDatabase,
+  options: { enabled: boolean; email?: string; password?: string }
+): { provisioned: boolean; skipped?: boolean; reason?: string } {
+  if (!options.enabled) {
+    return { provisioned: false, skipped: true, reason: 'Demo mode disabled.' };
+  }
+  if (!targetDb.users) targetDb.users = {};
+
+  const cleanEmail = (options.email || 'demo@forecasterpro.com').trim().toLowerCase();
+  const existingByEmail = Object.values(targetDb.users).find(
+    u => u.email.toLowerCase() === cleanEmail
+  );
+
+  // Never overwrite or hijack a legitimate non-demo account
+  if (existingByEmail && !existingByEmail.isDemo) {
+    return {
+      provisioned: false,
+      skipped: true,
+      reason: 'Refusing to overwrite an existing non-demo user account.'
+    };
+  }
+
+  const existingDemo = existingByEmail || targetDb.users['usr_demo_showcase'];
+  if (existingDemo && existingDemo.isDemo) {
+    // Enforce non-owner confinement without resetting existing credentials
+    existingDemo.isDemo = true;
+    existingDemo.isMainAdmin = false;
+    existingDemo.isPrimary = false;
+    if (existingDemo.role === 'owner' || existingDemo.role === 'main_admin') {
+      existingDemo.role = 'manager';
+    }
+    existingDemo.vaultId = 'demo-showcase-vault';
+    existingDemo.name = 'Demo Showcase Explorer';
+    return { provisioned: false, reason: 'Existing demo account verified.' };
+  }
+
+  const explicitPass = options.password ? options.password.trim() : '';
+  if (explicitPass) {
+    const pwdCheck = validateStrongPassword(explicitPass);
+    if (explicitPass.length < 10 || !pwdCheck.valid) {
+      return {
+        provisioned: false,
+        skipped: true,
+        reason: 'DEMO_USER_PASSWORD must be at least 10 characters and meet strong password complexity requirements.'
+      };
+    }
+  }
+
+  // Generate unguessable high-entropy secret when DEMO_USER_PASSWORD is not explicitly set
+  const demoSecret = explicitPass || `${crypto.randomBytes(32).toString('hex')}!Aa1`;
+  const salt = crypto.randomBytes(16).toString('hex');
+  const demoUser: UserRecord = {
     id: 'usr_demo_showcase',
     name: 'Demo Showcase Explorer',
-    email: demoEmail,
-    passwordHash: hashPassword('DemoPassword123!', salt),
+    email: cleanEmail,
+    passwordHash: hashPassword(demoSecret, salt),
     salt,
     tier: 'Interactive Demo Suite',
     role: 'manager',
-    isPrimary: true,
+    isPrimary: false,
     isDemo: true,
     isMainAdmin: false,
     status: 'active',
     vaultId: 'demo-showcase-vault',
     mustChangePassword: false,
     createdAt: new Date().toISOString(),
-    lastLogin: new Date().toISOString()
+    lastLogin: ''
   };
-  db.users[user.id] = user;
-} else {
-  demoUser.isDemo = true;
-  demoUser.isMainAdmin = false;
-  demoUser.vaultId = 'demo-showcase-vault';
-  demoUser.name = 'Demo Showcase Explorer';
+  targetDb.users[demoUser.id] = demoUser;
+  return { provisioned: true };
+}
+
+const adminProvisionResult = provisionInitialAdministrator(
+  db,
+  process.env.INITIAL_ADMIN_EMAIL,
+  process.env.INITIAL_ADMIN_PASSWORD
+);
+if (adminProvisionResult.provisioned) {
+  startupStructuralChanged = true;
+  console.log('[Security] Initial administrator account provisioned securely.');
+} else if (!hasNonDemoMainAdmin(db) && adminProvisionResult.reason) {
+  console.warn(`[Security] Administrator bootstrap skipped: ${adminProvisionResult.reason}`);
+}
+
+const demoProvisionResult = provisionDemoUser(db, {
+  enabled: isDemoModeEnabled(),
+  email: process.env.DEMO_USER_EMAIL,
+  password: process.env.DEMO_USER_PASSWORD
+});
+if (demoProvisionResult.provisioned) {
+  startupStructuralChanged = true;
+  console.log('[Security] Demo showcase account provisioned in isolated demo vault.');
+} else if (demoProvisionResult.skipped && isDemoModeEnabled() && demoProvisionResult.reason) {
+  console.warn(`[Security] Demo account provisioning skipped: ${demoProvisionResult.reason}`);
 }
 
 if (!db.auditLog) db.auditLog = [];
@@ -816,13 +987,23 @@ function logAdminAction(adminEmail: string, action: string, category: AdminAudit
   return entry;
 }
 
-// Migrate any existing users without role or vaultId, and scrub legacy plaintext temp passwords
+// Normalize user roles and vault assignments without hardcoded account IDs or env escalation
 Object.values(db.users).forEach(u => {
   if (u.temporaryPassword !== undefined) {
     delete u.temporaryPassword;
     startupStructuralChanged = true;
   }
-  if (u.isMainAdmin || u.role === 'main_admin' || u.id === 'usr_peter_badir' || (defaultEmail && u.email.toLowerCase() === defaultEmail)) {
+  if (u.isDemo) {
+    u.isMainAdmin = false;
+    u.isPrimary = false;
+    if (u.role === 'owner' || u.role === 'main_admin') {
+      u.role = 'manager';
+    }
+    if (!u.vaultId) {
+      u.vaultId = 'demo-showcase-vault';
+      startupStructuralChanged = true;
+    }
+  } else if (u.isMainAdmin || u.role === 'main_admin') {
     if (u.role !== 'main_admin' || !u.isMainAdmin) startupStructuralChanged = true;
     u.role = 'main_admin';
     u.isMainAdmin = true;
@@ -835,7 +1016,7 @@ Object.values(db.users).forEach(u => {
     if (u.parentId) {
       const parent = (db.users || {})[u.parentId];
       u.vaultId = parent?.vaultId || 'shared-main-vault';
-    } else if (u.isMainAdmin || u.role === 'main_admin' || u.id === 'usr_peter_badir') {
+    } else if (u.isMainAdmin || u.role === 'main_admin') {
       u.vaultId = 'shared-main-vault';
     } else {
       u.vaultId = 'vault_' + u.id;
@@ -858,189 +1039,191 @@ Object.values(db.users).forEach(u => {
   }
 });
 
-// 1. Dedicated Demo Showcase Vault (Exclusively for Landing Page Demo Visitors)
+// 1. Dedicated Demo Showcase Vault (Seeded only when ENABLE_DEMO_MODE=true)
 const DEMO_VAULT_ID = 'demo-showcase-vault';
-const existingDemoVault = db.vaults[DEMO_VAULT_ID];
-if (!existingDemoVault) {
-  startupStructuralChanged = true;
+if (isDemoModeEnabled()) {
+  const existingDemoVault = db.vaults[DEMO_VAULT_ID];
+  if (!existingDemoVault) {
+    startupStructuralChanged = true;
+  }
+  db.vaults[DEMO_VAULT_ID] = {
+    vaultId: DEMO_VAULT_ID,
+    updatedAt: existingDemoVault?.updatedAt || new Date().toISOString(),
+    transactions: [
+      { id: 'tx_demo_1', date: '2026-10-01', description: 'Direct Deposit Monthly Salary (Demo)', category: 'Salary', type: 'income', amount: 3100.00, accountId: 'acc_demo_cib' },
+      { id: 'tx_demo_2', date: '2026-10-02', description: 'Apartment Premium Rental Rent (Demo)', category: 'Rent', type: 'expense', amount: 800.00, accountId: 'acc_demo_cib' },
+      { id: 'tx_demo_3', date: '2026-10-04', description: 'UI/UX Freelance App Project (Demo)', category: 'Freelance', type: 'income', amount: 400.00, accountId: 'acc_demo_wallet' },
+      { id: 'tx_demo_4', date: '2026-10-05', description: 'Monthly Power Utility Bills (Demo)', category: 'Utilities', type: 'expense', amount: 150.00, accountId: 'acc_demo_cash' },
+      { id: 'exp_mnt_mnt_toyota_40k', date: '2026-10-15', category: 'Transportation', subcategory: 'Vehicle Maintenance', icon: '🚗', amount: 1300.00, description: 'Vehicle Maintenance: Toyota Corolla (ABC 1234) — 40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs', type: 'expense', accountId: 'acc_demo_cib', refType: 'maintenance', refId: 'mnt_toyota_40k' },
+      { id: 'exp_fuel_fuel_toyota_1', date: '2026-10-22', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 595.00, description: 'Vehicle Fuel: Toyota Corolla (ABC 1234) — 42.5L (Full tank - Octane 95)', type: 'expense', accountId: 'acc_demo_cib', refType: 'fuel', refId: 'fuel_toyota_1' },
+      { id: 'exp_fuel_fuel_elantra_1', date: '2026-10-25', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 560.00, description: 'Vehicle Fuel: Hyundai Elantra (XYZ 9876) — 40L (Weekly commute refill)', type: 'expense', accountId: 'acc_demo_cib', refType: 'fuel', refId: 'fuel_elantra_1' },
+      { id: 'exp_fuel_fuel_toyota_2', date: '2026-10-30', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 532.00, description: 'Vehicle Fuel: Toyota Corolla (ABC 1234) — 38L (Highway & City driving fill-up)', type: 'expense', accountId: 'acc_demo_cash', refType: 'fuel', refId: 'fuel_toyota_2' }
+    ],
+    accounts: [
+      { id: 'acc_demo_cash', type: 'cash', label: '💵 Cash Wallet (Demo)', initialBalance: 1500, createdAt: new Date().toISOString() },
+      { id: 'acc_demo_cib', type: 'card', label: '💳 CIB Debit Card (Demo)', network: 'Visa', mode: 'Debit', bank: 'Commercial International Bank (CIB)', initialBalance: 12000, createdAt: new Date().toISOString() },
+      { id: 'acc_demo_wallet', type: 'wallet', label: '📱 Vodafone Cash (Demo)', kind: 'Telecom', provider: 'Vodafone Cash', initialBalance: 2500, createdAt: new Date().toISOString() }
+    ],
+    accountTransfers: [],
+    stockData: [
+      { id: 'stk_demo_1', name: 'Olive Oil Extra Virgin', category: 'Groceries', currentStock: 2, minStock: 3, unit: 'Bottle', unitPrice: 180, dailyDepletion: 0.1, expiryDate: '2027-01-01' },
+      { id: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 5, unit: 'bottle', price: 650, threshold: 2, lifespan: 10000, sku: 'OIL-SYN-5W30', consumptionLogs: [] },
+      { id: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 4, unit: 'pcs', price: 200, threshold: 1, lifespan: 10000, sku: 'FLT-OEM-123', consumptionLogs: [] },
+      { id: 'part_brake_pads', name: 'Front Ceramic Brake Pads', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 2, unit: 'set', price: 850, threshold: 1, lifespan: 40000, sku: 'BRK-CER-F', consumptionLogs: [] }
+    ],
+    pharmacyData: [
+      {
+        id: 'phm_demo_omega',
+        name: 'Omega-3 Fish Oil 1000mg',
+        category: 'Vitamins & Supplements',
+        currentStock: 60,
+        quantity: 60,
+        minStock: 10,
+        unit: 'capsules',
+        price: 320,
+        unitPrice: 320,
+        threshold: 10,
+        doseQty: 1,
+        dosage: '1 capsule daily after breakfast',
+        schedules: ['after_breakfast'],
+        reason: 'Cardiovascular & cognitive health',
+        prodDate: '2026-09-01',
+        expDate: '2027-12-31',
+        accountId: 'acc_demo_cib',
+        consumptionLogs: []
+      },
+      {
+        id: 'phm_demo_panadol',
+        name: 'Panadol Extra 500mg',
+        category: 'Analgesics & Antipyretics',
+        currentStock: 24,
+        quantity: 24,
+        minStock: 6,
+        unit: 'tablets',
+        price: 45,
+        unitPrice: 45,
+        threshold: 6,
+        doseQty: 1,
+        dosage: '1 tablet after breakfast and after dinner',
+        schedules: ['after_breakfast', 'after_dinner'],
+        reason: 'Mild headache & joint ache relief',
+        prodDate: '2026-08-15',
+        expDate: '2027-06-30',
+        accountId: 'acc_demo_cash',
+        consumptionLogs: []
+      },
+      {
+        id: 'phm_demo_magnesium',
+        name: 'Magnesium Glycinate 400mg',
+        category: 'Minerals & Sleep',
+        currentStock: 30,
+        quantity: 30,
+        minStock: 5,
+        unit: 'tablets',
+        price: 280,
+        unitPrice: 280,
+        threshold: 5,
+        doseQty: 1,
+        dosage: '1 tablet after dinner',
+        schedules: ['after_dinner'],
+        reason: 'Muscle relaxation & restorative sleep',
+        prodDate: '2026-09-10',
+        expDate: '2028-01-31',
+        accountId: 'acc_demo_cib',
+        consumptionLogs: []
+      },
+      {
+        id: 'phm_demo_catafast',
+        name: 'Catafast 50mg',
+        category: 'Analgesics & Anti-inflammatory',
+        currentStock: 10,
+        quantity: 10,
+        minStock: 3,
+        unit: 'sachets',
+        price: 65,
+        unitPrice: 65,
+        threshold: 3,
+        doseQty: 1,
+        dosage: '1 sachet dissolved in water after lunch',
+        schedules: ['after_lunch'],
+        reason: 'Acute joint pain & migraine relief',
+        prodDate: '2026-07-01',
+        expDate: '2027-11-30',
+        accountId: 'acc_demo_cash',
+        consumptionLogs: []
+      },
+      {
+        id: 'phm_demo_neurobion',
+        name: 'Neurobion B12 Forte',
+        category: 'Vitamins & Injections',
+        currentStock: 6,
+        quantity: 6,
+        minStock: 2,
+        unit: 'ampules',
+        price: 85,
+        unitPrice: 85,
+        threshold: 2,
+        doseQty: 1,
+        dosage: '1 ampule IM injection weekly',
+        schedules: [],
+        reason: 'Peripheral nerve revitalization',
+        prodDate: '2026-08-01',
+        expDate: '2027-10-31',
+        accountId: 'acc_demo_cib',
+        consumptionLogs: []
+      },
+      {
+        id: 'phm_demo_dolfen',
+        name: 'Dolfen 25mg',
+        category: 'Antipyretic & Analgesic',
+        currentStock: 5,
+        quantity: 5,
+        minStock: 2,
+        unit: 'suppositories',
+        price: 35,
+        unitPrice: 35,
+        threshold: 2,
+        doseQty: 1,
+        dosage: '1 suppository before bedtime as needed',
+        schedules: ['before_bed'],
+        reason: 'Rapid fever reduction',
+        prodDate: '2026-06-01',
+        expDate: '2027-08-31',
+        accountId: 'acc_demo_cash',
+        consumptionLogs: []
+      }
+    ],
+    vehicles: [
+      { id: 'veh_toyota_corolla', make: 'Toyota', model: 'Corolla', year: 2024, plate: 'ABC 1234', odometer: 45250, nextMaintenanceOdometer: 50000, createdAt: '2026-08-01T10:00:00.000Z' },
+      { id: 'veh_hyundai_elantra', make: 'Hyundai', model: 'Elantra', year: 2023, plate: 'XYZ 9876', odometer: 28400, nextMaintenanceOdometer: 30000, createdAt: '2026-08-05T12:00:00.000Z' }
+    ],
+    fuels: [
+      { id: 'fuel_toyota_1', vehicleId: 'veh_toyota_corolla', dateTime: '2026-10-22T15:30', odometer: 44600, liters: 42.5, cost: 595, accountId: 'acc_demo_cib', notes: 'Full tank - Octane 95', transportationType: 'Fuel' },
+      { id: 'fuel_elantra_1', vehicleId: 'veh_hyundai_elantra', dateTime: '2026-10-25T09:15', odometer: 28400, liters: 40, cost: 560, accountId: 'acc_demo_cib', notes: 'Weekly commute refill', transportationType: 'Fuel' },
+      { id: 'fuel_toyota_2', vehicleId: 'veh_toyota_corolla', dateTime: '2026-10-30T11:45', odometer: 45250, liters: 38, cost: 532, accountId: 'acc_demo_cash', notes: 'Highway & City driving fill-up', transportationType: 'Fuel' }
+    ],
+    maint: [
+      {
+        id: 'mnt_toyota_40k',
+        vehicleId: 'veh_toyota_corolla',
+        date: '2026-10-15',
+        odometer: 40000,
+        nextMaintenanceOdometer: 50000,
+        description: '40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs',
+        laborCost: 450,
+        partsCost: 850,
+        totalCost: 1300,
+        parts: [
+          { partId: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', quantity: 1, unit: 'bottle', unitCost: 650, lifespan: 10000 },
+          { id: 'part_oil_filter', partId: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', quantity: 1, unit: 'pcs', unitCost: 200, lifespan: 10000 }
+        ],
+        accountId: 'acc_demo_cib',
+        txnId: 'exp_mnt_mnt_toyota_40k'
+      }
+    ],
+    budgetLimits: { income: 3500, expense: 2000 }
+  };
 }
-db.vaults[DEMO_VAULT_ID] = {
-  vaultId: DEMO_VAULT_ID,
-  updatedAt: existingDemoVault?.updatedAt || new Date().toISOString(),
-  transactions: [
-    { id: 'tx_demo_1', date: '2026-10-01', description: 'Direct Deposit Monthly Salary (Demo)', category: 'Salary', type: 'income', amount: 3100.00, accountId: 'acc_demo_cib' },
-    { id: 'tx_demo_2', date: '2026-10-02', description: 'Apartment Premium Rental Rent (Demo)', category: 'Rent', type: 'expense', amount: 800.00, accountId: 'acc_demo_cib' },
-    { id: 'tx_demo_3', date: '2026-10-04', description: 'UI/UX Freelance App Project (Demo)', category: 'Freelance', type: 'income', amount: 400.00, accountId: 'acc_demo_wallet' },
-    { id: 'tx_demo_4', date: '2026-10-05', description: 'Monthly Power Utility Bills (Demo)', category: 'Utilities', type: 'expense', amount: 150.00, accountId: 'acc_demo_cash' },
-    { id: 'exp_mnt_mnt_toyota_40k', date: '2026-10-15', category: 'Transportation', subcategory: 'Vehicle Maintenance', icon: '🚗', amount: 1300.00, description: 'Vehicle Maintenance: Toyota Corolla (ABC 1234) — 40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs', type: 'expense', accountId: 'acc_demo_cib', refType: 'maintenance', refId: 'mnt_toyota_40k' },
-    { id: 'exp_fuel_fuel_toyota_1', date: '2026-10-22', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 595.00, description: 'Vehicle Fuel: Toyota Corolla (ABC 1234) — 42.5L (Full tank - Octane 95)', type: 'expense', accountId: 'acc_demo_cib', refType: 'fuel', refId: 'fuel_toyota_1' },
-    { id: 'exp_fuel_fuel_elantra_1', date: '2026-10-25', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 560.00, description: 'Vehicle Fuel: Hyundai Elantra (XYZ 9876) — 40L (Weekly commute refill)', type: 'expense', accountId: 'acc_demo_cib', refType: 'fuel', refId: 'fuel_elantra_1' },
-    { id: 'exp_fuel_fuel_toyota_2', date: '2026-10-30', category: 'Transportation', subcategory: 'Fuel & Petrol', icon: '🚗', amount: 532.00, description: 'Vehicle Fuel: Toyota Corolla (ABC 1234) — 38L (Highway & City driving fill-up)', type: 'expense', accountId: 'acc_demo_cash', refType: 'fuel', refId: 'fuel_toyota_2' }
-  ],
-  accounts: [
-    { id: 'acc_demo_cash', type: 'cash', label: '💵 Cash Wallet (Demo)', initialBalance: 1500, createdAt: new Date().toISOString() },
-    { id: 'acc_demo_cib', type: 'card', label: '💳 CIB Debit Card (Demo)', network: 'Visa', mode: 'Debit', bank: 'Commercial International Bank (CIB)', initialBalance: 12000, createdAt: new Date().toISOString() },
-    { id: 'acc_demo_wallet', type: 'wallet', label: '📱 Vodafone Cash (Demo)', kind: 'Telecom', provider: 'Vodafone Cash', initialBalance: 2500, createdAt: new Date().toISOString() }
-  ],
-  accountTransfers: [],
-  stockData: [
-    { id: 'stk_demo_1', name: 'Olive Oil Extra Virgin', category: 'Groceries', currentStock: 2, minStock: 3, unit: 'Bottle', unitPrice: 180, dailyDepletion: 0.1, expiryDate: '2027-01-01' },
-    { id: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 5, unit: 'bottle', price: 650, threshold: 2, lifespan: 10000, sku: 'OIL-SYN-5W30', consumptionLogs: [] },
-    { id: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 4, unit: 'pcs', price: 200, threshold: 1, lifespan: 10000, sku: 'FLT-OEM-123', consumptionLogs: [] },
-    { id: 'part_brake_pads', name: 'Front Ceramic Brake Pads', itemType: 'vehicle-spare-part', category: 'Spare Parts', targetVehicleOrUnit: 'Toyota Corolla (ABC 1234)', quantity: 2, unit: 'set', price: 850, threshold: 1, lifespan: 40000, sku: 'BRK-CER-F', consumptionLogs: [] }
-  ],
-  pharmacyData: [
-    {
-      id: 'phm_demo_omega',
-      name: 'Omega-3 Fish Oil 1000mg',
-      category: 'Vitamins & Supplements',
-      currentStock: 60,
-      quantity: 60,
-      minStock: 10,
-      unit: 'capsules',
-      price: 320,
-      unitPrice: 320,
-      threshold: 10,
-      doseQty: 1,
-      dosage: '1 capsule daily after breakfast',
-      schedules: ['after_breakfast'],
-      reason: 'Cardiovascular & cognitive health',
-      prodDate: '2026-09-01',
-      expDate: '2027-12-31',
-      accountId: 'acc_demo_cib',
-      consumptionLogs: []
-    },
-    {
-      id: 'phm_demo_panadol',
-      name: 'Panadol Extra 500mg',
-      category: 'Analgesics & Antipyretics',
-      currentStock: 24,
-      quantity: 24,
-      minStock: 6,
-      unit: 'tablets',
-      price: 45,
-      unitPrice: 45,
-      threshold: 6,
-      doseQty: 1,
-      dosage: '1 tablet after breakfast and after dinner',
-      schedules: ['after_breakfast', 'after_dinner'],
-      reason: 'Mild headache & joint ache relief',
-      prodDate: '2026-08-15',
-      expDate: '2027-06-30',
-      accountId: 'acc_demo_cash',
-      consumptionLogs: []
-    },
-    {
-      id: 'phm_demo_magnesium',
-      name: 'Magnesium Glycinate 400mg',
-      category: 'Minerals & Sleep',
-      currentStock: 30,
-      quantity: 30,
-      minStock: 5,
-      unit: 'tablets',
-      price: 280,
-      unitPrice: 280,
-      threshold: 5,
-      doseQty: 1,
-      dosage: '1 tablet after dinner',
-      schedules: ['after_dinner'],
-      reason: 'Muscle relaxation & restorative sleep',
-      prodDate: '2026-09-10',
-      expDate: '2028-01-31',
-      accountId: 'acc_demo_cib',
-      consumptionLogs: []
-    },
-    {
-      id: 'phm_demo_catafast',
-      name: 'Catafast 50mg',
-      category: 'Analgesics & Anti-inflammatory',
-      currentStock: 10,
-      quantity: 10,
-      minStock: 3,
-      unit: 'sachets',
-      price: 65,
-      unitPrice: 65,
-      threshold: 3,
-      doseQty: 1,
-      dosage: '1 sachet dissolved in water after lunch',
-      schedules: ['after_lunch'],
-      reason: 'Acute joint pain & migraine relief',
-      prodDate: '2026-07-01',
-      expDate: '2027-11-30',
-      accountId: 'acc_demo_cash',
-      consumptionLogs: []
-    },
-    {
-      id: 'phm_demo_neurobion',
-      name: 'Neurobion B12 Forte',
-      category: 'Vitamins & Injections',
-      currentStock: 6,
-      quantity: 6,
-      minStock: 2,
-      unit: 'ampules',
-      price: 85,
-      unitPrice: 85,
-      threshold: 2,
-      doseQty: 1,
-      dosage: '1 ampule IM injection weekly',
-      schedules: [],
-      reason: 'Peripheral nerve revitalization',
-      prodDate: '2026-08-01',
-      expDate: '2027-10-31',
-      accountId: 'acc_demo_cib',
-      consumptionLogs: []
-    },
-    {
-      id: 'phm_demo_dolfen',
-      name: 'Dolfen 25mg',
-      category: 'Antipyretic & Analgesic',
-      currentStock: 5,
-      quantity: 5,
-      minStock: 2,
-      unit: 'suppositories',
-      price: 35,
-      unitPrice: 35,
-      threshold: 2,
-      doseQty: 1,
-      dosage: '1 suppository before bedtime as needed',
-      schedules: ['before_bed'],
-      reason: 'Rapid fever reduction',
-      prodDate: '2026-06-01',
-      expDate: '2027-08-31',
-      accountId: 'acc_demo_cash',
-      consumptionLogs: []
-    }
-  ],
-  vehicles: [
-    { id: 'veh_toyota_corolla', make: 'Toyota', model: 'Corolla', year: 2024, plate: 'ABC 1234', odometer: 45250, nextMaintenanceOdometer: 50000, createdAt: '2026-08-01T10:00:00.000Z' },
-    { id: 'veh_hyundai_elantra', make: 'Hyundai', model: 'Elantra', year: 2023, plate: 'XYZ 9876', odometer: 28400, nextMaintenanceOdometer: 30000, createdAt: '2026-08-05T12:00:00.000Z' }
-  ],
-  fuels: [
-    { id: 'fuel_toyota_1', vehicleId: 'veh_toyota_corolla', dateTime: '2026-10-22T15:30', odometer: 44600, liters: 42.5, cost: 595, accountId: 'acc_demo_cib', notes: 'Full tank - Octane 95', transportationType: 'Fuel' },
-    { id: 'fuel_elantra_1', vehicleId: 'veh_hyundai_elantra', dateTime: '2026-10-25T09:15', odometer: 28400, liters: 40, cost: 560, accountId: 'acc_demo_cib', notes: 'Weekly commute refill', transportationType: 'Fuel' },
-    { id: 'fuel_toyota_2', vehicleId: 'veh_toyota_corolla', dateTime: '2026-10-30T11:45', odometer: 45250, liters: 38, cost: 532, accountId: 'acc_demo_cash', notes: 'Highway & City driving fill-up', transportationType: 'Fuel' }
-  ],
-  maint: [
-    {
-      id: 'mnt_toyota_40k',
-      vehicleId: 'veh_toyota_corolla',
-      date: '2026-10-15',
-      odometer: 40000,
-      nextMaintenanceOdometer: 50000,
-      description: '40,000 km Periodic Service: Synthetic Engine Oil, Filter & Spark Plugs',
-      laborCost: 450,
-      partsCost: 850,
-      totalCost: 1300,
-      parts: [
-        { partId: 'part_engine_oil', name: 'Synthetic Motor Oil 5W-30', quantity: 1, unit: 'bottle', unitCost: 650, lifespan: 10000 },
-        { partId: 'part_oil_filter', name: 'OEM Oil Filter Cartridge', quantity: 1, unit: 'pcs', unitCost: 200, lifespan: 10000 }
-      ],
-      accountId: 'acc_demo_cib',
-      txnId: 'exp_mnt_mnt_toyota_40k'
-    }
-  ],
-  budgetLimits: { income: 3500, expense: 2000 }
-};
 
 // 2. Default & Master Administrator Vault (shared-main-vault) for Peter W. Badir (100% Clean First-Time Use Account)
 const DEFAULT_VAULT_ID = 'shared-main-vault';
@@ -1264,6 +1447,7 @@ function resolveTokenUser(token: string): UserRecord | null {
   if (!userId) return null;
   const user = (db.users || {})[userId];
   if (!user || user.status === 'suspended') return null;
+  if (user.isDemo && !isDemoModeEnabled()) return null;
   return user;
 }
 
@@ -1294,10 +1478,18 @@ function requireVaultAccess(
   const user = getAuthenticatedUser(req, res);
   if (!user) return null;
 
-  // Demo user confinement: demo accounts are strictly restricted to demo-showcase-vault
+  // Demo user confinement: demo accounts are strictly restricted to non-owner access within demo-showcase-vault
   if (user.isDemo) {
+    if (!isDemoModeEnabled()) {
+      res.status(403).json({ ok: false, error: 'Access forbidden: Demo mode is disabled in this environment.' });
+      return null;
+    }
     if (targetVaultId !== 'demo-showcase-vault') {
       res.status(403).json({ ok: false, error: 'Access forbidden: Demo accounts cannot access production workspaces.' });
+      return null;
+    }
+    if (requiredPermission === 'manage' || requiredPermission === 'restore') {
+      res.status(403).json({ ok: false, error: 'Access forbidden: Demo accounts do not have owner management or restoration privileges.' });
       return null;
     }
   }
@@ -1306,6 +1498,7 @@ function requireVaultAccess(
   const userVault = (user.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
 
   const isMaster = (!!user.isMainAdmin || user.role === 'main_admin') && !user.isDemo;
+  const isOwnerPrivilege = !user.isDemo && (user.role === 'owner' || !!user.isPrimary);
   if (!isMaster && userVault !== cleanTarget) {
     res.status(403).json({ ok: false, error: 'Access forbidden: You do not have permission to access this data vault.' });
     return null;
@@ -1320,7 +1513,7 @@ function requireVaultAccess(
 
   // 2. 'restore' permission: Only workspace owners and system master admins can restore backups
   if (requiredPermission === 'restore') {
-    if (user.role !== 'owner' && !user.isPrimary && !isMaster) {
+    if (!isOwnerPrivilege && !isMaster) {
       res.status(403).json({ ok: false, error: 'Access forbidden: Only workspace owners can restore database backups.' });
       return null;
     }
@@ -1328,7 +1521,7 @@ function requireVaultAccess(
 
   // 3. 'export' permission: Only workspace owners and managers can export organization backups/reports
   if (requiredPermission === 'export') {
-    if (user.role !== 'owner' && user.role !== 'manager' && !user.isPrimary && !isMaster) {
+    if (!isOwnerPrivilege && user.role !== 'manager' && !isMaster) {
       res.status(403).json({ ok: false, error: 'Access forbidden: Member and Viewer accounts cannot export organization data.' });
       return null;
     }
@@ -1336,7 +1529,7 @@ function requireVaultAccess(
 
   // 4. 'manage' permission: Only workspace owners and master admins can delete payment accounts or alter org structure
   if (requiredPermission === 'manage') {
-    if (user.role !== 'owner' && !user.isPrimary && !isMaster) {
+    if (!isOwnerPrivilege && !isMaster) {
       res.status(403).json({ ok: false, error: 'Access forbidden: Only workspace owners are authorized to perform this administrative operation.' });
       return null;
     }
@@ -1411,60 +1604,91 @@ async function startServer() {
 
   // Strict Database, Backup, Environment & Source Protection Guard (runs before Vite/static middlewares)
   app.use((req, res, next) => {
-    let decodedPath = req.path || '/';
-    try {
-      decodedPath = decodeURIComponent(decodedPath);
-    } catch {
-      return res.status(400).json({ ok: false, error: 'Malformed request path.' });
-    }
-    const normalizedPath = path.posix.normalize(decodedPath.replace(/\\/g, '/')).toLowerCase();
-    const isViteInternal =
-      normalizedPath.startsWith('/@vite/') ||
-      normalizedPath.startsWith('/@react-refresh') ||
-      normalizedPath.startsWith('/@id/') ||
-      normalizedPath.startsWith('/node_modules/');
-    const isFrontendSrcModule =
-      normalizedPath.startsWith('/src/') && /\.(ts|tsx|js|jsx|css|mjs)$/i.test(normalizedPath);
-    const isProtectedFsPath =
-      normalizedPath.includes('/@fs/') && (
-        normalizedPath.includes('/data/') ||
-        normalizedPath.includes('/backups/') ||
-        normalizedPath.includes('/exports/') ||
-        normalizedPath.includes('/tmp/') ||
+    const checkIsProtectedCandidate = (rawSegment: string): boolean => {
+      const slashNorm = rawSegment.replace(/\\/g, '/');
+      if (/(^|\/)\.\.(\/|$)/.test(slashNorm)) {
+        return true;
+      }
+      const normalizedPath = path.posix.normalize(slashNorm).toLowerCase();
+      const isViteInternal =
+        normalizedPath.startsWith('/@vite/') ||
+        normalizedPath.startsWith('/@react-refresh') ||
+        normalizedPath.startsWith('/@id/') ||
+        normalizedPath.startsWith('/node_modules/');
+      const isFrontendSrcModule =
+        normalizedPath.startsWith('/src/') && /\.(ts|tsx|js|jsx|css|mjs)$/i.test(normalizedPath);
+      const isProtectedFsPath =
+        normalizedPath.includes('/@fs/') && (
+          normalizedPath.includes('/data/') ||
+          normalizedPath.includes('/backups/') ||
+          normalizedPath.includes('/exports/') ||
+          normalizedPath.includes('/tmp/') ||
+          normalizedPath.includes('/temp/') ||
+          normalizedPath.includes('/.env') ||
+          normalizedPath.includes('cloud-ledger-db') ||
+          normalizedPath.includes('/scripts/') ||
+          /\/(server\.ts|vite\.config\.ts|package\.json|tsconfig\.json)(\/|$)/i.test(normalizedPath)
+        );
+      const isBlockedServerTs =
+        /\.ts$/i.test(normalizedPath) &&
+        !isViteInternal &&
+        !isFrontendSrcModule;
+
+      return (
+        normalizedPath === '/data' ||
+        normalizedPath.startsWith('/data/') ||
+        normalizedPath === '/backups' ||
+        normalizedPath.startsWith('/backups/') ||
+        normalizedPath === '/exports' ||
+        normalizedPath.startsWith('/exports/') ||
+        normalizedPath === '/tmp' ||
+        normalizedPath.startsWith('/tmp/') ||
+        normalizedPath === '/temp' ||
+        normalizedPath.startsWith('/temp/') ||
+        normalizedPath === '/.git' ||
+        normalizedPath.startsWith('/.git/') ||
+        normalizedPath === '/.aistudio' ||
+        normalizedPath.startsWith('/.aistudio/') ||
         normalizedPath.includes('/.env') ||
         normalizedPath.includes('cloud-ledger-db') ||
-        normalizedPath.includes('/scripts/') ||
-        /\/(server\.ts|vite\.config\.ts|package\.json|tsconfig\.json)(\/|$)/i.test(normalizedPath)
+        normalizedPath.includes('session-store') ||
+        isProtectedFsPath ||
+        /\.(db|sqlite|sqlite3|bak|backup|dump|sql\.gz|tmp|secret|zip|tar\.gz|tgz|pem|key|p12|pfx)$/i.test(normalizedPath) ||
+        isBlockedServerTs ||
+        /^\/(server\.ts|package\.json|package-lock\.json|bun\.lock|tsconfig\.json|vite\.config\.ts|\.gitignore|metadata\.json)$/i.test(normalizedPath)
       );
-    const isBlockedServerTs =
-      /\.ts$/i.test(normalizedPath) &&
-      !isViteInternal &&
-      !isFrontendSrcModule;
-    const isProtectedPath =
-      normalizedPath === '/data' ||
-      normalizedPath.startsWith('/data/') ||
-      normalizedPath === '/backups' ||
-      normalizedPath.startsWith('/backups/') ||
-      normalizedPath === '/exports' ||
-      normalizedPath.startsWith('/exports/') ||
-      normalizedPath === '/tmp' ||
-      normalizedPath.startsWith('/tmp/') ||
-      normalizedPath === '/.git' ||
-      normalizedPath.startsWith('/.git/') ||
-      normalizedPath === '/.aistudio' ||
-      normalizedPath.startsWith('/.aistudio/') ||
-      normalizedPath.includes('/.env') ||
-      normalizedPath.includes('cloud-ledger-db') ||
-      isProtectedFsPath ||
-      /\.(db|sqlite|sqlite3|bak|backup|dump|tmp|zip|tar\.gz|tgz|pem|key|p12|pfx|secret)$/i.test(normalizedPath) ||
-      isBlockedServerTs ||
-      /^\/(server\.ts|package\.json|package-lock\.json|bun\.lock|tsconfig\.json|vite\.config\.ts|\.gitignore|metadata\.json)$/i.test(normalizedPath);
+    };
 
-    if (isProtectedPath) {
-      return res.status(403).json({
-        ok: false,
-        error: 'Access forbidden: Database snapshots, backups, and sensitive runtime files are not publicly accessible.'
-      });
+    const rawCandidates = [
+      req.path || '/',
+      (req.originalUrl || '/').split('?')[0]
+    ];
+
+    for (const initialCandidate of rawCandidates) {
+      let current = initialCandidate;
+      if (checkIsProtectedCandidate(current)) {
+        return res.status(403).json({
+          ok: false,
+          error: 'Access forbidden: Database snapshots, backups, and sensitive runtime files are not publicly accessible.'
+        });
+      }
+      // Iteratively URL-decode up to 5 passes to defeat double/multi-encoded bypasses
+      for (let pass = 0; pass < 5; pass++) {
+        let nextDecoded: string;
+        try {
+          nextDecoded = decodeURIComponent(current);
+        } catch {
+          return res.status(400).json({ ok: false, error: 'Malformed request path.' });
+        }
+        if (nextDecoded === current) break;
+        current = nextDecoded;
+        if (checkIsProtectedCandidate(current)) {
+          return res.status(403).json({
+            ok: false,
+            error: 'Access forbidden: Database snapshots, backups, and sensitive runtime files are not publicly accessible.'
+          });
+        }
+      }
     }
     next();
   });
@@ -1629,6 +1853,9 @@ async function startServer() {
       if (!user) {
         return res.status(401).json({ ok: false, error: 'Invalid email or password.' });
       }
+      if (user.isDemo && !isDemoModeEnabled()) {
+        return res.status(403).json({ ok: false, error: 'Demo access is disabled in this environment.' });
+      }
 
       // Check if account is temporarily locked
       if (user.lockoutUntil && Date.now() < user.lockoutUntil) {
@@ -1692,10 +1919,10 @@ async function startServer() {
         if (user.parentId) {
           const parent = (db.users || {})[user.parentId];
           user.vaultId = parent?.vaultId || 'shared-main-vault';
-        } else if (user.id === 'usr_peter_badir') {
+        } else if (!user.isDemo && (user.isMainAdmin || user.role === 'main_admin')) {
           user.vaultId = 'shared-main-vault';
         } else {
-          user.vaultId = 'vault_' + user.id;
+          user.vaultId = user.isDemo ? 'demo-showcase-vault' : 'vault_' + user.id;
         }
       }
 
@@ -1726,10 +1953,10 @@ async function startServer() {
           name: user.name,
           email: user.email,
           tier: user.tier,
-          role: user.role || (user.isPrimary ? 'owner' : 'member'),
+          role: user.isDemo && (user.role === 'owner' || user.role === 'main_admin') ? 'manager' : (user.role || (user.isPrimary ? 'owner' : 'member')),
           propertyRole: user.propertyRole || 'tenant',
           avatarUrl: user.avatarUrl || '',
-          isPrimary: !!user.isPrimary,
+          isPrimary: user.isDemo ? false : !!user.isPrimary,
           isMainAdmin: !user.isDemo && (!!user.isMainAdmin || user.role === 'main_admin'),
           isDemo: !!user.isDemo,
           parentId: user.parentId,
@@ -1744,13 +1971,21 @@ async function startServer() {
     }
   });
 
-  // Dedicated 1-Click Interactive Demo Login for Landing Page Visitors
+  // Dedicated 1-Click Interactive Demo Login for Landing Page Visitors (Requires ENABLE_DEMO_MODE=true)
   app.post('/api/auth/demo-login', (req, res) => {
     try {
+      if (!isDemoModeEnabled()) {
+        return res.status(403).json({ ok: false, error: 'Interactive demo access is disabled in this environment.' });
+      }
+
       const users = db.users || {};
-      const demoUser = Object.values(users).find(u => u.email.toLowerCase() === 'demo@forecasterpro.com') || users['usr_demo_showcase'];
-      if (!demoUser) {
-        return res.status(500).json({ ok: false, error: 'Demo showcase user not configured.' });
+      const configuredDemoEmail = (process.env.DEMO_USER_EMAIL || 'demo@forecasterpro.com').trim().toLowerCase();
+      const matchedByEmail = Object.values(users).find(u => u.isDemo && u.email.toLowerCase() === configuredDemoEmail);
+      const fallbackDemo = users['usr_demo_showcase'];
+      const demoUser = matchedByEmail || (fallbackDemo?.isDemo ? fallbackDemo : undefined);
+
+      if (!demoUser || !demoUser.isDemo || demoUser.status === 'suspended') {
+        return res.status(403).json({ ok: false, error: 'Demo showcase user is not enabled.' });
       }
 
       if (!db.tokens) db.tokens = {};
@@ -1778,10 +2013,10 @@ async function startServer() {
           name: demoUser.name,
           email: demoUser.email,
           tier: demoUser.tier,
-          role: demoUser.role,
+          role: demoUser.role === 'owner' || demoUser.role === 'main_admin' ? 'manager' : demoUser.role,
           propertyRole: 'both',
           avatarUrl: demoUser.avatarUrl || '',
-          isPrimary: true,
+          isPrimary: false,
           isMainAdmin: false,
           isDemo: true,
           vaultId: 'demo-showcase-vault',
@@ -1977,11 +2212,12 @@ async function startServer() {
           name: user.name,
           email: user.email,
           tier: user.tier,
-          role: user.role || (user.isPrimary ? 'owner' : 'member'),
+          role: user.isDemo && (user.role === 'owner' || user.role === 'main_admin') ? 'manager' : (user.role || (user.isPrimary ? 'owner' : 'member')),
           propertyRole: user.propertyRole || 'tenant',
           avatarUrl: user.avatarUrl || '',
-          isPrimary: !!user.isPrimary,
+          isPrimary: user.isDemo ? false : !!user.isPrimary,
           isMainAdmin: isMaster,
+          isDemo: !!user.isDemo,
           parentId: user.parentId,
           vaultId: user.vaultId,
           mustChangePassword: !!user.mustChangePassword,
@@ -2262,9 +2498,9 @@ async function startServer() {
           name: user.name,
           email: user.email,
           tier: user.tier,
-          role: user.role || (user.isPrimary ? 'owner' : 'member'),
-          isPrimary: !!user.isPrimary,
-          isMainAdmin: !!user.isMainAdmin || user.role === 'main_admin',
+          role: user.isDemo && (user.role === 'owner' || user.role === 'main_admin') ? 'manager' : (user.role || (user.isPrimary ? 'owner' : 'member')),
+          isPrimary: user.isDemo ? false : !!user.isPrimary,
+          isMainAdmin: !user.isDemo && (!!user.isMainAdmin || user.role === 'main_admin'),
           vaultId: user.vaultId,
           mustChangePassword: false,
           createdAt: user.createdAt
@@ -2387,11 +2623,12 @@ async function startServer() {
           name: user.name,
           email: user.email,
           tier: user.tier,
-          role: user.role,
+          role: user.isDemo && (user.role === 'owner' || user.role === 'main_admin') ? 'manager' : user.role,
           propertyRole: user.propertyRole || 'tenant',
           avatarUrl: user.avatarUrl || '',
-          isPrimary: user.isPrimary,
-          isMainAdmin: !!user.isMainAdmin || user.role === 'main_admin',
+          isPrimary: user.isDemo ? false : !!user.isPrimary,
+          isMainAdmin: !user.isDemo && (!!user.isMainAdmin || user.role === 'main_admin'),
+          isDemo: !!user.isDemo,
           parentId: user.parentId,
           vaultId: user.vaultId,
           mustChangePassword: !!user.mustChangePassword,
@@ -3422,6 +3659,43 @@ async function startServer() {
     return user;
   }
 
+  // Guarded initial administrator provisioning endpoint (fails closed once an administrator exists)
+  app.post('/api/admin/provision', (req, res) => {
+    try {
+      const caller = getAuthenticatedUser(req, res);
+      if (!caller) return;
+
+      if (caller.isDemo || (!caller.isMainAdmin && caller.role !== 'main_admin')) {
+        return res.status(403).json({
+          ok: false,
+          error: 'Access forbidden: Unauthorized users cannot provision administrator accounts.'
+        });
+      }
+
+      if (hasNonDemoMainAdmin(db)) {
+        return res.status(409).json({
+          ok: false,
+          error: 'Administrator provisioning is permanently disabled because an administrator account already exists.'
+        });
+      }
+
+      const { email, password } = req.body || {};
+      const result = provisionInitialAdministrator(db, email, password);
+      if (!result.provisioned) {
+        return res.status(400).json({ ok: false, error: result.reason || 'Administrator provisioning rejected.' });
+      }
+
+      saveDatabase(db);
+      return res.status(201).json({
+        ok: true,
+        message: 'Initial administrator account provisioned securely.',
+        adminUserId: result.adminUserId
+      });
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   // 1. Get complete Admin Dashboard data
   app.get('/api/admin/dashboard', (req, res) => {
     try {
@@ -3620,12 +3894,26 @@ async function startServer() {
       const { role, tier, status, newPassword, revokeSessions } = req.body || {};
 
       // Protection for Master Admin account
-      const isTargetMaster = !!targetUser.isMainAdmin || targetUser.role === 'main_admin' || targetUser.id === 'usr_peter_badir';
+      const isTargetMaster = !targetUser.isDemo && (!!targetUser.isMainAdmin || targetUser.role === 'main_admin');
       if (isTargetMaster && (status === 'suspended' || (role && role !== 'main_admin'))) {
         return res.status(403).json({ ok: false, error: 'The Master App Admin account cannot be suspended or demoted.' });
       }
 
-      if (role) targetUser.role = role;
+      if (role !== undefined && role !== null && role !== '') {
+        if (role === 'main_admin' && !isTargetMaster) {
+          return res.status(403).json({ ok: false, error: 'Promoting users to main_admin via user update is forbidden.' });
+        }
+        if (targetUser.isDemo && (role === 'owner' || role === 'main_admin')) {
+          return res.status(403).json({ ok: false, error: 'Demo accounts cannot be granted owner or main_admin privileges.' });
+        }
+        const allowedManageRoles: UserRole[] = ['owner', 'manager', 'member', 'viewer'];
+        if (!isTargetMaster && !allowedManageRoles.includes(role)) {
+          return res.status(400).json({ ok: false, error: 'Invalid role specified.' });
+        }
+        if (!isTargetMaster) {
+          targetUser.role = role;
+        }
+      }
       if (tier) targetUser.tier = tier;
       if (status) {
         targetUser.status = status;
@@ -3798,6 +4086,7 @@ async function startServer() {
     }
     res.json({
       ok: true,
+      demoModeEnabled: isDemoModeEnabled(),
       maintenance: db.systemConfig?.maintenanceMode || { enabled: false, message: '', affectedPlatforms: [] },
       broadcast: db.systemConfig?.broadcastNotice || { enabled: false, message: '' },
       platforms: db.systemConfig?.platforms || {},
@@ -3806,12 +4095,30 @@ async function startServer() {
   });
 
   /* -------------------------------------------------------------------------
+   * PRODUCTION PREREQUISITES VALIDATION & VITE / STATIC SERVING
+   * ------------------------------------------------------------------------- */
+  if (isProductionEnv) {
+    const buildCheck = validateProductionBuild(DIST_DIR);
+    if (!buildCheck.valid) {
+      console.error(
+        `[Forecaster Pro] PRODUCTION STARTUP ABORTED: Incomplete or missing production build in "${buildCheck.distDir}".\n` +
+        buildCheck.errors.map(e => `  - ${e}`).join('\n') +
+        `\nAction required: Run "npm run build" before starting the production server.`
+      );
+      throw new Error(`Production build validation failed: ${buildCheck.errors[0]}`);
+    }
+  }
+
+  /* -------------------------------------------------------------------------
    * LANDING PAGE ROUTE
    * ------------------------------------------------------------------------- */
   app.get(['/landing', '/landing.html'], (req, res) => {
-    const candidateDist = path.resolve(__dirname, 'dist', 'landing.html');
+    if (isProductionEnv) {
+      return res.sendFile(path.resolve(DIST_DIR, 'landing.html'));
+    }
+    const candidateDist = path.resolve(DIST_DIR, 'landing.html');
     const candidateRoot = path.resolve(__dirname, 'landing.html');
-    const file = fs.existsSync(candidateDist) ? candidateDist : candidateRoot;
+    const file = fs.existsSync(candidateRoot) ? candidateRoot : candidateDist;
     res.sendFile(file);
   });
 
@@ -3822,10 +4129,10 @@ async function startServer() {
   /* -------------------------------------------------------------------------
    * VITE MIDDLEWARE / STATIC ASSETS
    * ------------------------------------------------------------------------- */
-  if (process.env.NODE_ENV === 'production' && fs.existsSync(path.resolve(__dirname, 'dist'))) {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+  if (isProductionEnv) {
+    app.use(express.static(DIST_DIR));
     app.get('*', (req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+      res.sendFile(path.resolve(DIST_DIR, 'index.html'));
     });
   } else {
     // Serve public directory assets directly so scripts, service workers, and static files return proper JS/MIME types

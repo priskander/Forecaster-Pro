@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "start": "tsx server.ts",
+    "start": "NODE_ENV=production tsx server.ts",
+    "start:prod": "npm run build && NODE_ENV=production tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
@@ -13,7 +14,9 @@
     "test:security": "tsx scripts/test-security-remediation.ts",
     "test:backup": "tsx scripts/test-backup-restoration.ts",
     "test": "tsx scripts/test-security-remediation.ts && tsx scripts/test-backup-restoration.ts",
-    "package:source": "tar --exclude=node_modules --exclude=data --exclude=backups --exclude=exports --exclude=tmp --exclude=temp --exclude=dist --exclude=build --exclude=coverage --exclude=.git --exclude=.aistudio --exclude='.env' --exclude='.env.local' --exclude='.env.production' --exclude='.env.production.local' --exclude='.env.development' --exclude='.env.development.local' --exclude='.env.test' --exclude='.env.test.local' --exclude='.env.staging' --exclude='session-store*' --exclude='*.db' --exclude='*.sqlite' --exclude='*.sqlite3' --exclude='*.bak' --exclude='*.backup' --exclude='*.dump' --exclude='*.sql.gz' --exclude='*.tmp' --exclude='*.secret' --exclude='*.zip' --exclude='*.tar.gz' --exclude='*.tgz' --exclude='*.pem' --exclude='*.key' --exclude='*.p12' --exclude='*.pfx' --exclude=forecaster-pro-source.tar.gz -czf forecaster-pro-source.tar.gz ."
+    "package:zip": "tsx scripts/package-source.ts --format=zip",
+    "package:tar": "tsx scripts/package-source.ts --format=tar",
+    "package:source": "tsx scripts/package-source.ts --format=both"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
