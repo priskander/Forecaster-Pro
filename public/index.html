@@ -4071,6 +4071,56 @@
               </button>
             </div>
           </div>
+
+          <!-- Standard Authenticated SMTP Email Settings Card -->
+          <div class="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>✉️</span> Outbound SMTP Email Settings (Password Reset &amp; Invitations)
+                </h4>
+                <p class="text-xs text-slate-500 mt-0.5">Configure Standard Authenticated SMTP (such as a Gmail App Password) securely inside your workspace. Credentials are encrypted at rest and never exposed in browser responses.</p>
+              </div>
+              <span id="admin-smtp-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">Not Configured</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div>
+                <label for="admin-smtp-host" class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">SMTP Host</label>
+                <input type="text" id="admin-smtp-host" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs font-semibold text-slate-900 dark:text-white" value="smtp.gmail.com" placeholder="smtp.gmail.com"/>
+              </div>
+              <div>
+                <label for="admin-smtp-port" class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Port &amp; Encryption</label>
+                <select id="admin-smtp-port" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs font-semibold text-slate-900 dark:text-white">
+                  <option value="465">465 — Direct SSL/TLS (Gmail Recommended)</option>
+                  <option value="587">587 — STARTTLS (Outlook / SendGrid / SES)</option>
+                </select>
+              </div>
+              <div>
+                <label for="admin-smtp-user" class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">SMTP Username / Email</label>
+                <input type="email" id="admin-smtp-user" autocomplete="off" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs text-slate-900 dark:text-white" placeholder="peter.w.badir@gmail.com"/>
+              </div>
+              <div>
+                <label for="admin-smtp-pass" class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">App Password / SMTP Secret</label>
+                <input type="password" id="admin-smtp-pass" autocomplete="new-password" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs text-slate-900 dark:text-white" placeholder="Enter 16-char Gmail App Password"/>
+              </div>
+              <div class="sm:col-span-2">
+                <label for="admin-smtp-from" class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Sender &quot;From&quot; Display &amp; Email</label>
+                <input type="text" id="admin-smtp-from" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs text-slate-900 dark:text-white" placeholder="Forecaster Pro &lt;peter.w.badir@gmail.com&gt;"/>
+              </div>
+            </div>
+
+            <div id="admin-smtp-result" class="hidden p-3 rounded-xl border text-xs font-medium"></div>
+
+            <div class="flex flex-wrap items-center justify-end gap-2">
+              <button type="button" class="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-bold text-xs rounded-xl transition cursor-pointer" onclick="window.ForecasterAuth.saveAdminSmtpConfig(false)">
+                💾 Save SMTP Settings
+              </button>
+              <button type="button" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer" onclick="window.ForecasterAuth.saveAdminSmtpConfig(true)">
+                ✉️ Save &amp; Send Test Email
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- PANE 3: FEATURE FLAGS & APP EDITS -->

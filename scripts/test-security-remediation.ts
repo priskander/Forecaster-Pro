@@ -226,7 +226,29 @@ async function runSecurityTestSuite() {
         { headers: { Authorization: `Bearer ${masterAdminToken}` } },
         bootServer2.baseUrl
       );
-      assert(adminDashRes.status === 200 && adminDashRes.body.ok === true, 'Provisioning 2.0g: Configured Main Admin accesses /api/admin/dashboard (HTTP 200)');
+      assert(
+        adminDashRes.status === 200 &&
+        adminDashRes.body.ok === true &&
+        adminDashRes.body.emailStatus?.configured === false &&
+        adminDashRes.body.emailStatus?.provider === 'none',
+        'Provisioning 2.0g: Configured Main Admin accesses /api/admin/dashboard with unconfigured emailStatus'
+      );
+
+      const unconfEmailVerify = await request(
+        '/api/admin/email/verify',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${masterAdminToken}` },
+          body: JSON.stringify({})
+        },
+        bootServer2.baseUrl
+      );
+      assert(
+        unconfEmailVerify.status === 400 &&
+        unconfEmailVerify.body.configured === false &&
+        unconfEmailVerify.body.verified === false,
+        'Provisioning 2.0g2: /api/admin/email/verify returns HTTP 400 when SMTP/Resend is unconfigured'
+      );
 
       const targetReg = await request(
         '/api/auth/register',
@@ -1044,8 +1066,12 @@ async function runSecurityTestSuite() {
 
     await new Promise<void>((resolve) => smtpServer.listen(0, '127.0.0.1', () => resolve()));
     const smtpAddr = smtpServer.address() as net.AddressInfo;
+    const smtpAdminEmail = 'smtp-admin@testcorp.local';
+    const smtpAdminPass = 'SmtpAdminPass#2026!';
     const smtpTestSrv = await startIsolatedTestServer({
       env: {
+        INITIAL_ADMIN_EMAIL: smtpAdminEmail,
+        INITIAL_ADMIN_PASSWORD: smtpAdminPass,
         SMTP_HOST: '127.0.0.1',
         SMTP_PORT: String(smtpAddr.port),
         SMTP_SECURE: 'false',
@@ -1109,9 +1135,215 @@ async function runSecurityTestSuite() {
         completeSmtpReset.status === 200 && !!completeSmtpReset.body.token,
         'Reset 9.1g: User completes password recovery end-to-end using SMTP-delivered code'
       );
+
+      // 9.1h-j Admin SMTP verification endpoint guards & handshake verification
+      const unauthVerify = await request(
+        '/api/admin/email/verify',
+        { method: 'POST', body: JSON.stringify({}) },
+        smtpTestSrv.baseUrl
+      );
+      assert(unauthVerify.status === 401, 'Reset 9.1h: /api/admin/email/verify rejects unauthenticated callers (HTTP 401)');
+
+      const ownerVerifyForbidden = await request(
+        '/api/admin/email/verify',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${completeSmtpReset.body.token}` },
+          body: JSON.stringify({})
+        },
+        smtpTestSrv.baseUrl
+      );
+      assert(ownerVerifyForbidden.status === 403, 'Reset 9.1i: /api/admin/email/verify rejects non-admin workspace owners (HTTP 403)');
+
+      const smtpAdminLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: smtpAdminEmail, password: smtpAdminPass }) },
+        smtpTestSrv.baseUrl
+      );
+      assert(smtpAdminLogin.status === 200 && !!smtpAdminLogin.body.token, 'Reset 9.1j1: SMTP-configured server admin authenticated');
+
+      const adminVerifyRes = await request(
+        '/api/admin/email/verify',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${smtpAdminLogin.body.token}` },
+          body: JSON.stringify({ sendTest: true, to: 'verify-target@testcorp.local' })
+        },
+        smtpTestSrv.baseUrl
+      );
+      assert(
+        adminVerifyRes.status === 200 &&
+        adminVerifyRes.body.ok === true &&
+        adminVerifyRes.body.verified === true &&
+        adminVerifyRes.body.provider === 'smtp' &&
+        adminVerifyRes.body.testSent === true &&
+        receivedSmtpPayload.includes('SMTP Transport Verified'),
+        'Reset 9.1j: Main Admin /api/admin/email/verify verifies SMTP handshake and dispatches test verification email'
+      );
     } finally {
       await smtpTestSrv.stop(true);
       await new Promise<void>((resolve) => smtpServer.close(() => resolve()));
+    }
+
+    // 9.1k-n Encrypted Admin-Configured SMTP (fallback when env secrets are not set)
+    let adminCfgSmtpPayload = '';
+    const adminCfgSmtpServer = net.createServer((socket) => {
+      let inDataMode = false;
+      let buffer = '';
+      socket.write('220 localhost ESMTP MockAuthSMTP\r\n');
+      socket.on('data', (chunk) => {
+        buffer += chunk.toString('utf8');
+        if (inDataMode) {
+          const endIdx = buffer.indexOf('\r\n.\r\n');
+          if (endIdx !== -1) {
+            adminCfgSmtpPayload += buffer.slice(0, endIdx);
+            buffer = buffer.slice(endIdx + 5);
+            inDataMode = false;
+            socket.write('250 2.0.0 Ok: queued\r\n');
+          }
+          return;
+        }
+        let nlIdx: number;
+        while ((nlIdx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, nlIdx).replace(/\r$/, '');
+          buffer = buffer.slice(nlIdx + 1);
+          const upper = line.toUpperCase();
+          if (upper.startsWith('EHLO') || upper.startsWith('HELO')) {
+            socket.write('250-localhost\r\n250-AUTH PLAIN LOGIN\r\n250 OK\r\n');
+          } else if (upper.startsWith('AUTH')) {
+            socket.write('235 2.7.0 Authentication successful\r\n');
+          } else if (upper.startsWith('MAIL FROM') || upper.startsWith('RCPT TO')) {
+            socket.write('250 2.1.0 Ok\r\n');
+          } else if (upper === 'DATA') {
+            inDataMode = true;
+            socket.write('354 End data with <CR><LF>.<CR><LF>\r\n');
+            break;
+          } else if (upper === 'QUIT') {
+            socket.write('221 2.0.0 Bye\r\n');
+            socket.end();
+          } else {
+            socket.write('250 Ok\r\n');
+          }
+        }
+      });
+    });
+
+    await new Promise<void>((resolve) => adminCfgSmtpServer.listen(0, '127.0.0.1', () => resolve()));
+    const adminCfgSmtpAddr = adminCfgSmtpServer.address() as net.AddressInfo;
+    const cfgAdminEmail = 'cfg-admin@testcorp.local';
+    const cfgAdminPass = 'CfgAdminPass#2026!';
+    const adminCfgSrv = await startIsolatedTestServer({
+      env: {
+        INITIAL_ADMIN_EMAIL: cfgAdminEmail,
+        INITIAL_ADMIN_PASSWORD: cfgAdminPass
+      }
+    });
+    try {
+      const regNonAdmin = await request(
+        '/api/auth/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({ name: 'NonAdmin Owner', email: 'nonadmin-cfg@testcorp.local', password: 'NonAdminUser#2026!' })
+        },
+        adminCfgSrv.baseUrl
+      );
+      const unauthCfg = await request(
+        '/api/admin/email/config',
+        { method: 'POST', body: JSON.stringify({ host: '127.0.0.1', port: adminCfgSmtpAddr.port, user: 'u', pass: 'p' }) },
+        adminCfgSrv.baseUrl
+      );
+      const nonAdminCfg = await request(
+        '/api/admin/email/config',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${regNonAdmin.body.token}` },
+          body: JSON.stringify({ host: '127.0.0.1', port: adminCfgSmtpAddr.port, user: 'u', pass: 'p' })
+        },
+        adminCfgSrv.baseUrl
+      );
+      assert(
+        unauthCfg.status === 401 && nonAdminCfg.status === 403,
+        'Reset 9.1k: /api/admin/email/config enforces Main Admin authorization (401 unauth, 403 non-admin)'
+      );
+
+      const cfgAdminLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: cfgAdminEmail, password: cfgAdminPass }) },
+        adminCfgSrv.baseUrl
+      );
+      const cfgAdminToken = cfgAdminLogin.body.token;
+      const secretAppPassword = 'abcd efgh ijkl mnop';
+      const saveCfgRes = await request(
+        '/api/admin/email/config',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cfgAdminToken}` },
+          body: JSON.stringify({
+            host: '127.0.0.1',
+            port: adminCfgSmtpAddr.port,
+            secure: false,
+            user: 'mailer@testcorp.local',
+            pass: secretAppPassword,
+            from: 'Forecaster Pro <mailer@testcorp.local>'
+          })
+        },
+        adminCfgSrv.baseUrl
+      );
+      assert(
+        saveCfgRes.status === 200 &&
+        saveCfgRes.body.ok === true &&
+        saveCfgRes.body.emailStatus?.configured === true &&
+        saveCfgRes.body.emailStatus?.source === 'admin_config' &&
+        saveCfgRes.body.emailStatus?.hasPassword === true &&
+        !JSON.stringify(saveCfgRes.body).includes(secretAppPassword) &&
+        !JSON.stringify(saveCfgRes.body).includes('encryptedPass'),
+        'Reset 9.1l: Admin SMTP configuration saves securely without exposing secret or ciphertext in API response'
+      );
+
+      const diskTextAfterCfg = fs.readFileSync(adminCfgSrv.dbFile, 'utf-8');
+      const cfgDashRes = await request(
+        '/api/admin/dashboard',
+        { headers: { Authorization: `Bearer ${cfgAdminToken}` } },
+        adminCfgSrv.baseUrl
+      );
+      const cfgSysStatus = await request('/api/public/system-status', {}, adminCfgSrv.baseUrl);
+      assert(
+        !diskTextAfterCfg.includes(secretAppPassword) &&
+        cfgDashRes.status === 200 &&
+        cfgDashRes.body.emailStatus?.source === 'admin_config' &&
+        !JSON.stringify(cfgDashRes.body).includes('encryptedPass') &&
+        !JSON.stringify(cfgDashRes.body).includes(secretAppPassword) &&
+        cfgSysStatus.body.emailConfigured === true,
+        'Reset 9.1m: Saved SMTP secret is encrypted at rest on disk, masked in /api/admin/dashboard, and activates system email status'
+      );
+
+      const verifyCfgRes = await request(
+        '/api/admin/email/verify',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cfgAdminToken}` },
+          body: JSON.stringify({ sendTest: true, to: 'admin-check@testcorp.local' })
+        },
+        adminCfgSrv.baseUrl
+      );
+      const forgotCfgRes = await request(
+        '/api/auth/forgot-password',
+        { method: 'POST', body: JSON.stringify({ email: 'nonadmin-cfg@testcorp.local' }) },
+        adminCfgSrv.baseUrl
+      );
+      assert(
+        verifyCfgRes.status === 200 &&
+        verifyCfgRes.body.verified === true &&
+        verifyCfgRes.body.testSent === true &&
+        forgotCfgRes.status === 200 &&
+        forgotCfgRes.body.emailConfigured === true &&
+        adminCfgSmtpPayload.includes('SMTP Transport Verified') &&
+        /Temp-[A-Z0-9]+!/.test(adminCfgSmtpPayload),
+        'Reset 9.1n: Admin-configured encrypted SMTP verifies auth handshake, sends test email, and delivers password reset codes'
+      );
+    } finally {
+      await adminCfgSrv.stop(true);
+      await new Promise<void>((resolve) => adminCfgSmtpServer.close(() => resolve()));
     }
 
     // Prepare isolated DB snapshot with known scrypt-hashed reset credentials to test missing/expired/single-use paths cleanly

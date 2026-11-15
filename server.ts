@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
@@ -272,6 +273,20 @@ export interface PlatformUpdateConfig {
   updateStatus: 'current' | 'update_available' | 'maintenance';
 }
 
+export interface StoredSmtpConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  from: string;
+  encryptedPass: string;
+  iv: string;
+  authTag: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export interface SystemConfig {
   maintenanceMode: {
     enabled: boolean;
@@ -305,6 +320,7 @@ export interface SystemConfig {
     mobileHapticFeedback: boolean;
     allowNewRegistrations: boolean;
   };
+  smtpSettings?: StoredSmtpConfig;
   telemetry: {
     serverStartedAt: string;
     totalApiRequests: number;
@@ -616,15 +632,112 @@ function generateTemporaryPassword(): string {
   return `Temp-${randL}${randD}!`;
 }
 
+const SMTP_SEAL_KEY_FILE = path.join(DB_PARENT_DIR, '.smtp-seal.key');
+let cachedEphemeralSmtpSealKey: Buffer | null = null;
+
+function getSmtpSealKey(): Buffer {
+  const envSealSecret = (process.env.SMTP_SEAL_SECRET || '').trim();
+  if (envSealSecret) {
+    return crypto.createHash('sha256').update(envSealSecret).digest();
+  }
+  try {
+    if (fs.existsSync(SMTP_SEAL_KEY_FILE)) {
+      const hex = fs.readFileSync(SMTP_SEAL_KEY_FILE, 'utf8').trim();
+      if (/^[0-9a-f]{64}$/i.test(hex)) {
+        return Buffer.from(hex, 'hex');
+      }
+    }
+    const generated = crypto.randomBytes(32);
+    if (!fs.existsSync(DB_PARENT_DIR)) {
+      fs.mkdirSync(DB_PARENT_DIR, { recursive: true });
+    }
+    fs.writeFileSync(SMTP_SEAL_KEY_FILE, generated.toString('hex'), { encoding: 'utf8', mode: 0o600 });
+    return generated;
+  } catch {
+    if (!cachedEphemeralSmtpSealKey) {
+      cachedEphemeralSmtpSealKey = crypto.randomBytes(32);
+    }
+    return cachedEphemeralSmtpSealKey;
+  }
+}
+
+function encryptSmtpPassword(plain: string): { encryptedPass: string; iv: string; authTag: string } {
+  const key = getSmtpSealKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return {
+    encryptedPass: enc.toString('base64'),
+    iv: iv.toString('hex'),
+    authTag: authTag.toString('hex')
+  };
+}
+
+function decryptSmtpPassword(cfg?: StoredSmtpConfig | null): string {
+  if (!cfg || !cfg.encryptedPass || !cfg.iv || !cfg.authTag) return '';
+  try {
+    const key = getSmtpSealKey();
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(cfg.iv, 'hex'));
+    decipher.setAuthTag(Buffer.from(cfg.authTag, 'hex'));
+    const dec = Buffer.concat([decipher.update(Buffer.from(cfg.encryptedPass, 'base64')), decipher.final()]);
+    return dec.toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+function getStoredAdminSmtpCredentials(): {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  from: string;
+  updatedAt?: string;
+} | null {
+  try {
+    const cfg = db?.systemConfig?.smtpSettings;
+    if (!cfg || !cfg.enabled || !cfg.host || !cfg.user) return null;
+    const pass = decryptSmtpPassword(cfg);
+    if (!pass) return null;
+    return {
+      host: cfg.host.trim(),
+      port: Number(cfg.port) || 465,
+      secure: typeof cfg.secure === 'boolean' ? cfg.secure : Number(cfg.port) === 465,
+      user: cfg.user.trim(),
+      pass,
+      from: (cfg.from || `Forecaster Pro <${cfg.user.trim()}>`).trim(),
+      updatedAt: cfg.updatedAt
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getEmailTransportSource(): 'env' | 'admin_config' | 'none' {
+  if ((process.env.RESEND_API_KEY || '').trim()) {
+    return 'env';
+  }
+  const envHost = (process.env.SMTP_HOST || '').trim();
+  const envUser = (process.env.SMTP_USER || '').trim();
+  const envPass = (process.env.SMTP_PASS || '').trim();
+  const allowUnauth = (process.env.SMTP_ALLOW_UNAUTH || '').trim().toLowerCase() === 'true';
+  if (envHost && ((envUser && envPass) || allowUnauth)) {
+    return 'env';
+  }
+  if (getStoredAdminSmtpCredentials()) {
+    return 'admin_config';
+  }
+  return 'none';
+}
+
 function getEmailTransportProvider(): 'smtp' | 'resend' | 'none' {
   if ((process.env.RESEND_API_KEY || '').trim()) {
     return 'resend';
   }
-  const host = (process.env.SMTP_HOST || '').trim();
-  const user = (process.env.SMTP_USER || '').trim();
-  const pass = (process.env.SMTP_PASS || '').trim();
-  const allowUnauth = (process.env.SMTP_ALLOW_UNAUTH || '').trim().toLowerCase() === 'true';
-  if (host && ((user && pass) || allowUnauth)) {
+  const source = getEmailTransportSource();
+  if (source !== 'none') {
     return 'smtp';
   }
   return 'none';
@@ -632,6 +745,168 @@ function getEmailTransportProvider(): 'smtp' | 'resend' | 'none' {
 
 function isEmailTransportConfigured(): boolean {
   return getEmailTransportProvider() !== 'none';
+}
+
+function getSafeEmailStatus() {
+  const provider = getEmailTransportProvider();
+  const source = getEmailTransportSource();
+  if (source === 'env' && provider === 'resend') {
+    return {
+      configured: true,
+      provider: 'resend' as const,
+      source: 'env' as const,
+      from: (process.env.SMTP_FROM || process.env.SMTP_USER || '').trim() || undefined,
+      hasPassword: true
+    };
+  }
+  if (source === 'env' && provider === 'smtp') {
+    const port = parseInt(process.env.SMTP_PORT || '587', 10) || 587;
+    const secureEnv = (process.env.SMTP_SECURE || '').trim().toLowerCase();
+    const secure = secureEnv ? secureEnv === 'true' : port === 465;
+    return {
+      configured: true,
+      provider: 'smtp' as const,
+      source: 'env' as const,
+      host: (process.env.SMTP_HOST || '').trim(),
+      port,
+      secure,
+      user: (process.env.SMTP_USER || '').trim() || undefined,
+      from: (process.env.SMTP_FROM || process.env.SMTP_USER || '').trim() || undefined,
+      hasPassword: Boolean((process.env.SMTP_PASS || '').trim())
+    };
+  }
+  const stored = getStoredAdminSmtpCredentials();
+  if (source === 'admin_config' && stored) {
+    return {
+      configured: true,
+      provider: 'smtp' as const,
+      source: 'admin_config' as const,
+      host: stored.host,
+      port: stored.port,
+      secure: stored.secure,
+      user: stored.user,
+      from: stored.from,
+      hasPassword: true,
+      updatedAt: stored.updatedAt
+    };
+  }
+  const rawStored = db?.systemConfig?.smtpSettings;
+  return {
+    configured: false,
+    provider: 'none' as const,
+    source: 'none' as const,
+    host: rawStored?.host || undefined,
+    port: rawStored?.port || undefined,
+    secure: rawStored?.secure,
+    user: rawStored?.user || undefined,
+    from: rawStored?.from || undefined,
+    hasPassword: Boolean(rawStored?.encryptedPass)
+  };
+}
+
+function getSanitizedSystemConfig(cfg?: SystemConfig) {
+  if (!cfg) return cfg;
+  const { smtpSettings, ...rest } = cfg as any;
+  if (!smtpSettings) return rest;
+  return {
+    ...rest,
+    smtpSettings: {
+      enabled: !!smtpSettings.enabled,
+      host: smtpSettings.host,
+      port: smtpSettings.port,
+      secure: !!smtpSettings.secure,
+      user: smtpSettings.user,
+      from: smtpSettings.from,
+      hasPassword: Boolean(smtpSettings.encryptedPass),
+      updatedAt: smtpSettings.updatedAt,
+      updatedBy: smtpSettings.updatedBy
+    }
+  };
+}
+
+function createSmtpTransporter() {
+  const source = getEmailTransportSource();
+  if (source === 'admin_config') {
+    const stored = getStoredAdminSmtpCredentials();
+    if (!stored) {
+      throw new Error('Stored SMTP configuration is invalid or unreadable.');
+    }
+    const transportOptions: any = {
+      host: stored.host,
+      port: stored.port,
+      secure: stored.secure,
+      auth: { user: stored.user, pass: stored.pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000
+    };
+    if (!stored.secure && stored.port === 587) {
+      transportOptions.requireTLS = true;
+      transportOptions.tls = { minVersion: 'TLSv1.2' };
+    } else if (stored.secure) {
+      transportOptions.tls = { minVersion: 'TLSv1.2' };
+    }
+    return {
+      transporter: nodemailer.createTransport(transportOptions),
+      host: stored.host,
+      port: stored.port,
+      secure: stored.secure,
+      fromAddress: stored.from
+    };
+  }
+
+  const host = (process.env.SMTP_HOST || '').trim();
+  const port = parseInt(process.env.SMTP_PORT || '587', 10) || 587;
+  const secureEnv = (process.env.SMTP_SECURE || '').trim().toLowerCase();
+  const secure = secureEnv ? secureEnv === 'true' : port === 465;
+  const user = (process.env.SMTP_USER || '').trim();
+  const pass = (process.env.SMTP_PASS || '').trim();
+  const allowUnauth = (process.env.SMTP_ALLOW_UNAUTH || '').trim().toLowerCase() === 'true';
+
+  const transportOptions: any = {
+    host,
+    port,
+    secure,
+    auth: user && pass ? { user, pass } : undefined,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
+  };
+
+  if (!secure && port === 587 && !allowUnauth) {
+    transportOptions.requireTLS = true;
+    transportOptions.tls = { minVersion: 'TLSv1.2' };
+  } else if (secure) {
+    transportOptions.tls = { minVersion: 'TLSv1.2' };
+  }
+
+  return {
+    transporter: nodemailer.createTransport(transportOptions),
+    host,
+    port,
+    secure,
+    fromAddress: (process.env.SMTP_FROM || user || 'Forecaster Pro <security@forecasterpro.local>').trim()
+  };
+}
+
+function sanitizeEmailErrorMessage(err: any): string {
+  let msg = String(err?.message || 'Email transport error');
+  const stored = getStoredAdminSmtpCredentials();
+  const secrets = [
+    process.env.SMTP_PASS,
+    process.env.RESEND_API_KEY,
+    process.env.SMTP_USER,
+    stored?.pass,
+    stored?.user
+  ]
+    .map(v => (v || '').trim())
+    .filter(Boolean);
+  for (const secret of secrets) {
+    if (msg.includes(secret)) {
+      msg = msg.split(secret).join('[REDACTED]');
+    }
+  }
+  return msg;
 }
 
 async function dispatchOutboundEmail(opts: {
@@ -667,32 +942,18 @@ async function dispatchOutboundEmail(opts: {
       }
       return { sent: true, provider, status: 'delivered' };
     } catch (err: any) {
-      console.error('[Email] Resend delivery error:', err?.message || 'Unknown error');
-      return { sent: false, provider, status: 'failed', error: err?.message || 'Resend error' };
+      const cleanErr = sanitizeEmailErrorMessage(err);
+      console.error('[Email] Resend delivery error:', cleanErr);
+      return { sent: false, provider, status: 'failed', error: cleanErr };
     }
   }
 
   if (provider === 'smtp') {
     try {
-      const host = (process.env.SMTP_HOST || '').trim();
-      const port = parseInt(process.env.SMTP_PORT || '587', 10) || 587;
-      const secureEnv = (process.env.SMTP_SECURE || '').trim().toLowerCase();
-      const secure = secureEnv ? secureEnv === 'true' : port === 465;
-      const user = (process.env.SMTP_USER || '').trim();
-      const pass = (process.env.SMTP_PASS || '').trim();
-
-      const transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: user && pass ? { user, pass } : undefined,
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000
-      });
+      const { transporter, fromAddress: smtpFrom } = createSmtpTransporter();
 
       await transporter.sendMail({
-        from: fromAddress,
+        from: smtpFrom,
         to: opts.to,
         subject: opts.subject,
         text: opts.text,
@@ -700,8 +961,9 @@ async function dispatchOutboundEmail(opts: {
       });
       return { sent: true, provider, status: 'delivered' };
     } catch (err: any) {
-      console.error('[Email] SMTP delivery error:', err?.message || 'Unknown error');
-      return { sent: false, provider, status: 'failed', error: err?.message || 'SMTP error' };
+      const cleanErr = sanitizeEmailErrorMessage(err);
+      console.error('[Email] SMTP delivery error:', cleanErr);
+      return { sent: false, provider, status: 'failed', error: cleanErr };
     }
   }
 
@@ -724,6 +986,8 @@ function sendSubUserWelcomeEmail(subUser: UserRecord, tempPass: string, owner: U
 
   const subject = `Welcome to Forecaster Pro - Your ${subUser.role.toUpperCase()} Account Credentials`;
   
+  const publicAppUrl = (process.env.APP_URL || 'https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app').trim();
+
   const textBody = `Hello ${subUser.name},
 
 You have been granted access as a ${subUser.role.toUpperCase()} to the Forecaster Pro workspace by ${owner.name} (${owner.email}).
@@ -740,7 +1004,7 @@ SECURITY REQUIREMENT:
 This temporary password was generated automatically. For your security, you are required to change your password immediately upon your first login. The system will automatically prompt you to create your new personal password upon sign-in.
 
 Sign in to Forecaster Pro:
-https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app
+${publicAppUrl}
 
 Best regards,
 Forecaster Pro Team`;
@@ -787,7 +1051,7 @@ Forecaster Pro Team`;
     </p>
 
     <div style="margin-top: 24px; text-align: center;">
-      <a href="https://ais-dev-q3th3h2uljnuvgwbip4gc3-332131690289.europe-west2.run.app" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;">Sign In to Your Account</a>
+      <a href="${publicAppUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 13px;">Sign In to Your Account</a>
     </div>
   </div>
   <div style="background: #f1f5f9; padding: 12px 24px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;">
@@ -3968,6 +4232,219 @@ async function startServer() {
     }
   });
 
+  // Main-Admin Encrypted SMTP Configuration Endpoint (fallback when hosting Secrets UI is unavailable)
+  app.post('/api/admin/email/config', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const body = req.body || {};
+      if (!db.systemConfig) db.systemConfig = {} as any;
+
+      if (body.enabled === false) {
+        delete db.systemConfig!.smtpSettings;
+        logAdminAction(admin.email, 'EMAIL_CONFIG_UPDATED', 'security', 'Cleared admin-configured SMTP settings.');
+        saveDatabase(db);
+        return res.json({
+          ok: true,
+          message: 'Stored SMTP configuration cleared.',
+          emailStatus: getSafeEmailStatus()
+        });
+      }
+
+      const host = String(body.host || '').trim();
+      const port = parseInt(String(body.port || '465'), 10);
+      const secure = typeof body.secure === 'boolean' ? body.secure : port === 465;
+      const user = String(body.user || '').trim();
+      const fromInput = String(body.from || '').trim();
+      let rawPass = typeof body.pass === 'string' ? body.pass : '';
+
+      if (!host || !/^[a-zA-Z0-9.-]+$/.test(host)) {
+        return res.status(400).json({ ok: false, error: 'Please enter a valid SMTP host (e.g. smtp.gmail.com).' });
+      }
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        return res.status(400).json({ ok: false, error: 'SMTP port must be between 1 and 65535 (465 or 587 recommended).' });
+      }
+      if (!user) {
+        return res.status(400).json({ ok: false, error: 'SMTP username / sending email address is required.' });
+      }
+
+      if (host.toLowerCase().includes('gmail.com')) {
+        rawPass = rawPass.replace(/\s+/g, '');
+      } else {
+        rawPass = rawPass.replace(/^[\r\n]+|[\r\n]+$/g, '');
+      }
+
+      let resolvedPass = rawPass;
+      if (!resolvedPass) {
+        const existing = db.systemConfig?.smtpSettings;
+        if (existing && existing.host === host && existing.user === user && existing.encryptedPass) {
+          resolvedPass = decryptSmtpPassword(existing);
+        }
+      }
+
+      if (!resolvedPass) {
+        return res.status(400).json({ ok: false, error: 'SMTP App Password / Secret is required.' });
+      }
+
+      const sealed = encryptSmtpPassword(resolvedPass);
+      const from = fromInput || `Forecaster Pro <${user}>`;
+      db.systemConfig!.smtpSettings = {
+        enabled: true,
+        host,
+        port,
+        secure,
+        user,
+        from,
+        encryptedPass: sealed.encryptedPass,
+        iv: sealed.iv,
+        authTag: sealed.authTag,
+        updatedAt: new Date().toISOString(),
+        updatedBy: admin.email
+      };
+
+      logAdminAction(
+        admin.email,
+        'EMAIL_CONFIG_UPDATED',
+        'security',
+        `Saved encrypted Standard Authenticated SMTP settings (${host}:${port}, secure=${secure})`
+      );
+      saveDatabase(db);
+
+      return res.json({
+        ok: true,
+        message: 'Authenticated SMTP settings encrypted and saved.',
+        emailStatus: getSafeEmailStatus()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, error: sanitizeEmailErrorMessage(err) });
+    }
+  });
+
+  // Main-Admin SMTP / Outbound Email Transport Verification Endpoint (never exposes credentials)
+  app.post('/api/admin/email/verify', async (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const provider = getEmailTransportProvider();
+      if (provider === 'none') {
+        return res.status(400).json({
+          ok: false,
+          configured: false,
+          provider: 'none',
+          verified: false,
+          error: 'No outbound SMTP or Resend email transport is configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS (or RESEND_API_KEY) and restart or republish.'
+        });
+      }
+
+      const sendTest = req.body?.sendTest === true;
+      const targetEmail = (typeof req.body?.to === 'string' && req.body.to.trim()
+        ? req.body.to.trim().toLowerCase()
+        : admin.email
+      ).toLowerCase();
+
+      if (sendTest && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return res.status(400).json({
+          ok: false,
+          configured: true,
+          provider,
+          verified: false,
+          error: 'Invalid recipient email address for test delivery.'
+        });
+      }
+
+      if (provider === 'smtp') {
+        const { transporter, host, port, secure, fromAddress } = createSmtpTransporter();
+        try {
+          await transporter.verify();
+          let testSent = false;
+          if (sendTest) {
+            await transporter.sendMail({
+              from: fromAddress,
+              to: targetEmail,
+              subject: 'Forecaster Pro - Standard SMTP Verification Successful',
+              text: `Outbound SMTP transport (${host}:${port}, TLS=${secure ? 'Direct TLS' : 'STARTTLS'}) was verified by ${admin.email} at ${new Date().toISOString()}.`,
+              html: `<div style="font-family:sans-serif;max-width:540px;padding:20px;border:1px solid #e2e8f0;border-radius:12px;"><h2 style="margin-top:0;color:#0f172a;">SMTP Transport Verified</h2><p>Outbound authenticated SMTP delivery is active for <strong>Forecaster Pro</strong> (${host}:${port}, TLS=${secure ? 'Direct TLS' : 'STARTTLS'}).</p><p style="font-size:12px;color:#64748b;">Verified by ${admin.email} at ${new Date().toISOString()}.</p></div>`
+            });
+            testSent = true;
+          }
+
+          logAdminAction(
+            admin.email,
+            'EMAIL_TRANSPORT_VERIFIED',
+            'security',
+            `Verified SMTP transport (${host}:${port}, secure=${secure}${testSent ? ', test email dispatched' : ''})`
+          );
+          saveDatabase(db);
+
+          return res.json({
+            ok: true,
+            configured: true,
+            provider: 'smtp',
+            verified: true,
+            host,
+            port,
+            secure,
+            testSent
+          });
+        } catch (err: any) {
+          const cleanErr = sanitizeEmailErrorMessage(err);
+          console.error('[Admin SMTP Verify Error]', cleanErr);
+          return res.status(502).json({
+            ok: false,
+            configured: true,
+            provider: 'smtp',
+            verified: false,
+            host,
+            port,
+            secure,
+            error: cleanErr
+          });
+        }
+      }
+
+      // provider === 'resend'
+      let testSent = false;
+      if (sendTest) {
+        const dispatch = await dispatchOutboundEmail({
+          to: targetEmail,
+          subject: 'Forecaster Pro - Outbound Email Verification Successful',
+          text: `Outbound Resend API transport was verified by ${admin.email} at ${new Date().toISOString()}.`,
+          html: `<div style="font-family:sans-serif;max-width:540px;padding:20px;border:1px solid #e2e8f0;border-radius:12px;"><h2 style="margin-top:0;color:#0f172a;">Resend Transport Verified</h2><p>Outbound Resend email delivery is active for <strong>Forecaster Pro</strong>.</p></div>`
+        });
+        if (!dispatch.sent) {
+          return res.status(502).json({
+            ok: false,
+            configured: true,
+            provider: 'resend',
+            verified: false,
+            error: dispatch.error || 'Resend test delivery failed.'
+          });
+        }
+        testSent = true;
+      }
+
+      logAdminAction(
+        admin.email,
+        'EMAIL_TRANSPORT_VERIFIED',
+        'security',
+        `Resend email transport verified${testSent ? ' (test email dispatched)' : ''}`
+      );
+      saveDatabase(db);
+
+      return res.json({
+        ok: true,
+        configured: true,
+        provider: 'resend',
+        verified: true,
+        testSent
+      });
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, error: sanitizeEmailErrorMessage(err) });
+    }
+  });
+
   // 1. Get complete Admin Dashboard data
   app.get('/api/admin/dashboard', (req, res) => {
     try {
@@ -4011,7 +4488,8 @@ async function startServer() {
           tier: admin.tier,
           isMainAdmin: true
         },
-        systemConfig: db.systemConfig,
+        systemConfig: getSanitizedSystemConfig(db.systemConfig),
+        emailStatus: getSafeEmailStatus(),
         telemetry: {
           uptimeSeconds: Math.floor(process.uptime()),
           serverStartedAt: db.systemConfig?.telemetry?.serverStartedAt || new Date().toISOString(),
@@ -4074,7 +4552,7 @@ async function startServer() {
       }
 
       saveDatabase(db);
-      res.json({ ok: true, message: 'System configuration updated successfully.', systemConfig: db.systemConfig });
+      res.json({ ok: true, message: 'System configuration updated successfully.', systemConfig: getSanitizedSystemConfig(db.systemConfig) });
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message });
     }

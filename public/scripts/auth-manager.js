@@ -1570,7 +1570,7 @@ ${mail.body}
         }
       });
 
-      if (tab === 'overview' || tab === 'users' || tab === 'audit') {
+      if (tab === 'overview' || tab === 'releases' || tab === 'users' || tab === 'audit') {
         if (!this._adminDashboardLoaded) {
           this.loadAdminDashboard();
         }
@@ -1675,6 +1675,9 @@ ${mail.body}
           const el = document.getElementById(`flag-${key}`);
           if (el) el.checked = !!flags[key];
         });
+
+        // 4b. Outbound SMTP Email Delivery Status (non-secret metadata only)
+        this.populateAdminSmtpForm(data.emailStatus);
 
         // 5. Users List & Count
         const badgeCount = document.getElementById('admin-users-badge-count');
@@ -1819,6 +1822,125 @@ ${mail.body}
       } catch (err) {
         if (typeof window.triggerToast === 'function') {
           window.triggerToast(err.message, 'error');
+        }
+      }
+    },
+
+    populateAdminSmtpForm: function(emailStatus) {
+      const badge = document.getElementById('admin-smtp-status-badge');
+      const hostEl = document.getElementById('admin-smtp-host');
+      const portEl = document.getElementById('admin-smtp-port');
+      const userEl = document.getElementById('admin-smtp-user');
+      const passEl = document.getElementById('admin-smtp-pass');
+      const fromEl = document.getElementById('admin-smtp-from');
+
+      const st = emailStatus || {};
+      if (badge) {
+        if (st.configured) {
+          badge.textContent = st.source === 'env'
+            ? `Active (${String(st.provider || 'smtp').toUpperCase()} Secrets)`
+            : 'Active (Encrypted Admin Config)';
+          badge.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800';
+        } else {
+          badge.textContent = 'Not Configured';
+          badge.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800';
+        }
+      }
+
+      if (hostEl && st.host) hostEl.value = st.host;
+      if (portEl && st.port) portEl.value = String(st.port === 587 ? 587 : 465);
+      if (userEl && st.user) userEl.value = st.user;
+      if (fromEl && st.from) fromEl.value = st.from;
+      if (passEl) {
+        passEl.value = '';
+        passEl.placeholder = st.hasPassword
+          ? '•••••••••••• (saved encrypted — leave blank to keep)'
+          : 'Enter 16-char Gmail App Password';
+      }
+    },
+
+    saveAdminSmtpConfig: async function(sendTest) {
+      const host = (document.getElementById('admin-smtp-host')?.value || '').trim();
+      const port = parseInt(document.getElementById('admin-smtp-port')?.value || '465', 10) || 465;
+      const secure = port === 465;
+      const user = (document.getElementById('admin-smtp-user')?.value || '').trim();
+      const pass = document.getElementById('admin-smtp-pass')?.value || '';
+      const from = (document.getElementById('admin-smtp-from')?.value || '').trim();
+      const resultEl = document.getElementById('admin-smtp-result');
+
+      const showResult = (ok, msg) => {
+        if (!resultEl) return;
+        resultEl.classList.remove(
+          'hidden',
+          'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-emerald-200', 'dark:border-emerald-800', 'text-emerald-800', 'dark:text-emerald-200',
+          'bg-red-50', 'dark:bg-red-950/40', 'border-red-200', 'dark:border-red-800', 'text-red-800', 'dark:text-red-200',
+          'bg-blue-50', 'dark:bg-blue-950/40', 'border-blue-200', 'dark:border-blue-800', 'text-blue-800', 'dark:text-blue-200'
+        );
+        if (ok === true) {
+          resultEl.classList.add('bg-emerald-50', 'dark:bg-emerald-950/40', 'border-emerald-200', 'dark:border-emerald-800', 'text-emerald-800', 'dark:text-emerald-200');
+        } else if (ok === false) {
+          resultEl.classList.add('bg-red-50', 'dark:bg-red-950/40', 'border-red-200', 'dark:border-red-800', 'text-red-800', 'dark:text-red-200');
+        } else {
+          resultEl.classList.add('bg-blue-50', 'dark:bg-blue-950/40', 'border-blue-200', 'dark:border-blue-800', 'text-blue-800', 'dark:text-blue-200');
+        }
+        resultEl.textContent = msg;
+      };
+
+      try {
+        const token = this.getToken();
+        if (!token) throw new Error('Main Admin session required.');
+
+        showResult(null, sendTest ? 'Saving encrypted SMTP settings & verifying connection...' : 'Saving encrypted SMTP settings...');
+
+        const saveRes = await fetch('/api/admin/email/config', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ host, port, secure, user, pass, from, enabled: true })
+        });
+        const saveData = await saveRes.json();
+        if (!saveRes.ok || !saveData.ok) {
+          throw new Error(saveData.error || 'Failed to save SMTP configuration.');
+        }
+
+        if (saveData.emailStatus) {
+          this.populateAdminSmtpForm(saveData.emailStatus);
+        }
+
+        if (sendTest) {
+          const verifyRes = await fetch('/api/admin/email/verify', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ sendTest: true })
+          });
+          const verifyData = await verifyRes.json();
+          if (!verifyRes.ok || !verifyData.ok) {
+            throw new Error(verifyData.error || 'SMTP connection or authentication test failed.');
+          }
+          const successMsg = `SMTP verified (${verifyData.host}:${verifyData.port}) and test email sent to your admin inbox!`;
+          showResult(true, successMsg);
+          if (typeof window.triggerToast === 'function') {
+            window.triggerToast(successMsg, 'success');
+          }
+        } else {
+          const savedMsg = 'SMTP settings encrypted and saved cleanly.';
+          showResult(true, savedMsg);
+          if (typeof window.triggerToast === 'function') {
+            window.triggerToast(savedMsg, 'success');
+          }
+        }
+
+        this.loadAdminDashboard();
+      } catch (err) {
+        const errMsg = err?.message || 'Unable to configure SMTP.';
+        showResult(false, errMsg);
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast(errMsg, 'error');
         }
       }
     },
