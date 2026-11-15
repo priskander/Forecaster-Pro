@@ -823,6 +823,71 @@ async function runSecurityTestSuite() {
         prodFailClosedServer.baseUrl
       );
       assert(prodSubdomainOpt.status === 403, 'CORS 7.5b: Production fails closed (HTTP 403) on *.run.app when ALLOWED_ORIGINS unset');
+
+      // 7.5c Production permits genuine same-origin POST (Origin matching request Host or X-Forwarded-Host)
+      const sameOriginPost = await request(
+        '/api/auth/register',
+        {
+          method: 'POST',
+          headers: {
+            Origin: prodFailClosedServer.baseUrl,
+            'Sec-Fetch-Site': 'same-origin'
+          },
+          body: JSON.stringify({
+            name: 'Prod Same Origin User',
+            email: `sameorigin_${Date.now()}@testcorp.local`,
+            password: `ProdStrong#${Date.now()}!`
+          })
+        },
+        prodFailClosedServer.baseUrl
+      );
+      assert(
+        sameOriginPost.status === 201 && sameOriginPost.body.ok === true,
+        'CORS 7.5c: Production allows verified same-origin browser mutation (HTTP 201)'
+      );
+
+      // 7.5d Reverse-proxy forwarded same-origin host allowed unless Sec-Fetch-Site is cross-site
+      const proxiedSameOrigin = await request(
+        '/api/auth/login',
+        {
+          method: 'POST',
+          headers: {
+            Origin: 'https://ais-pre-example.europe-west2.run.app',
+            'X-Forwarded-Host': 'ais-pre-example.europe-west2.run.app',
+            'X-Forwarded-Proto': 'https',
+            'Sec-Fetch-Site': 'same-origin'
+          },
+          body: JSON.stringify({ email: 'nonexistent@testcorp.local', password: 'SomePassword#2026!' })
+        },
+        prodFailClosedServer.baseUrl
+      );
+      assert(
+        proxiedSameOrigin.status === 401,
+        'CORS 7.5d: Reverse-proxied same-origin mutation passes CSRF guard (reaches auth 401 instead of 403)'
+      );
+
+      const crossSiteBlocked = await request(
+        '/api/auth/register',
+        {
+          method: 'POST',
+          headers: {
+            Origin: 'https://ais-pre-example.europe-west2.run.app',
+            'X-Forwarded-Host': 'ais-pre-example.europe-west2.run.app',
+            'X-Forwarded-Proto': 'https',
+            'Sec-Fetch-Site': 'cross-site'
+          },
+          body: JSON.stringify({
+            name: 'Cross Site Attacker',
+            email: `crosssite_${Date.now()}@evil.local`,
+            password: `ProdStrong#${Date.now()}!`
+          })
+        },
+        prodFailClosedServer.baseUrl
+      );
+      assert(
+        crossSiteBlocked.status === 403,
+        'CORS 7.5e: Sec-Fetch-Site: cross-site mutation blocked by CSRF guard (HTTP 403)'
+      );
     } finally {
       await prodFailClosedServer.stop(true);
     }

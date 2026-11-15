@@ -539,7 +539,7 @@ const customAllowedOrigins = new Set(
     .filter(Boolean)
 );
 
-if (process.env.APP_URL && !isProductionEnv) {
+if (process.env.APP_URL) {
   try {
     const appOrigin = new URL(process.env.APP_URL).origin.toLowerCase();
     customAllowedOrigins.add(appOrigin);
@@ -547,7 +547,7 @@ if (process.env.APP_URL && !isProductionEnv) {
 }
 
 if (isProductionEnv && customAllowedOrigins.size === 0) {
-  console.warn('[Security] ALLOWED_ORIGINS is not configured in production mode. All cross-origin CORS requests will fail closed (HTTP 403).');
+  console.warn('[Security] ALLOWED_ORIGINS is not configured in production mode. All cross-origin CORS requests will fail closed (HTTP 403); only verified same-origin requests are permitted.');
 }
 
 function isOriginAllowed(origin: string | undefined): boolean {
@@ -558,6 +558,39 @@ function isOriginAllowed(origin: string | undefined): boolean {
   // Local development loopback is allowed strictly outside production mode
   if (!isProductionEnv && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(lower)) {
     return true;
+  }
+
+  return false;
+}
+
+function isSameOriginRequest(req: express.Request, origin: string | undefined): boolean {
+  if (!origin) return true;
+  const fetchSite = String(req.headers['sec-fetch-site'] || '').trim().toLowerCase();
+  if (fetchSite === 'cross-site') return false;
+
+  let parsedOrigin: URL;
+  try {
+    parsedOrigin = new URL(origin);
+  } catch {
+    return false;
+  }
+
+  const originProto = parsedOrigin.protocol.replace(/:$/, '').toLowerCase();
+  if (originProto !== 'http' && originProto !== 'https') return false;
+  const originHost = parsedOrigin.host.toLowerCase();
+
+  const rawForwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim().toLowerCase();
+  const rawDirectHost = String(req.headers.host || '').trim().toLowerCase();
+  const rawForwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+
+  if (rawForwardedHost && originHost === rawForwardedHost) {
+    return rawForwardedProto ? originProto === rawForwardedProto : true;
+  }
+
+  if (rawDirectHost && originHost === rawDirectHost) {
+    if (rawForwardedProto) return originProto === rawForwardedProto;
+    const isLoopbackHost = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(rawDirectHost);
+    return isLoopbackHost ? originProto === req.protocol.toLowerCase() : true;
   }
 
   return false;
@@ -1595,7 +1628,7 @@ async function startServer() {
     }
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
       const origin = req.headers.origin;
-      if (origin && !isOriginAllowed(origin)) {
+      if (origin && !isOriginAllowed(origin) && !isSameOriginRequest(req, origin)) {
         return res.status(403).json({ ok: false, error: 'CSRF policy: Untrusted origin blocked from mutating application data.' });
       }
     }
