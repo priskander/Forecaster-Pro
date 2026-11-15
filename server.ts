@@ -1035,6 +1035,92 @@ if (demoProvisionResult.provisioned) {
 
 if (!db.auditLog) db.auditLog = [];
 
+// Break-glass administrator recovery (operator-controlled).
+// Anyone who can set deployment secrets already controls the server, so this is a safe
+// recovery path when the email-based reset cannot deliver (no SMTP/Resend configured) or
+// the admin is locked out / suspended. It applies ONCE per distinct secret value and
+// forces a password change at next sign-in. Remove ADMIN_RECOVERY_PASSWORD afterwards.
+function applyAdminRecovery(
+  targetDb: CloudDatabase,
+  rawEmail?: string,
+  rawPassword?: string
+): { applied: boolean; reason?: string } {
+  const secret = (rawPassword || '').trim();
+  if (!secret) return { applied: false };
+
+  const pwdCheck = validateStrongPassword(secret);
+  if (secret.length < 10 || !pwdCheck.valid) {
+    return {
+      applied: false,
+      reason: 'ADMIN_RECOVERY_PASSWORD must be at least 10 characters with upper, lower, digit and symbol.'
+    };
+  }
+
+  const cleanEmail = (rawEmail || '').trim().toLowerCase();
+  const users = Object.values(targetDb.users || {}).filter(u => !u.isDemo);
+  const admins = users.filter(u => !!u.isMainAdmin || u.role === 'main_admin');
+
+  let target = cleanEmail ? users.find(u => u.email.toLowerCase() === cleanEmail) : undefined;
+  if (!target && !cleanEmail && admins.length === 1) target = admins[0];
+
+  if (!target) {
+    if (cleanEmail && admins.length === 0) {
+      // No administrator exists at all (e.g. database was reset): create one from the recovery credentials.
+      const created = provisionInitialAdministrator(targetDb, cleanEmail, secret);
+      if (created.provisioned) {
+        (targetDb as any).adminRecoveryFingerprint = crypto
+          .createHash('sha256').update(`${cleanEmail}|${secret}`).digest('hex');
+        return { applied: true };
+      }
+      return { applied: false, reason: created.reason };
+    }
+    return {
+      applied: false,
+      reason: 'No matching account found. Set ADMIN_RECOVERY_EMAIL to the exact administrator email.'
+    };
+  }
+
+  // Safety: recovery only ever targets a main administrator, never an ordinary user.
+  if (!target.isMainAdmin && target.role !== 'main_admin') {
+    return { applied: false, reason: 'Recovery target is not a main administrator account.' };
+  }
+
+  const fingerprint = crypto.createHash('sha256').update(`${target.email.toLowerCase()}|${secret}`).digest('hex');
+  if ((targetDb as any).adminRecoveryFingerprint === fingerprint) {
+    return { applied: false, reason: 'Recovery credential already applied.' };
+  }
+
+  const salt = crypto.randomBytes(16).toString('hex');
+  target.passwordHash = hashPassword(secret, salt);
+  target.salt = salt;
+  target.mustChangePassword = true;
+  target.status = 'active';
+  target.failedLoginAttempts = 0;
+  delete target.lockoutUntil;
+  delete target.resetTempPasswordHash;
+  delete target.resetTempPasswordSalt;
+  delete target.resetTokenExpiresAt;
+  (targetDb as any).adminRecoveryFingerprint = fingerprint;
+  return { applied: true };
+}
+
+{
+  const recovery = applyAdminRecovery(
+    db,
+    process.env.ADMIN_RECOVERY_EMAIL || process.env.INITIAL_ADMIN_EMAIL,
+    process.env.ADMIN_RECOVERY_PASSWORD
+  );
+  if (recovery.applied) {
+    startupStructuralChanged = true;
+    const rEmail = (process.env.ADMIN_RECOVERY_EMAIL || process.env.INITIAL_ADMIN_EMAIL || 'administrator').trim();
+    logAdminAction(rEmail, 'ADMIN_RECOVERY_APPLIED', 'security',
+      'Operator-controlled administrator recovery applied at startup (password reset, lockout cleared, password change required).');
+    console.log('[Security] Administrator recovery applied. Sign in, change the password, then remove ADMIN_RECOVERY_PASSWORD.');
+  } else if (recovery.reason && recovery.reason !== 'Recovery credential already applied.') {
+    console.warn(`[Security] Administrator recovery skipped: ${recovery.reason}`);
+  }
+}
+
 if (!db.systemConfig) {
   db.systemConfig = {
     maintenanceMode: {
