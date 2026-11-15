@@ -270,10 +270,22 @@
         if (statusEl) {
           statusEl.textContent = data.message || 'If an account is registered with that email address, temporary recovery instructions have been dispatched.';
         }
-        if (card) card.classList.remove('hidden');
+        if (card) {
+          card.classList.remove('hidden');
+          if (data.emailConfigured === false) {
+            card.classList.remove('bg-emerald-50', 'dark:bg-emerald-950/50', 'border-emerald-200', 'dark:border-emerald-800');
+            card.classList.add('bg-amber-50', 'dark:bg-amber-950/40', 'border-amber-200', 'dark:border-amber-800');
+          } else {
+            card.classList.remove('bg-amber-50', 'dark:bg-amber-950/40', 'border-amber-200', 'dark:border-amber-800');
+            card.classList.add('bg-emerald-50', 'dark:bg-emerald-950/50', 'border-emerald-200', 'dark:border-emerald-800');
+          }
+        }
 
         if (typeof window.triggerToast === 'function') {
-          window.triggerToast(data.message || 'Recovery request submitted.', 'info');
+          window.triggerToast(
+            data.message || 'Recovery request submitted.',
+            data.emailConfigured === false ? 'warning' : 'info'
+          );
         }
       } catch (err) {
         this.showAuthError(err.message);

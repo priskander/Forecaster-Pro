@@ -8,6 +8,7 @@ import { execFileSync, spawnSync } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
 import http from 'http';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 import {
@@ -994,9 +995,124 @@ async function runSecurityTestSuite() {
       forgotExisting.status === 200 &&
       forgotMissing.status === 200 &&
       forgotExisting.body.message === forgotMissing.body.message &&
+      forgotExisting.body.emailConfigured === false &&
+      forgotMissing.body.emailConfigured === false &&
       forgotExisting.body.temporaryPassword === undefined,
-      'Reset 9.1: /api/auth/forgot-password is non-enumerating and never leaks temporary credentials in HTTP response'
+      'Reset 9.1: /api/auth/forgot-password is non-enumerating, reports emailConfigured status identically, and never leaks temporary credentials in HTTP response'
     );
+
+    // 9.1b End-to-end SMTP protocol delivery test with ephemeral local SMTP listener
+    let receivedSmtpPayload = '';
+    const smtpServer = net.createServer((socket) => {
+      let inDataMode = false;
+      let buffer = '';
+      socket.write('220 localhost ESMTP MockSMTP\r\n');
+      socket.on('data', (chunk) => {
+        buffer += chunk.toString('utf8');
+        if (inDataMode) {
+          const endIdx = buffer.indexOf('\r\n.\r\n');
+          if (endIdx !== -1) {
+            receivedSmtpPayload += buffer.slice(0, endIdx);
+            buffer = buffer.slice(endIdx + 5);
+            inDataMode = false;
+            socket.write('250 2.0.0 Ok: queued\r\n');
+          }
+          return;
+        }
+        let nlIdx: number;
+        while ((nlIdx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, nlIdx).replace(/\r$/, '');
+          buffer = buffer.slice(nlIdx + 1);
+          const upper = line.toUpperCase();
+          if (upper.startsWith('EHLO') || upper.startsWith('HELO')) {
+            socket.write('250-localhost\r\n250 OK\r\n');
+          } else if (upper.startsWith('MAIL FROM') || upper.startsWith('RCPT TO')) {
+            socket.write('250 2.1.0 Ok\r\n');
+          } else if (upper === 'DATA') {
+            inDataMode = true;
+            socket.write('354 End data with <CR><LF>.<CR><LF>\r\n');
+            break;
+          } else if (upper === 'QUIT') {
+            socket.write('221 2.0.0 Bye\r\n');
+            socket.end();
+          } else {
+            socket.write('250 Ok\r\n');
+          }
+        }
+      });
+    });
+
+    await new Promise<void>((resolve) => smtpServer.listen(0, '127.0.0.1', () => resolve()));
+    const smtpAddr = smtpServer.address() as net.AddressInfo;
+    const smtpTestSrv = await startIsolatedTestServer({
+      env: {
+        SMTP_HOST: '127.0.0.1',
+        SMTP_PORT: String(smtpAddr.port),
+        SMTP_SECURE: 'false',
+        SMTP_ALLOW_UNAUTH: 'true',
+        SMTP_FROM: 'security@testcorp.local'
+      }
+    });
+    try {
+      const smtpStatus = await request('/api/public/system-status', {}, smtpTestSrv.baseUrl);
+      assert(smtpStatus.status === 200 && smtpStatus.body.emailConfigured === true, 'Reset 9.1b: system-status detects configured SMTP transport');
+
+      const smtpTargetEmail = `smtp_user_${Date.now()}@testcorp.local`;
+      const regSmtp = await request(
+        '/api/auth/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({ name: 'SMTP Recovery User', email: smtpTargetEmail, password: 'InitialSmtpPass#2026!' })
+        },
+        smtpTestSrv.baseUrl
+      );
+      assert(regSmtp.status === 201, 'Reset 9.1c: Test user registered on SMTP-enabled server');
+
+      const forgotViaSmtp = await request(
+        '/api/auth/forgot-password',
+        {
+          method: 'POST',
+          body: JSON.stringify({ email: smtpTargetEmail })
+        },
+        smtpTestSrv.baseUrl
+      );
+      assert(
+        forgotViaSmtp.status === 200 && forgotViaSmtp.body.emailConfigured === true,
+        'Reset 9.1d: /api/auth/forgot-password dispatches recovery email when SMTP is configured'
+      );
+
+      const codeMatch = receivedSmtpPayload.match(/Temp-[A-Z0-9]+!/);
+      const deliveredCode = codeMatch ? codeMatch[0] : '';
+      assert(!!deliveredCode, 'Reset 9.1e: SMTP server received real email containing single-use recovery code');
+
+      const outboxDisk = JSON.parse(fs.readFileSync(smtpTestSrv.dbFile, 'utf-8')).outbox || [];
+      assert(
+        outboxDisk.length > 0 &&
+        outboxDisk[0].status === 'delivered' &&
+        !JSON.stringify(outboxDisk).includes(deliveredCode),
+        'Reset 9.1f: Stored outbox record preserves status=delivered while redacting recovery code'
+      );
+
+      const completeSmtpReset = await request(
+        '/api/auth/reset-password',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            email: smtpTargetEmail,
+            temporaryPassword: deliveredCode,
+            newPassword: 'RecoveredSmtpPass#2026!'
+          })
+        },
+        smtpTestSrv.baseUrl
+      );
+      assert(
+        completeSmtpReset.status === 200 && !!completeSmtpReset.body.token,
+        'Reset 9.1g: User completes password recovery end-to-end using SMTP-delivered code'
+      );
+    } finally {
+      await smtpTestSrv.stop(true);
+      await new Promise<void>((resolve) => smtpServer.close(() => resolve()));
+    }
 
     // Prepare isolated DB snapshot with known scrypt-hashed reset credentials to test missing/expired/single-use paths cleanly
     const resetTestDir = path.join(os.tmpdir(), `forecaster_reset_${Date.now()}`);

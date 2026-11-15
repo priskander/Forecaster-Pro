@@ -57,6 +57,14 @@ export async function startIsolatedTestServer(options: IsolatedServerOptions = {
   delete childEnv.DEMO_USER_EMAIL;
   delete childEnv.DEMO_USER_PASSWORD;
   delete childEnv.DIST_DIR;
+  delete childEnv.SMTP_HOST;
+  delete childEnv.SMTP_PORT;
+  delete childEnv.SMTP_SECURE;
+  delete childEnv.SMTP_USER;
+  delete childEnv.SMTP_PASS;
+  delete childEnv.SMTP_FROM;
+  delete childEnv.SMTP_ALLOW_UNAUTH;
+  delete childEnv.RESEND_API_KEY;
   childEnv.NODE_ENV = 'development';
   childEnv.DISABLE_HMR = 'true';
   childEnv.PORT = String(port);

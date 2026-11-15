@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import nodemailer from 'nodemailer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -149,7 +150,7 @@ interface OutboxEmail {
   body: string;
   htmlBody: string;
   sentAt: string;
-  status: 'delivered';
+  status: 'delivered' | 'pending_transport' | 'failed';
   metadata: {
     userId: string;
     role: string;
@@ -615,6 +616,103 @@ function generateTemporaryPassword(): string {
   return `Temp-${randL}${randD}!`;
 }
 
+function getEmailTransportProvider(): 'smtp' | 'resend' | 'none' {
+  if ((process.env.RESEND_API_KEY || '').trim()) {
+    return 'resend';
+  }
+  const host = (process.env.SMTP_HOST || '').trim();
+  const user = (process.env.SMTP_USER || '').trim();
+  const pass = (process.env.SMTP_PASS || '').trim();
+  const allowUnauth = (process.env.SMTP_ALLOW_UNAUTH || '').trim().toLowerCase() === 'true';
+  if (host && ((user && pass) || allowUnauth)) {
+    return 'smtp';
+  }
+  return 'none';
+}
+
+function isEmailTransportConfigured(): boolean {
+  return getEmailTransportProvider() !== 'none';
+}
+
+async function dispatchOutboundEmail(opts: {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}): Promise<{ sent: boolean; provider: 'smtp' | 'resend' | 'none'; status: 'delivered' | 'pending_transport' | 'failed'; error?: string }> {
+  const provider = getEmailTransportProvider();
+  const fromAddress = (process.env.SMTP_FROM || process.env.SMTP_USER || 'Forecaster Pro <security@forecasterpro.local>').trim();
+
+  if (provider === 'resend') {
+    try {
+      const apiKey = (process.env.RESEND_API_KEY || '').trim();
+      const resp = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: fromAddress,
+          to: [opts.to],
+          subject: opts.subject,
+          text: opts.text,
+          html: opts.html
+        })
+      });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        console.error(`[Email] Resend delivery failed with HTTP ${resp.status}.`);
+        return { sent: false, provider, status: 'failed', error: `Resend HTTP ${resp.status}: ${errText.slice(0, 120)}` };
+      }
+      return { sent: true, provider, status: 'delivered' };
+    } catch (err: any) {
+      console.error('[Email] Resend delivery error:', err?.message || 'Unknown error');
+      return { sent: false, provider, status: 'failed', error: err?.message || 'Resend error' };
+    }
+  }
+
+  if (provider === 'smtp') {
+    try {
+      const host = (process.env.SMTP_HOST || '').trim();
+      const port = parseInt(process.env.SMTP_PORT || '587', 10) || 587;
+      const secureEnv = (process.env.SMTP_SECURE || '').trim().toLowerCase();
+      const secure = secureEnv ? secureEnv === 'true' : port === 465;
+      const user = (process.env.SMTP_USER || '').trim();
+      const pass = (process.env.SMTP_PASS || '').trim();
+
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: user && pass ? { user, pass } : undefined,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000
+      });
+
+      await transporter.sendMail({
+        from: fromAddress,
+        to: opts.to,
+        subject: opts.subject,
+        text: opts.text,
+        html: opts.html
+      });
+      return { sent: true, provider, status: 'delivered' };
+    } catch (err: any) {
+      console.error('[Email] SMTP delivery error:', err?.message || 'Unknown error');
+      return { sent: false, provider, status: 'failed', error: err?.message || 'SMTP error' };
+    }
+  }
+
+  return {
+    sent: false,
+    provider: 'none',
+    status: 'pending_transport',
+    error: 'No SMTP or Resend email transport configured.'
+  };
+}
+
 function sendSubUserWelcomeEmail(subUser: UserRecord, tempPass: string, owner: UserRecord): OutboxEmail {
   const roleDescriptions: Record<UserRole, string> = {
     main_admin: 'Master app owner with full centralized cross-platform control across Website, Desktop, and Mobile.',
@@ -705,7 +803,7 @@ Forecaster Pro Team`;
     body: textBody.replace(tempPass, '[REDACTED_ON_STORAGE]'),
     htmlBody: htmlBody.replace(tempPass, '[REDACTED_ON_STORAGE]'),
     sentAt: new Date().toISOString(),
-    status: 'delivered',
+    status: isEmailTransportConfigured() ? 'delivered' : 'pending_transport',
     metadata: {
       userId: subUser.id,
       role: subUser.role,
@@ -716,6 +814,21 @@ Forecaster Pro Team`;
 
   if (!db.outbox) db.outbox = [];
   db.outbox.unshift(emailRecord);
+
+  if (isEmailTransportConfigured()) {
+    void dispatchOutboundEmail({
+      to: subUser.email,
+      subject,
+      text: textBody,
+      html: htmlBody
+    }).then(result => {
+      if (!result.sent) {
+        emailRecord.status = result.status;
+        saveDatabase(db);
+      }
+    }).catch(() => {});
+  }
+
   return emailRecord;
 }
 
@@ -2064,8 +2177,8 @@ async function startServer() {
     }
   });
 
-  // Request Password Reset (Non-enumerating, time-limited single-use hashed recovery credential)
-  app.post('/api/auth/forgot-password', passwordResetLimiter, (req, res) => {
+  // Request Password Reset (Non-enumerating, time-limited single-use hashed recovery credential + real SMTP/API dispatch)
+  app.post('/api/auth/forgot-password', passwordResetLimiter, async (req, res) => {
     try {
       const { email } = req.body || {};
       const cleanEmail = (email || '').trim().toLowerCase();
@@ -2074,9 +2187,13 @@ async function startServer() {
         return res.status(400).json({ ok: false, error: 'Please enter a valid email address.' });
       }
 
+      const emailConfigured = isEmailTransportConfigured();
       const genericResponse = {
         ok: true,
-        message: 'If an account is registered with that email address, temporary recovery instructions have been dispatched.'
+        emailConfigured,
+        message: emailConfigured
+          ? 'If an account is registered with that email address, single-use recovery instructions have been dispatched to your inbox (valid for 15 minutes).'
+          : 'No outbound email protocol (SMTP or Resend API) is configured on this server yet, so recovery emails cannot be sent externally. Configure SMTP_HOST/SMTP_USER/SMTP_PASS (or RESEND_API_KEY) and try again.'
       };
 
       const user = Object.values(db.users || {}).find(u => u.email.toLowerCase() === cleanEmail);
@@ -2092,15 +2209,46 @@ async function startServer() {
       user.resetCredentialUsed = false;
       delete user.temporaryPassword;
 
+      const subject = 'Forecaster Pro - Password Reset Verification Code';
+      const outboundTextBody =
+        `Hello ${user.name},\n\n` +
+        `A password reset was requested for your Forecaster Pro account (${user.email}).\n\n` +
+        `Your single-use recovery code is: ${tempPass}\n` +
+        `This code expires in 15 minutes and can only be used once.\n\n` +
+        `If you did not request this reset, you can safely ignore this message.\n\n` +
+        `Best regards,\nForecaster Pro Security Team`;
+      const outboundHtmlBody =
+        `<div style="font-family:sans-serif;max-width:580px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;">` +
+        `<h2 style="margin-top:0;color:#0f172a;">Password Reset Requested</h2>` +
+        `<p>Hello ${user.name},</p>` +
+        `<p>A single-use recovery code was requested for your Forecaster Pro account (<strong>${user.email}</strong>).</p>` +
+        `<div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:12px;padding:16px;margin:16px 0;text-align:center;">` +
+        `<div style="font-size:12px;color:#64748b;text-transform:uppercase;margin-bottom:6px;">Single-Use Recovery Code (15 Min TTL)</div>` +
+        `<code style="font-size:20px;font-weight:800;letter-spacing:1px;color:#1d4ed8;">${tempPass}</code>` +
+        `</div>` +
+        `<p style="font-size:12px;color:#64748b;">If you did not request this reset, please ignore this email.</p>` +
+        `</div>`;
+
+      const dispatchResult = await dispatchOutboundEmail({
+        to: user.email,
+        subject,
+        text: outboundTextBody,
+        html: outboundHtmlBody
+      });
+
+      if (!emailConfigured) {
+        console.warn('[Email] Password reset credential generated, but outbound email delivery skipped because SMTP / RESEND_API_KEY is not configured.');
+      }
+
       const emailRecord: OutboxEmail = {
         id: 'mail_reset_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex'),
         to: user.email,
         toName: user.name,
-        subject: 'Forecaster Pro - Password Reset Requested',
-        body: `Hello ${user.name},\n\nA password reset was requested for your account (${user.email}). Your temporary recovery code expires in 15 minutes and can only be used once.\n\nIf you did not request this reset, you can safely ignore this message.\n\nBest regards,\nForecaster Pro Security Team`,
-        htmlBody: `<div style="font-family:sans-serif;max-width:580px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;"><h2>Password Reset Requested</h2><p>Hello ${user.name}, a single-use password reset credential was generated for your account and will expire in 15 minutes.</p></div>`,
+        subject,
+        body: outboundTextBody.replace(tempPass, '[REDACTED_ON_STORAGE]'),
+        htmlBody: outboundHtmlBody.replace(tempPass, '[REDACTED_ON_STORAGE]'),
         sentAt: new Date().toISOString(),
-        status: 'delivered',
+        status: dispatchResult.status,
         metadata: {
           userId: user.id,
           role: user.role,
@@ -2112,7 +2260,12 @@ async function startServer() {
       if (!db.outbox) db.outbox = [];
       db.outbox.unshift(emailRecord);
 
-      logAdminAction(user.email, 'PASSWORD_RESET_REQUESTED', 'security', `Single-use password reset credential generated (15m TTL)`);
+      logAdminAction(
+        user.email,
+        'PASSWORD_RESET_REQUESTED',
+        'security',
+        `Single-use password reset credential generated (15m TTL; Email transport: ${dispatchResult.provider}, status: ${dispatchResult.status})`
+      );
 
       saveDatabase(db);
 
@@ -4120,6 +4273,7 @@ async function startServer() {
     res.json({
       ok: true,
       demoModeEnabled: isDemoModeEnabled(),
+      emailConfigured: isEmailTransportConfigured(),
       maintenance: db.systemConfig?.maintenanceMode || { enabled: false, message: '', affectedPlatforms: [] },
       broadcast: db.systemConfig?.broadcastNotice || { enabled: false, message: '' },
       platforms: db.systemConfig?.platforms || {},
