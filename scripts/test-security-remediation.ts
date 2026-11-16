@@ -3042,6 +3042,282 @@ async function runSecurityTestSuite() {
       await adminCtrlSrv.stop(true);
     }
 
+    // =========================================================================
+    // 15. Phase 1.1.2.1 Final Credential Security Corrections
+    // =========================================================================
+    console.log('\n--- Test Category 15: Phase 1.1.2.1 CSPRNG Reset Credentials & Demo Login Rate Limiting ---');
+
+    // 15.1 Verify source implementation of generateTemporaryPassword uses crypto.randomInt (no Math.random)
+    const serverSrcText = fs.readFileSync(path.resolve(process.cwd(), 'server.ts'), 'utf-8');
+    const genTempMatch = serverSrcText.match(/function generateTemporaryPassword\(\): string \{[\s\S]*?\n\}/);
+    const genTempBody = genTempMatch ? genTempMatch[0] : '';
+    assert(
+      !!genTempBody &&
+      genTempBody.includes('crypto.randomInt') &&
+      !genTempBody.includes('Math.random'),
+      'CredCSPRNG 15.1: generateTemporaryPassword() uses crypto.randomInt() exclusively with zero Math.random()'
+    );
+
+    // 15.2 End-to-end SMTP capture of multiple CSPRNG password-reset credentials, hash storage, redaction & single-use
+    const capturedResetPayloads: string[] = [];
+    let currentResetBufferPayload = '';
+    const csprngSmtpServer = net.createServer((socket) => {
+      let inDataMode = false;
+      let buffer = '';
+      socket.write('220 localhost ESMTP MockResetSMTP\r\n');
+      socket.on('data', (chunk) => {
+        buffer += chunk.toString('utf8');
+        if (inDataMode) {
+          const endIdx = buffer.indexOf('\r\n.\r\n');
+          if (endIdx !== -1) {
+            currentResetBufferPayload += buffer.slice(0, endIdx);
+            capturedResetPayloads.push(currentResetBufferPayload);
+            currentResetBufferPayload = '';
+            buffer = buffer.slice(endIdx + 5);
+            inDataMode = false;
+            socket.write('250 2.0.0 Ok: queued\r\n');
+          }
+          return;
+        }
+        let nlIdx: number;
+        while ((nlIdx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, nlIdx).replace(/\r$/, '');
+          buffer = buffer.slice(nlIdx + 1);
+          const upper = line.toUpperCase();
+          if (upper.startsWith('EHLO') || upper.startsWith('HELO')) {
+            socket.write('250-localhost\r\n250 OK\r\n');
+          } else if (upper.startsWith('MAIL FROM') || upper.startsWith('RCPT TO')) {
+            socket.write('250 2.1.0 Ok\r\n');
+          } else if (upper === 'DATA') {
+            inDataMode = true;
+            currentResetBufferPayload = '';
+            socket.write('354 End data with <CR><LF>.<CR><LF>\r\n');
+            break;
+          } else if (upper === 'QUIT') {
+            socket.write('221 2.0.0 Bye\r\n');
+            socket.end();
+          } else {
+            socket.write('250 Ok\r\n');
+          }
+        }
+      });
+    });
+
+    await new Promise<void>((resolve) => csprngSmtpServer.listen(0, '127.0.0.1', () => resolve()));
+    const csprngSmtpAddr = csprngSmtpServer.address() as net.AddressInfo;
+
+    const csprngResetSrv = await startIsolatedTestServer({
+      env: {
+        SMTP_HOST: '127.0.0.1',
+        SMTP_PORT: String(csprngSmtpAddr.port),
+        SMTP_SECURE: 'false',
+        SMTP_ALLOW_UNAUTH: 'true',
+        SMTP_FROM: 'security@testcorp.local'
+      }
+    });
+
+    try {
+      const resetUserEmail = `csprng_reset_${Date.now()}@testcorp.local`;
+      const regResetUser = await request(
+        '/api/auth/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({ name: 'CSPRNG Reset User', email: resetUserEmail, password: 'InitialUserPass#2026!' })
+        },
+        csprngResetSrv.baseUrl
+      );
+      assert(regResetUser.status === 201 && !!regResetUser.body.user?.id, 'CredCSPRNG 15.2a: Registered isolated user for reset verification');
+
+      const issuedCodes: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const fpRes = await request(
+          '/api/auth/forgot-password',
+          { method: 'POST', body: JSON.stringify({ email: resetUserEmail }) },
+          csprngResetSrv.baseUrl
+        );
+        assert(fpRes.status === 200 && fpRes.body.temporaryPassword === undefined, `CredCSPRNG 15.2b.${i + 1}: /api/auth/forgot-password hides reset code from API response`);
+        const latestEmail = capturedResetPayloads[capturedResetPayloads.length - 1] || '';
+        const match = latestEmail.match(/Temp-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}!/);
+        assert(!!match, `CredCSPRNG 15.2c.${i + 1}: Dispatched reset credential matches required CSPRNG format (^Temp-[unambiguous-10]!$)`);
+        if (match) issuedCodes.push(match[0]);
+      }
+
+      const allPassComplexity = issuedCodes.every(code =>
+        code.length >= 16 &&
+        /[A-Z]/.test(code) &&
+        /[a-z]/.test(code) &&
+        /[0-9]/.test(code) &&
+        /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(code)
+      );
+      const uniqueCodes = new Set(issuedCodes);
+      assert(
+        issuedCodes.length === 3 && uniqueCodes.size === 3 && allPassComplexity,
+        'CredCSPRNG 15.2d: Repeated CSPRNG recovery credentials are distinct and satisfy password complexity rules'
+      );
+
+      const diskAfterForgotRaw = fs.readFileSync(csprngResetSrv.dbFile, 'utf-8');
+      const diskAfterForgot = JSON.parse(diskAfterForgotRaw);
+      const savedUser = Object.values(diskAfterForgot.users || {}).find((u: any) => u.email === resetUserEmail) as any;
+      const serverLogsCombined = csprngResetSrv.stdout.join('') + csprngResetSrv.stderr.join('');
+      const ttlRemainingMs = typeof savedUser?.resetTokenExpiresAt === 'number' ? savedUser.resetTokenExpiresAt - Date.now() : -1;
+
+      assert(
+        !!savedUser?.resetTempPasswordHash &&
+        !!savedUser?.resetTempPasswordSalt &&
+        savedUser.temporaryPassword === undefined &&
+        savedUser.resetCredentialUsed === false &&
+        ttlRemainingMs > 14 * 60 * 1000 &&
+        ttlRemainingMs <= 15 * 60 * 1000 + 5000 &&
+        issuedCodes.every(c => !diskAfterForgotRaw.includes(c) && !serverLogsCombined.includes(c)),
+        'CredCSPRNG 15.2e: DB stores only scrypt hash + 16-byte salt with ~15m TTL; outbox, DB file, and server logs contain zero plaintext reset codes'
+      );
+
+      const activeCode = issuedCodes[2];
+      const verifyResetComplete = await request(
+        '/api/auth/reset-password',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            email: resetUserEmail,
+            temporaryPassword: activeCode,
+            newPassword: 'PostCsprngReset#2026!'
+          })
+        },
+        csprngResetSrv.baseUrl
+      );
+      assert(verifyResetComplete.status === 200 && !!verifyResetComplete.body.token, 'CredCSPRNG 15.2f: User completes reset using latest CSPRNG recovery code');
+
+      const reuseActiveCode = await request(
+        '/api/auth/reset-password',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            email: resetUserEmail,
+            temporaryPassword: activeCode,
+            newPassword: 'SecondUseAttempt#2026!'
+          })
+        },
+        csprngResetSrv.baseUrl
+      );
+      assert(reuseActiveCode.status === 400, 'CredCSPRNG 15.2g: Reusing consumed CSPRNG recovery code is rejected (HTTP 400)');
+    } finally {
+      await csprngResetSrv.stop(true);
+      await new Promise<void>((resolve) => csprngSmtpServer.close(() => resolve()));
+    }
+
+    // 15.3 Demo Login Rate Limiter (disabled 403, allowed below limit, 429 + Retry-After, proxy X-Forwarded-For isolation, normal auth unaffected)
+    const demoDisabledBurst = await request('/api/auth/demo-login', { method: 'POST' }, mainServer.baseUrl);
+    assert(demoDisabledBurst.status === 403, 'DemoRate 15.3a: /api/auth/demo-login returns HTTP 403 when demo mode is disabled');
+
+    const demoRateSrv = await startIsolatedTestServer({
+      env: {
+        ENABLE_DEMO_MODE: 'true'
+      }
+    });
+    try {
+      const normalEmail = `ordinary_user_${Date.now()}@testcorp.local`;
+      const normalPass = 'OrdinaryUserStrong#2026!';
+      const regOrdinary = await request(
+        '/api/auth/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({ name: 'Ordinary User', email: normalEmail, password: normalPass })
+        },
+        demoRateSrv.baseUrl
+      );
+      assert(regOrdinary.status === 201, 'DemoRate 15.3b: Registered ordinary account for isolation verification');
+
+      // Direct client requests up to limit (5 requests succeed below limit)
+      let allFiveOk = true;
+      for (let i = 0; i < 5; i++) {
+        const res = await request('/api/auth/demo-login', { method: 'POST' }, demoRateSrv.baseUrl);
+        if (res.status !== 200 || !res.body?.token || res.body?.user?.isDemo !== true) {
+          allFiveOk = false;
+        }
+      }
+      assert(allFiveOk, 'DemoRate 15.3c: Interactive demo login succeeds cleanly below configured rate limit (5/5 HTTP 200)');
+
+      // 6th request exceeds limit -> HTTP 429 + Retry-After header
+      const rateLimitedRes = await request('/api/auth/demo-login', { method: 'POST' }, demoRateSrv.baseUrl);
+      const retryAfterHeader = rateLimitedRes.headers.get('retry-after');
+      const retryAfterSec = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+      assert(
+        rateLimitedRes.status === 429 &&
+        rateLimitedRes.body?.ok === false &&
+        Number.isFinite(retryAfterSec) &&
+        retryAfterSec >= 1 &&
+        retryAfterSec <= 60,
+        'DemoRate 15.3d: Exceeding demo-login limit returns HTTP 429 with valid Retry-After response header'
+      );
+
+      // Trailing slash / case variant hits same normalized limiter bucket
+      const slashVariantRes = await request('/api/auth/demo-login/', { method: 'POST' }, demoRateSrv.baseUrl);
+      assert(
+        slashVariantRes.status === 429 && !!slashVariantRes.headers.get('retry-after'),
+        'DemoRate 15.3e: Normalized path matching blocks /api/auth/demo-login/ variant under the same limit'
+      );
+
+      // Ordinary authentication on same IP is completely unaffected when demo-login is rate-limited
+      const ordinaryLoginSameIp = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: normalEmail, password: normalPass }) },
+        demoRateSrv.baseUrl
+      );
+      assert(
+        ordinaryLoginSameIp.status === 200 && !!ordinaryLoginSameIp.body?.token,
+        'DemoRate 15.3f: Ordinary user login on same IP stays unaffected when demo-login is rate-limited (HTTP 200)'
+      );
+
+      // Behind proxy environment: Client A hitting 429 does NOT block Client B arriving via X-Forwarded-For
+      for (let i = 0; i < 5; i++) {
+        const resA = await request(
+          '/api/auth/demo-login',
+          { method: 'POST', headers: { 'X-Forwarded-For': '198.51.100.41' } },
+          demoRateSrv.baseUrl
+        );
+        assert(resA.status === 200, `DemoRate 15.3g.${i + 1}: Proxied Client A succeeds within its own bucket`);
+      }
+      const blockedA = await request(
+        '/api/auth/demo-login',
+        { method: 'POST', headers: { 'X-Forwarded-For': '198.51.100.41' } },
+        demoRateSrv.baseUrl
+      );
+      assert(
+        blockedA.status === 429 && !!blockedA.headers.get('retry-after'),
+        'DemoRate 15.3h: Proxied Client A triggers HTTP 429 + Retry-After upon exhausting limit'
+      );
+
+      const allowedB = await request(
+        '/api/auth/demo-login',
+        { method: 'POST', headers: { 'X-Forwarded-For': '198.51.100.42' } },
+        demoRateSrv.baseUrl
+      );
+      assert(
+        allowedB.status === 200 && !!allowedB.body?.token,
+        'DemoRate 15.3i: Proxied Client B (distinct X-Forwarded-For IP) remains unblocked behind reverse proxy'
+      );
+
+      // Verify proxy spoofing protection (with trust proxy=1, leftmost spoofed 127.0.0.1 is ignored when proxy appends real peer IP)
+      for (let i = 0; i < 5; i++) {
+        await request(
+          '/api/auth/demo-login',
+          { method: 'POST', headers: { 'X-Forwarded-For': '127.0.0.1, 203.0.113.99' } },
+          demoRateSrv.baseUrl
+        );
+      }
+      const spoofedBlocked = await request(
+        '/api/auth/demo-login',
+        { method: 'POST', headers: { 'X-Forwarded-For': '127.0.0.1, 203.0.113.99' } },
+        demoRateSrv.baseUrl
+      );
+      assert(
+        spoofedBlocked.status === 429,
+        'DemoRate 15.3j: Left-most X-Forwarded-For loopback spoofing behind 1 proxy hop cannot bypass demo rate limit (HTTP 429)'
+      );
+    } finally {
+      await demoRateSrv.stop(true);
+    }
+
     // 13.10 Hardcoded credential scan across runtime source & frontend assets
     const forbiddenLiterals = ['DemoPassword123!', 'usr_peter_badir', 'peter@badir.com'];
     const filesToScan = [

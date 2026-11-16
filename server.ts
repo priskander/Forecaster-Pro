@@ -621,15 +621,21 @@ function isDemoModeEnabled(): boolean {
 function generateTemporaryPassword(): string {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   const digits = '23456789';
-  let randL = '';
-  for (let i = 0; i < 4; i++) {
-    randL += letters.charAt(Math.floor(Math.random() * letters.length));
+  const charset = letters + digits;
+  const chars: string[] = [
+    letters.charAt(crypto.randomInt(0, letters.length)),
+    digits.charAt(crypto.randomInt(0, digits.length))
+  ];
+  for (let i = 0; i < 8; i++) {
+    chars.push(charset.charAt(crypto.randomInt(0, charset.length)));
   }
-  let randD = '';
-  for (let i = 0; i < 3; i++) {
-    randD += digits.charAt(Math.floor(Math.random() * digits.length));
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(0, i + 1);
+    const tmp = chars[i];
+    chars[i] = chars[j];
+    chars[j] = tmp;
   }
-  return `Temp-${randL}${randD}!`;
+  return `Temp-${chars.join('')}!`;
 }
 
 const SMTP_SEAL_KEY_FILE = path.join(DB_PARENT_DIR, '.smtp-seal.key');
@@ -1856,13 +1862,26 @@ if (!dbPersistReadOnlyReason && startupStructuralChanged && startupCleanupResult
 
 // Rate Limiting Storage & Middleware
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-function createRateLimiter(windowMs: number, maxRequests: number, message: string) {
+function createRateLimiter(
+  windowMs: number,
+  maxRequests: number,
+  message: string,
+  options: { applyLoopbackBoost?: boolean } = {}
+) {
+  const applyLoopbackBoost = options.applyLoopbackBoost !== false;
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
-    const effectiveLimit = isLoopback ? Math.max(maxRequests, 120) : maxRequests;
+    const effectiveLimit = (applyLoopbackBoost && isLoopback) ? Math.max(maxRequests, 120) : maxRequests;
     const now = Date.now();
-    const key = `${req.path}:${ip}`;
+    const normPath = ((req.baseUrl || '') + (req.path || '')).replace(/\/+$/, '').toLowerCase() || '/';
+    const key = `${normPath}:${ip}`;
+
+    if (rateLimitMap.size > 2000) {
+      for (const [k, v] of rateLimitMap.entries()) {
+        if (now > v.resetAt) rateLimitMap.delete(k);
+      }
+    }
 
     let record = rateLimitMap.get(key);
     if (!record || now > record.resetAt) {
@@ -1873,8 +1892,8 @@ function createRateLimiter(windowMs: number, maxRequests: number, message: strin
 
     record.count++;
     if (record.count > effectiveLimit) {
-      const retryAfter = Math.ceil((record.resetAt - now) / 1000);
-      res.setHeader('Retry-After', retryAfter);
+      const retryAfter = Math.max(1, Math.ceil((record.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retryAfter));
       return res.status(429).json({ ok: false, error: message || 'Too many attempts. Please try again shortly.' });
     }
 
@@ -1885,6 +1904,12 @@ function createRateLimiter(windowMs: number, maxRequests: number, message: strin
 const loginLimiter = createRateLimiter(60 * 1000, 10, 'Too many login attempts. Please wait 1 minute before trying again.');
 const registerLimiter = createRateLimiter(60 * 1000, 5, 'Too many registration attempts. Please wait 1 minute before trying again.');
 const passwordResetLimiter = createRateLimiter(60 * 1000, 10, 'Too many password reset requests. Please wait 1 minute before trying again.');
+const demoLoginLimiter = createRateLimiter(
+  60 * 1000,
+  5,
+  'Too many demo login attempts. Please wait 1 minute before trying again.',
+  { applyLoopbackBoost: false }
+);
 
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 Days Session Expiration
 
@@ -2044,6 +2069,14 @@ function requireVaultAccess(
 
 async function startServer() {
   const app = express();
+  const rawTrustProxy = (process.env.TRUST_PROXY || '').trim();
+  if (rawTrustProxy === 'false' || rawTrustProxy === '0') {
+    app.set('trust proxy', false);
+  } else if (/^\d+$/.test(rawTrustProxy)) {
+    app.set('trust proxy', parseInt(rawTrustProxy, 10));
+  } else {
+    app.set('trust proxy', 1);
+  }
   app.use(express.json({ limit: '25mb' }));
 
   // Explicit Configurable Allowed-Origin CORS & Security Headers Policy
@@ -2492,7 +2525,7 @@ async function startServer() {
   });
 
   // Dedicated 1-Click Interactive Demo Login for Landing Page Visitors (Requires ENABLE_DEMO_MODE=true)
-  app.post('/api/auth/demo-login', (req, res) => {
+  app.post('/api/auth/demo-login', demoLoginLimiter, (req, res) => {
     try {
       if (!isDemoModeEnabled()) {
         return res.status(403).json({ ok: false, error: 'Interactive demo access is disabled in this environment.' });
