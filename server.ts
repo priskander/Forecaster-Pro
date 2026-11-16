@@ -2067,16 +2067,71 @@ function requireVaultAccess(
   return user;
 }
 
+/**
+ * Resolve Express `trust proxy` explicitly from `process.env.TRUST_PROXY`.
+ *
+ * Security posture:
+ * - Defaults safely to `false` when unset, empty, `0`, or `false` so direct clients
+ *   cannot forge `X-Forwarded-For` headers to bypass rate limiting or spoof `req.ip`.
+ * - Accepts an explicit non-negative hop count (`1`..`10`) or explicit trusted proxy
+ *   presets/addresses (`loopback`, `linklocal`, `uniquelocal`, or valid IP/CIDR list).
+ * - Never fails open on `true` or unrecognized values; invalid values fall back to `false`
+ *   with a startup warning.
+ */
+function resolveTrustProxySetting(rawEnvValue?: string): {
+  setting: boolean | number | string | string[];
+  warning?: string;
+} {
+  const raw = (rawEnvValue || '').trim();
+  if (!raw) {
+    return { setting: false };
+  }
+
+  const lower = raw.toLowerCase();
+  if (lower === 'false' || lower === '0') {
+    return { setting: false };
+  }
+
+  // Reject blanket wildcard `true` because trusting arbitrary forwarders allows header spoofing.
+  if (lower === 'true' || lower === 'all' || lower === '*') {
+    return {
+      setting: false,
+      warning: `[Security Config] Ignoring unsafe TRUST_PROXY="${raw}". Specify an exact hop count (e.g. "1") or trusted proxy IP/CIDR. Defaulting to false.`
+    };
+  }
+
+  if (/^\d+$/.test(raw)) {
+    const hops = parseInt(raw, 10);
+    if (hops >= 1 && hops <= 10) {
+      return { setting: hops };
+    }
+    return {
+      setting: false,
+      warning: `[Security Config] Invalid TRUST_PROXY hop count "${raw}" (must be 0..10). Defaulting to false.`
+    };
+  }
+
+  const allowedPresets = new Set(['loopback', 'linklocal', 'uniquelocal']);
+  const tokens = raw.split(',').map(s => s.trim()).filter(Boolean);
+  const ipOrCidrRegex = /^(?:(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-fA-F:]+(?:\/\d{1,3})?)$/;
+  if (tokens.length > 0 && tokens.every(t => allowedPresets.has(t.toLowerCase()) || (t.includes('.') || t.includes(':')) && ipOrCidrRegex.test(t))) {
+    const normalized = tokens.map(t => allowedPresets.has(t.toLowerCase()) ? t.toLowerCase() : t);
+    return { setting: normalized.length === 1 ? normalized[0] : normalized };
+  }
+
+  return {
+    setting: false,
+    warning: `[Security Config] Unrecognized TRUST_PROXY value "${raw}". Defaulting to false.`
+  };
+}
+
 async function startServer() {
   const app = express();
-  const rawTrustProxy = (process.env.TRUST_PROXY || '').trim();
-  if (rawTrustProxy === 'false' || rawTrustProxy === '0') {
-    app.set('trust proxy', false);
-  } else if (/^\d+$/.test(rawTrustProxy)) {
-    app.set('trust proxy', parseInt(rawTrustProxy, 10));
-  } else {
-    app.set('trust proxy', 1);
+  const resolvedProxy = resolveTrustProxySetting(process.env.TRUST_PROXY);
+  if (resolvedProxy.warning) {
+    console.warn(resolvedProxy.warning);
   }
+  app.set('trust proxy', resolvedProxy.setting);
   app.use(express.json({ limit: '25mb' }));
 
   // Explicit Configurable Allowed-Origin CORS & Security Headers Policy
@@ -2584,7 +2639,8 @@ async function startServer() {
     }
   });
 
-  // Request Password Reset (Non-enumerating, time-limited single-use hashed recovery credential + real SMTP/API dispatch)
+  // Request Password Reset (Unauthenticated endpoint: non-enumerating, time-limited single-use
+  // hashed recovery credential + SMTP/API dispatch; NEVER discloses recovery credentials in HTTP response)
   app.post('/api/auth/forgot-password', passwordResetLimiter, async (req, res) => {
     try {
       const { email } = req.body || {};
@@ -2992,7 +3048,17 @@ async function startServer() {
     }
   });
 
-  // Resend invitation email with new temporary password
+  /**
+   * Resend sub-user invitation email with a newly generated single-use temporary password.
+   *
+   * Credential disclosure policy:
+   * - Unlike `/api/auth/forgot-password` (which is unauthenticated and MUST NEVER return
+   *   a recovery credential in its HTTP response), this endpoint is strictly authenticated and
+   *   restricted to the authorized parent workspace `owner` (or `main_admin`) for provisioning
+   *   onboarding credentials to their own organization's sub-users.
+   * - Returning `temporaryPassword` here intentionally supports the authenticated Team Management
+   *   UI handoff workflow, while stored outbox records still redact the plaintext password.
+   */
   app.post('/api/auth/sub-users/:id/resend-email', (req, res) => {
     try {
       const caller = getAuthenticatedUser(req, res);
@@ -3247,7 +3313,18 @@ async function startServer() {
         user.propertyRole = propertyRole;
       }
       if (typeof avatarUrl === 'string') {
-        user.avatarUrl = avatarUrl;
+        const trimmedAvatar = avatarUrl.trim();
+        const isSafePreset = /^preset:avatar_(purple|emerald|amber|cyan)$/.test(trimmedAvatar);
+        const isSafeDataImage =
+          /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(trimmedAvatar) &&
+          trimmedAvatar.length <= 512 * 1024;
+        if (trimmedAvatar !== '' && !isSafePreset && !isSafeDataImage) {
+          return res.status(400).json({
+            ok: false,
+            error: 'Invalid avatar format. Use an approved preset or PNG/JPEG/WEBP/GIF base64 image.'
+          });
+        }
+        user.avatarUrl = trimmedAvatar;
       }
 
       saveDatabase(db);
@@ -3312,6 +3389,31 @@ async function startServer() {
     res.json({ ok: true, vault });
   });
 
+  function sanitizeNonDemoRecords<T extends { id?: string; refId?: string; vehicleId?: string }>(items: T[], isDemoVault: boolean): T[] {
+    if (isDemoVault || !Array.isArray(items)) return items;
+    return items.filter(item => {
+      if (!item) return false;
+      if (item.id && DEMO_SEED_IDS.has(item.id)) return false;
+      if (item.refId && (DEMO_SEED_IDS.has(item.refId) || item.refId === 'mnt_toyota_40k' || item.refId === 'veh_toyota_corolla' || item.refId === 'veh_hyundai_elantra')) return false;
+      if (item.vehicleId && DEMO_SEED_IDS.has(item.vehicleId)) return false;
+      return true;
+    });
+  }
+
+  function canonicalizeRecord(val: any): any {
+    if (Array.isArray(val)) return val.map(canonicalizeRecord);
+    if (val && typeof val === 'object') {
+      const sorted: Record<string, any> = {};
+      Object.keys(val).sort().forEach(k => { sorted[k] = canonicalizeRecord(val[k]); });
+      return sorted;
+    }
+    return val ?? null;
+  }
+
+  function stableRecordEqual(a: any, b: any): boolean {
+    return JSON.stringify(canonicalizeRecord(a)) === JSON.stringify(canonicalizeRecord(b));
+  }
+
   // Push / Merge vault data (Protected with authentication and tenant vault isolation)
   app.post('/api/cloud-sync/vault/:vaultId', (req, res) => {
     const vaultId = (req.params.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
@@ -3335,30 +3437,14 @@ async function startServer() {
     // Authoritative sync from active client state so deletions persist
     const isDemoVault = vaultId === 'demo-showcase-vault';
     const sanitizeNonDemo = <T extends { id?: string; refId?: string; vehicleId?: string }>(items: T[]): T[] => {
-      if (isDemoVault || !Array.isArray(items)) return items;
-      return items.filter(item => {
-        if (!item) return false;
-        if (item.id && DEMO_SEED_IDS.has(item.id)) return false;
-        if (item.refId && (DEMO_SEED_IDS.has(item.refId) || item.refId === 'mnt_toyota_40k' || item.refId === 'veh_toyota_corolla' || item.refId === 'veh_hyundai_elantra')) return false;
-        if (item.vehicleId && DEMO_SEED_IDS.has(item.vehicleId)) return false;
-        return true;
-      });
+      return sanitizeNonDemoRecords(items, isDemoVault);
     };
 
     const isMember = user.role === 'member';
     const isManager = user.role === 'manager';
     const isOwnerOrAdmin = user.isPrimary || user.role === 'owner' || user.role === 'main_admin' || !!user.isMainAdmin;
 
-    const canonicalize = (val: any): any => {
-      if (Array.isArray(val)) return val.map(canonicalize);
-      if (val && typeof val === 'object') {
-        const sorted: Record<string, any> = {};
-        Object.keys(val).sort().forEach(k => { sorted[k] = canonicalize(val[k]); });
-        return sorted;
-      }
-      return val ?? null;
-    };
-    const stableEqual = (a: any, b: any): boolean => JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
+    const stableEqual = stableRecordEqual;
 
     // Prevent Member from deleting existing operational items or tampering with owner/manager-only collections
     const hasMissingExistingIds = (incomingArr: any[], existingArr: any[]): boolean => {
@@ -3549,11 +3635,43 @@ async function startServer() {
   });
 
   app.post('/api/cloud-sync/transactions', (req, res) => {
-    const vaultId = String(req.query.vaultId || req.body.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
+    const vaultId = String(req.query.vaultId || req.body?.vaultId || DEFAULT_VAULT_ID).trim().toLowerCase();
     const user = requireVaultAccess(req, res, vaultId, 'write');
     if (!user) return;
 
-    const newTxns = Array.isArray(req.body.transactions) ? req.body.transactions : (req.body.transaction ? [req.body.transaction] : []);
+    const body = req.body;
+    if (!body || typeof body !== 'object') {
+      return res.status(400).json({ ok: false, error: 'Request body must be a JSON object.' });
+    }
+
+    let rawTxns: any[] = [];
+    if (body.transactions !== undefined) {
+      if (!Array.isArray(body.transactions)) {
+        return res.status(400).json({ ok: false, error: 'Field "transactions" must be an array.' });
+      }
+      rawTxns = body.transactions;
+    } else if (body.transaction !== undefined) {
+      if (!body.transaction || typeof body.transaction !== 'object' || Array.isArray(body.transaction)) {
+        return res.status(400).json({ ok: false, error: 'Field "transaction" must be a valid transaction object.' });
+      }
+      rawTxns = [body.transaction];
+    } else {
+      return res.status(400).json({ ok: false, error: 'Payload must include a "transactions" array or "transaction" object.' });
+    }
+
+    for (let i = 0; i < rawTxns.length; i++) {
+      const check = validateRecord('transactions', rawTxns[i]);
+      if (!check.valid) {
+        return res.status(400).json({
+          ok: false,
+          error: `Invalid transaction at index ${i}: ${check.reason || 'Schema validation failed.'}`
+        });
+      }
+    }
+
+    const isDemoVault = vaultId === 'demo-showcase-vault';
+    const sanitizedTxns = sanitizeNonDemoRecords(rawTxns, isDemoVault);
+    const filteredDemoSeedCount = rawTxns.length - sanitizedTxns.length;
 
     let vault = db.vaults[vaultId];
     if (!vault) {
@@ -3567,14 +3685,43 @@ async function startServer() {
       db.vaults[vaultId] = vault;
     }
 
-    const txnMap = new Map();
-    (vault.transactions || []).forEach(t => { if (t && t.id) txnMap.set(t.id, t); });
-    newTxns.forEach((t: any) => { if (t && t.id) txnMap.set(t.id, t); });
+    const txnMap = new Map<string, any>();
+    (vault.transactions || []).forEach(t => { if (t && t.id) txnMap.set(String(t.id), t); });
+
+    const isMember = user.role === 'member';
+    if (isMember) {
+      for (const incomingTxn of sanitizedTxns) {
+        const txnId = String(incomingTxn.id);
+        const existingTxn = txnMap.get(txnId);
+        if (existingTxn && !stableRecordEqual(existingTxn, incomingTxn)) {
+          return res.status(403).json({
+            ok: false,
+            error: `RBAC Forbidden: Member role cannot modify existing transaction "${txnId}".`
+          });
+        }
+      }
+      for (const incomingTxn of sanitizedTxns) {
+        const txnId = String(incomingTxn.id);
+        if (!txnMap.has(txnId)) {
+          txnMap.set(txnId, incomingTxn);
+        }
+      }
+    } else {
+      for (const incomingTxn of sanitizedTxns) {
+        txnMap.set(String(incomingTxn.id), incomingTxn);
+      }
+    }
+
     vault.transactions = Array.from(txnMap.values());
     vault.updatedAt = new Date().toISOString();
     saveDatabase(db);
 
-    res.json({ ok: true, count: vault.transactions.length, transactions: vault.transactions });
+    res.json({
+      ok: true,
+      count: vault.transactions.length,
+      filteredDemoSeedCount,
+      transactions: vault.transactions
+    });
   });
 
   /* -------------------------------------------------------------------------
@@ -3598,14 +3745,14 @@ async function startServer() {
 
     switch (moduleType) {
       case 'transactions':
-        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid transaction ID' };
-        if (item.amount === undefined || isNaN(Number(item.amount)) || Number(item.amount) < 0) {
-          return { valid: false, reason: 'Amount must be a non-negative number' };
+        if (!item.id || typeof item.id !== 'string' || !item.id.trim()) return { valid: false, reason: 'Missing or invalid transaction ID' };
+        if (item.amount === undefined || item.amount === null || typeof item.amount === 'boolean' || !Number.isFinite(Number(item.amount)) || Number(item.amount) < 0) {
+          return { valid: false, reason: 'Amount must be a finite non-negative number' };
         }
         if (!item.type || !['income', 'expense'].includes(String(item.type).toLowerCase())) {
           return { valid: false, reason: 'Transaction type must be "income" or "expense"' };
         }
-        if (!item.date || typeof item.date !== 'string') return { valid: false, reason: 'Missing or invalid date' };
+        if (!item.date || typeof item.date !== 'string' || !item.date.trim()) return { valid: false, reason: 'Missing or invalid date' };
         return { valid: true };
 
       case 'accounts':

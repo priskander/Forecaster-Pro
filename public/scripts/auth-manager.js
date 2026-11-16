@@ -45,6 +45,22 @@
       .replace(/'/g, '&#39;');
   }
 
+  function sanitizeAvatarUrl(avatarUrl) {
+    if (typeof avatarUrl !== 'string') return '';
+    const trimmed = avatarUrl.trim();
+    if (/^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(trimmed) && trimmed.length <= 512 * 1024) {
+      return trimmed;
+    }
+    return '';
+  }
+
+  function makeEl(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
   const ROLE_CONFIG = {
     main_admin: {
       label: 'Main Admin',
@@ -824,9 +840,13 @@
       const preview = document.getElementById('edit-profile-avatar-preview');
       if (!preview) return;
 
-      if (avatarUrl && avatarUrl.startsWith('data:image')) {
-        preview.innerHTML = `<img src="${avatarUrl}" class="w-full h-full object-cover" alt="Avatar"/>`;
-      } else if (avatarUrl && avatarUrl.startsWith('preset:')) {
+      const safeDataImage = sanitizeAvatarUrl(avatarUrl);
+      if (safeDataImage) {
+        const img = makeEl('img', 'w-full h-full object-cover');
+        img.src = safeDataImage;
+        img.alt = 'Avatar';
+        preview.replaceChildren(img);
+      } else if (typeof avatarUrl === 'string' && avatarUrl.startsWith('preset:')) {
         const presetType = avatarUrl.replace('preset:', '');
         const presetGradients = {
           avatar_purple: 'from-purple-500 to-pink-500',
@@ -843,11 +863,11 @@
         const grad = presetGradients[presetType] || 'from-blue-600 to-indigo-600';
         const icon = presetIcons[presetType] || '👤';
         preview.className = `relative w-16 h-16 rounded-2xl overflow-hidden bg-gradient-to-tr ${grad} text-white font-black text-2xl flex items-center justify-center shadow-md shrink-0 border-2 border-white dark:border-slate-800`;
-        preview.innerHTML = `<span>${icon}</span>`;
+        preview.replaceChildren(makeEl('span', '', icon));
       } else {
         const initials = getInitials(name || 'Peter W. Badir');
         preview.className = `relative w-16 h-16 rounded-2xl overflow-hidden bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-xl flex items-center justify-center shadow-md shrink-0 border-2 border-white dark:border-slate-800`;
-        preview.innerHTML = initials;
+        preview.textContent = initials;
       }
     },
 
@@ -1246,7 +1266,7 @@
       const countBadge = document.getElementById('sub-users-count-badge');
       if (!listEl) return;
 
-      listEl.innerHTML = '<div class="text-center py-8 text-xs text-slate-400">Loading workspace sub-users...</div>';
+      listEl.replaceChildren(makeEl('div', 'text-center py-8 text-xs text-slate-400', 'Loading workspace sub-users...'));
 
       try {
         const token = this.getToken();
@@ -1263,61 +1283,85 @@
         if (countBadge) countBadge.textContent = String(subUsers.length);
 
         if (subUsers.length === 0) {
-          listEl.innerHTML = `
-            <div class="text-center py-10 px-4 border border-dashed border-slate-200 dark:border-slate-700 rounded-3xl bg-slate-50/50 dark:bg-slate-900/20">
-              <span class="text-3xl block mb-2">👥</span>
-              <p class="text-sm font-extrabold text-slate-800 dark:text-slate-200">No sub-users created yet</p>
-              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-                Invite managers, members, or viewers with automated credentials.
-              </p>
-              <button type="button" class="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer inline-flex items-center gap-1.5" onclick="window.ForecasterAuth.switchSubUsersTab('create')">
-                <span>➕</span> Create First Sub-User
-              </button>
-            </div>
-          `;
+          const emptyCard = makeEl('div', 'text-center py-10 px-4 border border-dashed border-slate-200 dark:border-slate-700 rounded-3xl bg-slate-50/50 dark:bg-slate-900/20');
+          emptyCard.appendChild(makeEl('span', 'text-3xl block mb-2', '👥'));
+          emptyCard.appendChild(makeEl('p', 'text-sm font-extrabold text-slate-800 dark:text-slate-200', 'No sub-users created yet'));
+          emptyCard.appendChild(makeEl('p', 'text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto', 'Invite managers, members, or viewers with automated credentials.'));
+          const createFirstBtn = makeEl('button', 'mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer inline-flex items-center gap-1.5');
+          createFirstBtn.type = 'button';
+          createFirstBtn.appendChild(makeEl('span', '', '➕'));
+          createFirstBtn.appendChild(document.createTextNode(' Create First Sub-User'));
+          createFirstBtn.addEventListener('click', () => this.switchSubUsersTab('create'));
+          emptyCard.appendChild(createFirstBtn);
+          listEl.replaceChildren(emptyCard);
           return;
         }
 
-        let html = '<div class="space-y-2.5">';
+        const container = makeEl('div', 'space-y-2.5');
         subUsers.forEach(u => {
           const roleCfg = ROLE_CONFIG[u.role] || ROLE_CONFIG.member;
-          const statusBadge = u.mustChangePassword
-            ? '<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800" title="Temporary password sent via email; password change required on first login">⚠️ Needs First Login</span>'
-            : '<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">✅ Active</span>';
+          const row = makeEl('div', 'p-4 bg-slate-50 dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-700/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-blue-300 dark:hover:border-slate-600 transition shadow-xs');
 
-          html += `
-            <div class="p-4 bg-slate-50 dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-700/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-blue-300 dark:hover:border-slate-600 transition shadow-xs">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
-                  ${getInitials(u.name)}
-                </div>
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-sm font-extrabold text-slate-900 dark:text-white truncate">${u.name}</span>
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${roleCfg.badgeClass}">
-                      ${roleCfg.icon} ${roleCfg.label}
-                    </span>
-                    ${statusBadge}
-                  </div>
-                  <p class="text-xs text-slate-500 dark:text-slate-404 truncate mt-0.5">${u.email}</p>
-                  ${u.temporaryPassword ? `<div class="mt-1 flex items-center gap-1.5 text-[10px]"><span class="text-slate-400">Temp Pass:</span> <code class="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 font-mono font-bold border border-blue-200 dark:border-blue-900">${u.temporaryPassword}</code></div>` : ''}
-                </div>
-              </div>
-              <div class="flex items-center gap-2 self-end sm:self-center shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800 w-full sm:w-auto justify-end">
-                <button type="button" class="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-blue-50 dark:hover:bg-slate-700 hover:text-blue-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs" onclick="window.ForecasterAuth.resendSubUserEmail('${u.id}', '${u.name}')" title="Generate new temp password & send email">
-                  <span>✉️</span> Resend Email
-                </button>
-                <button type="button" class="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-600 hover:text-white text-rose-600 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs border border-rose-200/60 dark:border-rose-900" onclick="window.ForecasterAuth.deleteSubUser('${u.id}', '${u.name}')" title="Revoke sub-user access">
-                  <span>🗑️</span> Remove
-                </button>
-              </div>
-            </div>
-          `;
+          const leftWrap = makeEl('div', 'flex items-center gap-3 min-w-0');
+          const avatarDiv = makeEl('div', 'w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20', getInitials(u.name));
+          const infoWrap = makeEl('div', 'min-w-0');
+
+          const topLine = makeEl('div', 'flex items-center gap-2 flex-wrap');
+          topLine.appendChild(makeEl('span', 'text-sm font-extrabold text-slate-900 dark:text-white truncate', u.name || ''));
+          topLine.appendChild(makeEl('span', `inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${roleCfg.badgeClass}`, `${roleCfg.icon} ${roleCfg.label}`));
+
+          const statusSpan = u.mustChangePassword
+            ? makeEl('span', 'inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800', '⚠️ Needs First Login')
+            : makeEl('span', 'inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800', '✅ Active');
+          if (u.mustChangePassword) {
+            statusSpan.title = 'Temporary password sent via email; password change required on first login';
+          }
+          topLine.appendChild(statusSpan);
+
+          infoWrap.appendChild(topLine);
+          infoWrap.appendChild(makeEl('p', 'text-xs text-slate-500 dark:text-slate-404 truncate mt-0.5', u.email || ''));
+
+          if (u.temporaryPassword) {
+            const tempRow = makeEl('div', 'mt-1 flex items-center gap-1.5 text-[10px]');
+            tempRow.appendChild(makeEl('span', 'text-slate-400', 'Temp Pass:'));
+            tempRow.appendChild(makeEl('code', 'px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 font-mono font-bold border border-blue-200 dark:border-blue-900', u.temporaryPassword));
+            infoWrap.appendChild(tempRow);
+          }
+
+          leftWrap.appendChild(avatarDiv);
+          leftWrap.appendChild(infoWrap);
+
+          const actionsWrap = makeEl('div', 'flex items-center gap-2 self-end sm:self-center shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800 w-full sm:w-auto justify-end');
+
+          const resendBtn = makeEl('button', 'px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-blue-50 dark:hover:bg-slate-700 hover:text-blue-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs');
+          resendBtn.type = 'button';
+          resendBtn.title = 'Generate new temp password & send email';
+          resendBtn.dataset.action = 'resend-subuser';
+          resendBtn.dataset.subuserId = String(u.id || '');
+          resendBtn.appendChild(makeEl('span', '', '✉️'));
+          resendBtn.appendChild(document.createTextNode(' Resend Email'));
+          resendBtn.addEventListener('click', () => this.resendSubUserEmail(u.id, u.name));
+
+          const deleteBtn = makeEl('button', 'px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-600 hover:text-white text-rose-600 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs border border-rose-200/60 dark:border-rose-900');
+          deleteBtn.type = 'button';
+          deleteBtn.title = 'Revoke sub-user access';
+          deleteBtn.dataset.action = 'delete-subuser';
+          deleteBtn.dataset.subuserId = String(u.id || '');
+          deleteBtn.appendChild(makeEl('span', '', '🗑️'));
+          deleteBtn.appendChild(document.createTextNode(' Remove'));
+          deleteBtn.addEventListener('click', () => this.deleteSubUser(u.id, u.name));
+
+          actionsWrap.appendChild(resendBtn);
+          actionsWrap.appendChild(deleteBtn);
+
+          row.appendChild(leftWrap);
+          row.appendChild(actionsWrap);
+          container.appendChild(row);
         });
-        html += '</div>';
-        listEl.innerHTML = html;
+
+        listEl.replaceChildren(container);
       } catch (err) {
-        listEl.innerHTML = `<div class="p-3 text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/40 rounded-xl font-semibold">${err.message}</div>`;
+        listEl.replaceChildren(makeEl('div', 'p-3 text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/40 rounded-xl font-semibold', err?.message || 'Failed to load sub-users'));
       }
     },
 
@@ -1325,7 +1369,7 @@
       const emailsListEl = document.getElementById('dispatched-emails-list');
       if (!emailsListEl) return;
 
-      emailsListEl.innerHTML = '<div class="text-center py-8 text-xs text-slate-400">Loading sent automated emails...</div>';
+      emailsListEl.replaceChildren(makeEl('div', 'text-center py-8 text-xs text-slate-400', 'Loading sent automated emails...'));
 
       try {
         const token = this.getToken();
@@ -1340,43 +1384,48 @@
 
         const outbox = data.outbox || [];
         if (outbox.length === 0) {
-          emailsListEl.innerHTML = `
-            <div class="text-center py-10 px-4 border border-dashed border-slate-200 dark:border-slate-700 rounded-3xl bg-slate-50/50 dark:bg-slate-900/20">
-              <span class="text-3xl block mb-2">📬</span>
-              <p class="text-sm font-extrabold text-slate-800 dark:text-slate-200">No emails dispatched yet</p>
-              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Automatic invitations will appear here as soon as you create sub-users.</p>
-            </div>
-          `;
+          const emptyBox = makeEl('div', 'text-center py-10 px-4 border border-dashed border-slate-200 dark:border-slate-700 rounded-3xl bg-slate-50/50 dark:bg-slate-900/20');
+          emptyBox.appendChild(makeEl('span', 'text-3xl block mb-2', '📬'));
+          emptyBox.appendChild(makeEl('p', 'text-sm font-extrabold text-slate-800 dark:text-slate-200', 'No emails dispatched yet'));
+          emptyBox.appendChild(makeEl('p', 'text-xs text-slate-500 dark:text-slate-400 mt-1', 'Automatic invitations will appear here as soon as you create sub-users.'));
+          emailsListEl.replaceChildren(emptyBox);
           return;
         }
 
-        let html = '<div class="space-y-3">';
-        outbox.forEach((mail, idx) => {
+        const container = makeEl('div', 'space-y-3');
+        outbox.forEach(mail => {
           const sentDate = new Date(mail.sentAt).toLocaleString();
-          html += `
-            <div class="p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-2xl space-y-2.5">
-              <div class="flex items-center justify-between flex-wrap gap-2">
-                <div class="flex items-center gap-2">
-                  <span class="text-base">✉️</span>
-                  <div>
-                    <h6 class="text-xs font-bold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">${mail.subject}</h6>
-                    <p class="text-[10px] text-slate-500 dark:text-slate-404">To: <strong>${mail.toName}</strong> &lt;${mail.to}&gt; • ${sentDate}</p>
-                  </div>
-                </div>
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  Delivered ✅
-                </span>
-              </div>
-              <div class="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700 text-xs font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed max-h-36 overflow-y-auto custom-scrollbar">
-${mail.body}
-              </div>
-            </div>
-          `;
+          const card = makeEl('div', 'p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-2xl space-y-2.5');
+
+          const headerRow = makeEl('div', 'flex items-center justify-between flex-wrap gap-2');
+          const leftMeta = makeEl('div', 'flex items-center gap-2');
+          leftMeta.appendChild(makeEl('span', 'text-base', '✉️'));
+
+          const titleWrap = makeEl('div');
+          titleWrap.appendChild(makeEl('h6', 'text-xs font-bold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md', mail.subject || 'System Email'));
+
+          const recipP = makeEl('p', 'text-[10px] text-slate-500 dark:text-slate-404');
+          recipP.appendChild(document.createTextNode('To: '));
+          recipP.appendChild(makeEl('strong', '', mail.toName || ''));
+          recipP.appendChild(document.createTextNode(` <${mail.to || ''}> • ${sentDate}`));
+          titleWrap.appendChild(recipP);
+          leftMeta.appendChild(titleWrap);
+
+          const statusBadge = makeEl('span', 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800', 'Delivered ✅');
+
+          headerRow.appendChild(leftMeta);
+          headerRow.appendChild(statusBadge);
+
+          const bodyBox = makeEl('div', 'p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700 text-xs font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed max-h-36 overflow-y-auto custom-scrollbar', mail.body || '');
+
+          card.appendChild(headerRow);
+          card.appendChild(bodyBox);
+          container.appendChild(card);
         });
-        html += '</div>';
-        emailsListEl.innerHTML = html;
+
+        emailsListEl.replaceChildren(container);
       } catch (err) {
-        emailsListEl.innerHTML = `<div class="p-3 text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/40 rounded-xl font-semibold">${err.message}</div>`;
+        emailsListEl.replaceChildren(makeEl('div', 'p-3 text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/40 rounded-xl font-semibold', err?.message || 'Failed to load email outbox'));
       }
     },
 
@@ -1405,7 +1454,7 @@ ${mail.body}
 
       if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span>⏳</span> Dispatching Invitation...';
+        submitBtn.replaceChildren(makeEl('span', '', '⏳'), document.createTextNode(' Dispatching Invitation...'));
       }
 
       try {
@@ -1428,27 +1477,47 @@ ${mail.body}
         if (nameInput) nameInput.value = '';
         if (emailInput) emailInput.value = '';
 
-        // Show automated email notification dispatch preview card
+        // Show automated email notification dispatch preview card using safe DOM construction
         if (previewCard && data.email) {
-          previewCard.innerHTML = `
-            <div class="p-4 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl space-y-2 animate-in fade-in duration-200">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-emerald-800 dark:text-emerald-200 flex items-center gap-1.5">
-                  <span>✉️</span> Automated Email Dispatched Successfully!
-                </span>
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-200 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100">Delivered</span>
-              </div>
-              <p class="text-xs text-slate-700 dark:text-slate-300">
-                An invitation email has been sent to <strong>${data.subUser.email}</strong> with their role credentials and security instructions to change their password on first login.
-              </p>
-              <div class="p-3 bg-white dark:bg-slate-900 rounded-xl text-xs font-mono border border-emerald-100 dark:border-emerald-900 space-y-1">
-                <div><strong>Recipient:</strong> ${data.subUser.email}</div>
-                <div><strong>Assigned Role:</strong> <span class="uppercase font-bold text-blue-600">${data.subUser.role}</span></div>
-                <div><strong>Temporary Password:</strong> <code class="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950 text-blue-600 font-bold border border-blue-200 dark:border-blue-900">${data.temporaryPassword}</code></div>
-                <div class="text-[10px] text-amber-600 dark:text-amber-400 mt-1">⚠️ Sub-user will be required to change this temporary password immediately upon signing in.</div>
-              </div>
-            </div>
-          `;
+          const card = makeEl('div', 'p-4 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl space-y-2 animate-in fade-in duration-200');
+
+          const topBar = makeEl('div', 'flex items-center justify-between');
+          const topTitle = makeEl('span', 'text-xs font-bold text-emerald-800 dark:text-emerald-200 flex items-center gap-1.5');
+          topTitle.appendChild(makeEl('span', '', '✉️'));
+          topTitle.appendChild(document.createTextNode(' Automated Email Dispatched Successfully!'));
+          topBar.appendChild(topTitle);
+          topBar.appendChild(makeEl('span', 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-200 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100', 'Delivered'));
+          card.appendChild(topBar);
+
+          const desc = makeEl('p', 'text-xs text-slate-700 dark:text-slate-300');
+          desc.appendChild(document.createTextNode('An invitation email has been sent to '));
+          desc.appendChild(makeEl('strong', '', data.subUser?.email || ''));
+          desc.appendChild(document.createTextNode(' with their role credentials and security instructions to change their password on first login.'));
+          card.appendChild(desc);
+
+          const detailsBox = makeEl('div', 'p-3 bg-white dark:bg-slate-900 rounded-xl text-xs font-mono border border-emerald-100 dark:border-emerald-900 space-y-1');
+
+          const rowRecip = makeEl('div');
+          rowRecip.appendChild(makeEl('strong', '', 'Recipient:'));
+          rowRecip.appendChild(document.createTextNode(` ${data.subUser?.email || ''}`));
+          detailsBox.appendChild(rowRecip);
+
+          const rowRole = makeEl('div');
+          rowRole.appendChild(makeEl('strong', '', 'Assigned Role:'));
+          rowRole.appendChild(document.createTextNode(' '));
+          rowRole.appendChild(makeEl('span', 'uppercase font-bold text-blue-600', data.subUser?.role || ''));
+          detailsBox.appendChild(rowRole);
+
+          const rowPass = makeEl('div');
+          rowPass.appendChild(makeEl('strong', '', 'Temporary Password:'));
+          rowPass.appendChild(document.createTextNode(' '));
+          rowPass.appendChild(makeEl('code', 'px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950 text-blue-600 font-bold border border-blue-200 dark:border-blue-900', data.temporaryPassword || ''));
+          detailsBox.appendChild(rowPass);
+
+          detailsBox.appendChild(makeEl('div', 'text-[10px] text-amber-600 dark:text-amber-400 mt-1', '⚠️ Sub-user will be required to change this temporary password immediately upon signing in.'));
+          card.appendChild(detailsBox);
+
+          previewCard.replaceChildren(card);
           previewCard.classList.remove('hidden');
         }
 
@@ -1465,7 +1534,7 @@ ${mail.body}
       } finally {
         if (submitBtn) {
           submitBtn.disabled = false;
-          submitBtn.innerHTML = '<span>✨</span> Create Sub-User &amp; Send Automated Email';
+          submitBtn.replaceChildren(makeEl('span', '', '✨'), document.createTextNode(' Create Sub-User & Send Automated Email'));
         }
       }
     },
@@ -2168,101 +2237,100 @@ ${mail.body}
       if (!tableBody) return;
 
       if (!users || users.length === 0) {
-        tableBody.innerHTML = '<div class="p-8 text-center text-xs text-slate-400">No users found matching query.</div>';
+        tableBody.replaceChildren(makeEl('div', 'p-8 text-center text-xs text-slate-400', 'No users found matching query.'));
         return;
       }
 
-      tableBody.innerHTML = users.map(u => {
-        const safeId = escapeHtml(u.id);
-        const safeName = escapeHtml(u.name || 'Unnamed User');
-        const safeEmail = escapeHtml(u.email || '');
-        const safeVault = escapeHtml(u.vaultId || 'No Vault');
-        const safeTier = escapeHtml(u.tier || 'Free Tier');
-        const safeRole = escapeHtml(u.role || 'member');
+      const frag = document.createDocumentFragment();
+      users.forEach(u => {
         const isMaster = !u.isDemo && (u.isMainAdmin || u.role === 'main_admin');
+        const row = makeEl('div', 'p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition');
 
-        const roleBadge = isMaster
-          ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800">Main Admin</span>'
-          : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-              u.role === 'owner' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' :
-              u.role === 'manager' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' :
-              u.role === 'viewer' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' :
-              'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-            }">${safeRole}</span>`;
+        const leftWrap = makeEl('div', 'flex items-center gap-3 min-w-0');
+        const av = makeEl('div', `w-9 h-9 rounded-xl ${isMaster ? 'bg-gradient-to-tr from-purple-700 to-indigo-600' : 'bg-gradient-to-tr from-blue-600 to-indigo-600'} text-white font-black text-xs flex items-center justify-center shrink-0`, getInitials(u.name));
+        const info = makeEl('div', 'min-w-0');
+
+        const badgesRow = makeEl('div', 'flex items-center gap-1.5 flex-wrap');
+        badgesRow.appendChild(makeEl('span', 'text-xs font-bold text-slate-900 dark:text-white truncate', u.name || 'Unnamed User'));
+
+        if (isMaster) {
+          badgesRow.appendChild(makeEl('span', 'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800', 'Main Admin'));
+        } else {
+          const roleClass = u.role === 'owner'
+            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+            : u.role === 'manager'
+              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
+              : u.role === 'viewer'
+                ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300';
+          badgesRow.appendChild(makeEl('span', `px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${roleClass}`, u.role || 'member'));
+        }
 
         const isSuspended = u.status === 'suspended';
-        const statusBadge = isSuspended
-          ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">Suspended</span>'
-          : '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">Active</span>';
+        badgesRow.appendChild(makeEl(
+          'span',
+          isSuspended
+            ? 'px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+            : 'px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
+          isSuspended ? 'Suspended' : 'Active'
+        ));
+        if (u.isDemo) badgesRow.appendChild(makeEl('span', 'px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300', 'Demo'));
+        if (u.isLocked) badgesRow.appendChild(makeEl('span', 'px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300', '🔒 Locked'));
+        if (u.mustChangePassword) badgesRow.appendChild(makeEl('span', 'px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300', 'PW Reset Req'));
+        if ((u.activeSessionsCount || 0) > 0) {
+          badgesRow.appendChild(makeEl('span', 'px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300', `${u.activeSessionsCount} session${u.activeSessionsCount === 1 ? '' : 's'}`));
+        }
 
-        const demoBadge = u.isDemo
-          ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">Demo</span>'
-          : '';
-        const lockedBadge = u.isLocked
-          ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">🔒 Locked</span>'
-          : '';
-        const pwChangeBadge = u.mustChangePassword
-          ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300">PW Reset Req</span>'
-          : '';
-        const sessionsBadge = (u.activeSessionsCount || 0) > 0
-          ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${u.activeSessionsCount} session${u.activeSessionsCount === 1 ? '' : 's'}</span>`
-          : '';
+        const metaRow = makeEl('div', 'flex items-center gap-2 text-[11px] text-slate-500 flex-wrap mt-0.5');
+        metaRow.appendChild(makeEl('span', 'truncate', u.email || ''));
+        metaRow.appendChild(makeEl('span', '', '·'));
+        metaRow.appendChild(makeEl('span', '', u.tier || 'Free Tier'));
+        metaRow.appendChild(makeEl('span', '', '·'));
+        metaRow.appendChild(makeEl('span', 'font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded', u.vaultId || 'No Vault'));
+        metaRow.appendChild(makeEl('span', '', '·'));
+        metaRow.appendChild(makeEl('span', 'tabular-nums font-mono', `${u.transactionCount || 0} txns`));
+        metaRow.appendChild(makeEl('span', '', '·'));
+        metaRow.appendChild(makeEl('span', 'tabular-nums font-mono', `${u.accountCount || 0} accs`));
 
-        return `
-          <div class="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition">
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="w-9 h-9 rounded-xl ${isMaster ? 'bg-gradient-to-tr from-purple-700 to-indigo-600' : 'bg-gradient-to-tr from-blue-600 to-indigo-600'} text-white font-black text-xs flex items-center justify-center shrink-0">
-                ${escapeHtml(getInitials(u.name))}
-              </div>
-              <div class="min-w-0">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="text-xs font-bold text-slate-900 dark:text-white truncate">${safeName}</span>
-                  ${roleBadge}
-                  ${statusBadge}
-                  ${demoBadge}
-                  ${lockedBadge}
-                  ${pwChangeBadge}
-                  ${sessionsBadge}
-                </div>
-                <div class="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap mt-0.5">
-                  <span class="truncate">${safeEmail}</span>
-                  <span>·</span>
-                  <span>${safeTier}</span>
-                  <span>·</span>
-                  <span class="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">${safeVault}</span>
-                  <span>·</span>
-                  <span class="tabular-nums font-mono">${u.transactionCount || 0} txns</span>
-                  <span>·</span>
-                  <span class="tabular-nums font-mono">${u.accountCount || 0} accs</span>
-                </div>
-              </div>
-            </div>
+        info.appendChild(badgesRow);
+        info.appendChild(metaRow);
+        leftWrap.appendChild(av);
+        leftWrap.appendChild(info);
 
-            <div class="flex items-center gap-1.5 flex-wrap shrink-0 self-end sm:self-center">
-              ${!isMaster ? `
-                ${u.isLocked ? `
-                  <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-800 dark:text-amber-300 transition cursor-pointer" onclick="window.ForecasterAuth.quickUnlockUser('${safeId}')">
-                    🔓 Unlock
-                  </button>
-                ` : ''}
-                <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition cursor-pointer" onclick="window.ForecasterAuth.openEditUserModal('${safeId}')">
-                  Edit
-                </button>
-                <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-amber-200 dark:border-amber-900/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-700 dark:text-amber-400 transition cursor-pointer" onclick="window.ForecasterAuth.resetUserVault('${safeId}')">
-                  Reset Vault
-                </button>
-                <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition cursor-pointer" onclick="window.ForecasterAuth.deleteUserAccount('${safeId}')">
-                  Delete
-                </button>
-              ` : `
-                <span class="text-[10px] font-extrabold text-purple-600 dark:text-purple-400 flex items-center gap-1">
-                  <span>👑</span> Master Admin
-                </span>
-              `}
-            </div>
-          </div>
-        `;
-      }).join('');
+        const actions = makeEl('div', 'flex items-center gap-1.5 flex-wrap shrink-0 self-end sm:self-center');
+        if (!isMaster) {
+          if (u.isLocked) {
+            const unlockBtn = makeEl('button', 'px-2.5 py-1 text-[11px] font-bold rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-800 dark:text-amber-300 transition cursor-pointer', '🔓 Unlock');
+            unlockBtn.type = 'button';
+            unlockBtn.addEventListener('click', () => this.quickUnlockUser(u.id));
+            actions.appendChild(unlockBtn);
+          }
+          const editBtn = makeEl('button', 'px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition cursor-pointer', 'Edit');
+          editBtn.type = 'button';
+          editBtn.addEventListener('click', () => this.openEditUserModal(u.id));
+          actions.appendChild(editBtn);
+
+          const resetBtn = makeEl('button', 'px-2.5 py-1 text-[11px] font-bold rounded-lg border border-amber-200 dark:border-amber-900/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-700 dark:text-amber-400 transition cursor-pointer', 'Reset Vault');
+          resetBtn.type = 'button';
+          resetBtn.addEventListener('click', () => this.resetUserVault(u.id));
+          actions.appendChild(resetBtn);
+
+          const delBtn = makeEl('button', 'px-2.5 py-1 text-[11px] font-bold rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition cursor-pointer', 'Delete');
+          delBtn.type = 'button';
+          delBtn.addEventListener('click', () => this.deleteUserAccount(u.id));
+          actions.appendChild(delBtn);
+        } else {
+          const masterTag = makeEl('span', 'text-[10px] font-extrabold text-purple-600 dark:text-purple-400 flex items-center gap-1');
+          masterTag.appendChild(makeEl('span', '', '👑'));
+          masterTag.appendChild(document.createTextNode(' Master Admin'));
+          actions.appendChild(masterTag);
+        }
+
+        row.appendChild(leftWrap);
+        row.appendChild(actions);
+        frag.appendChild(row);
+      });
+      tableBody.replaceChildren(frag);
     },
 
     filterAdminUsersList: function(query) {
@@ -2678,11 +2746,12 @@ ${mail.body}
       if (!outboxEl) return;
 
       if (!items || items.length === 0) {
-        outboxEl.innerHTML = '<div class="p-6 text-center text-xs text-slate-400">No outbound email records found.</div>';
+        outboxEl.replaceChildren(makeEl('div', 'p-6 text-center text-xs text-slate-400', 'No outbound email records found.'));
         return;
       }
 
-      outboxEl.innerHTML = items.map(item => {
+      const frag = document.createDocumentFragment();
+      items.forEach(item => {
         const st = item.status || 'pending_transport';
         const statusClass = st === 'delivered'
           ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
@@ -2691,25 +2760,36 @@ ${mail.body}
             : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800';
         const sentTime = item.sentAt ? new Date(item.sentAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
-        return `
-          <div class="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition">
-            <div class="min-w-0 space-y-0.5">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${statusClass}">${escapeHtml(st)}</span>
-                <span class="font-bold text-xs text-slate-900 dark:text-white truncate">${escapeHtml(item.subject || 'System Email')}</span>
-              </div>
-              <div class="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
-                <span>To: <strong>${escapeHtml(item.to || '')}</strong></span>
-                <span>·</span>
-                <span>Kind: ${escapeHtml(item.kind || 'general')}</span>
-                ${item.deliveryProvider ? `<span>·</span><span>Via: ${escapeHtml(item.deliveryProvider)}</span>` : ''}
-              </div>
-              ${item.deliveryError ? `<div class="text-[11px] text-rose-600 dark:text-rose-400 font-mono break-words">${escapeHtml(item.deliveryError)}</div>` : ''}
-            </div>
-            <div class="text-[10px] text-slate-400 font-mono shrink-0">${escapeHtml(sentTime)}</div>
-          </div>
-        `;
-      }).join('');
+        const row = makeEl('div', 'p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition');
+        const info = makeEl('div', 'min-w-0 space-y-0.5');
+
+        const titleLine = makeEl('div', 'flex items-center gap-2 flex-wrap');
+        titleLine.appendChild(makeEl('span', `px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${statusClass}`, st));
+        titleLine.appendChild(makeEl('span', 'font-bold text-xs text-slate-900 dark:text-white truncate', item.subject || 'System Email'));
+        info.appendChild(titleLine);
+
+        const metaLine = makeEl('div', 'text-[11px] text-slate-500 flex items-center gap-2 flex-wrap');
+        const toSpan = makeEl('span');
+        toSpan.appendChild(document.createTextNode('To: '));
+        toSpan.appendChild(makeEl('strong', '', item.to || ''));
+        metaLine.appendChild(toSpan);
+        metaLine.appendChild(makeEl('span', '', '·'));
+        metaLine.appendChild(makeEl('span', '', `Kind: ${item.kind || 'general'}`));
+        if (item.deliveryProvider) {
+          metaLine.appendChild(makeEl('span', '', '·'));
+          metaLine.appendChild(makeEl('span', '', `Via: ${item.deliveryProvider}`));
+        }
+        info.appendChild(metaLine);
+
+        if (item.deliveryError) {
+          info.appendChild(makeEl('div', 'text-[11px] text-rose-600 dark:text-rose-400 font-mono break-words', item.deliveryError));
+        }
+
+        row.appendChild(info);
+        row.appendChild(makeEl('div', 'text-[10px] text-slate-400 font-mono shrink-0', sentTime));
+        frag.appendChild(row);
+      });
+      outboxEl.replaceChildren(frag);
     },
 
     checkSystemStatusBanner: async function() {
@@ -3045,18 +3125,22 @@ ${mail.body}
 
         const initials = getInitials(user.name);
         const avatarUrl = user.avatarUrl || '';
+        const safeDataImage = sanitizeAvatarUrl(avatarUrl);
         
         const renderAvatarInto = (el, sizeClass = 'text-xs') => {
           if (!el) return;
-          if (avatarUrl && avatarUrl.startsWith('data:image')) {
+          if (safeDataImage) {
             el.className = 'w-8 h-8 rounded-xl overflow-hidden shadow-xs shrink-0';
-            el.innerHTML = `<img src="${avatarUrl}" class="w-full h-full object-cover" alt="Profile"/>`;
-          } else if (avatarUrl && avatarUrl.startsWith('preset:')) {
+            const img = makeEl('img', 'w-full h-full object-cover');
+            img.src = safeDataImage;
+            img.alt = 'Profile';
+            el.replaceChildren(img);
+          } else if (typeof avatarUrl === 'string' && avatarUrl.startsWith('preset:')) {
             const p = avatarUrl.replace('preset:', '');
             const grads = { avatar_purple: 'from-purple-500 to-pink-500', avatar_emerald: 'from-emerald-500 to-teal-500', avatar_amber: 'from-amber-500 to-orange-500', avatar_cyan: 'from-cyan-500 to-blue-600' };
             const icons = { avatar_purple: '✨', avatar_emerald: '🌿', avatar_amber: '⚡', avatar_cyan: '🌊' };
             el.className = `w-8 h-8 rounded-xl bg-gradient-to-tr ${grads[p] || 'from-blue-600 to-indigo-600'} text-white font-black ${sizeClass} flex items-center justify-center shadow-xs shrink-0`;
-            el.innerHTML = `<span>${icons[p] || '👤'}</span>`;
+            el.replaceChildren(makeEl('span', '', icons[p] || '👤'));
           } else {
             el.className = `w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black ${sizeClass} flex items-center justify-center shadow-xs shrink-0`;
             el.textContent = initials;
@@ -3065,15 +3149,18 @@ ${mail.body}
 
         const renderDropdownAvatarInto = (el) => {
           if (!el) return;
-          if (avatarUrl && avatarUrl.startsWith('data:image')) {
+          if (safeDataImage) {
             el.className = 'w-11 h-11 rounded-2xl overflow-hidden shadow-md shrink-0 border border-slate-200 dark:border-slate-700';
-            el.innerHTML = `<img src="${avatarUrl}" class="w-full h-full object-cover" alt="Profile"/>`;
-          } else if (avatarUrl && avatarUrl.startsWith('preset:')) {
+            const img = makeEl('img', 'w-full h-full object-cover');
+            img.src = safeDataImage;
+            img.alt = 'Profile';
+            el.replaceChildren(img);
+          } else if (typeof avatarUrl === 'string' && avatarUrl.startsWith('preset:')) {
             const p = avatarUrl.replace('preset:', '');
             const grads = { avatar_purple: 'from-purple-500 to-pink-500', avatar_emerald: 'from-emerald-500 to-teal-500', avatar_amber: 'from-amber-500 to-orange-500', avatar_cyan: 'from-cyan-500 to-blue-600' };
             const icons = { avatar_purple: '✨', avatar_emerald: '🌿', avatar_amber: '⚡', avatar_cyan: '🌊' };
             el.className = `w-11 h-11 rounded-2xl bg-gradient-to-tr ${grads[p] || 'from-blue-600 to-indigo-600'} text-white font-black text-xl flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0`;
-            el.innerHTML = `<span>${icons[p] || '👤'}</span>`;
+            el.replaceChildren(makeEl('span', '', icons[p] || '👤'));
           } else {
             el.className = 'w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0';
             el.textContent = initials;
@@ -3086,7 +3173,9 @@ ${mail.body}
         // Show Name & Role in Header Label
         if (headerLabel) {
           const shortName = user.name ? user.name.split(' ')[0] : 'Member';
-          headerLabel.innerHTML = `<span>${shortName}</span> <span class="text-[9px] font-bold text-blue-600 dark:text-blue-400">(${roleCfg.label})</span>`;
+          const nameSpan = makeEl('span', '', shortName);
+          const roleSpan = makeEl('span', 'text-[9px] font-bold text-blue-600 dark:text-blue-400', `(${roleCfg.label})`);
+          headerLabel.replaceChildren(nameSpan, document.createTextNode(' '), roleSpan);
         }
 
         if (dropdownName) dropdownName.textContent = user.name || 'Member';

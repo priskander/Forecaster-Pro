@@ -11,7 +11,29 @@
   const VAULT_STORAGE_KEY = 'forecaster_cloud_vault_id';
   const AUTOSYNC_STORAGE_KEY = 'forecaster_cloud_autosync_enabled';
   const LAST_SYNC_KEY = 'forecaster_cloud_last_sync_time';
+  const LOCAL_SAFETY_SNAPSHOT_KEY = 'forecaster_pre_pull_local_snapshot_v1';
   const DEFAULT_VAULT_ID = 'shared-main-vault';
+
+  const LOCAL_SNAPSHOT_STORAGE_KEYS = [
+    'pro_transactions',
+    'pro_accounts',
+    'pro_account_transfers',
+    'pro_budget_limits',
+    'pro_allocations_mode',
+    'pro_allocations_month',
+    'pro_custom_categories',
+    'pro_custom_subcategories',
+    'pro_stock',
+    'pro_pharmacy',
+    'pro_vehicles',
+    'pro_vehicle_fuel',
+    'pro_vehicle_maintenance',
+    'pro_rental_properties_v1',
+    'pro_rental_contracts_v1',
+    'pro_rental_notifications_v1',
+    'pro_rental_notification_config_v1',
+    'pro_theme'
+  ];
 
   let isSyncing = false;
   let autoSyncTimer = null;
@@ -71,8 +93,121 @@
       return cleanId;
     },
 
+    savePrePullLocalSnapshot: function(reason = 'cloud_snapshot_pull', targetVaultId = null) {
+      try {
+        const rawKeys = {};
+        LOCAL_SNAPSHOT_STORAGE_KEYS.forEach((k) => {
+          rawKeys[k] = localStorage.getItem(k);
+        });
+        const snapshot = {
+          snapshotVersion: '1.0.0',
+          reason,
+          targetVaultId: targetVaultId || this.getVaultId(),
+          capturedAt: new Date().toISOString(),
+          data: this.getLocalData(),
+          rawKeys
+        };
+        localStorage.setItem(LOCAL_SAFETY_SNAPSHOT_KEY, JSON.stringify(snapshot));
+        return snapshot;
+      } catch (err) {
+        console.warn('[Forecaster CloudSync] Could not store pre-pull local snapshot:', err);
+        return null;
+      }
+    },
+
+    getPrePullLocalSnapshot: function() {
+      try {
+        const raw = localStorage.getItem(LOCAL_SAFETY_SNAPSHOT_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || !parsed.rawKeys || !parsed.capturedAt) return null;
+        return parsed;
+      } catch (e) {
+        return null;
+      }
+    },
+
+    restorePrePullLocalSnapshot: function(showFeedback = true, options = {}) {
+      const snapshot = this.getPrePullLocalSnapshot();
+      if (!snapshot) {
+        if (showFeedback && typeof window.triggerToast === 'function') {
+          window.triggerToast('No recoverable pre-pull local snapshot is available.', 'info');
+        }
+        return false;
+      }
+
+      if (!(options && options.skipConfirm) && typeof window.confirm === 'function') {
+        const capturedLabel = new Date(snapshot.capturedAt).toLocaleString();
+        const confirmed = window.confirm(
+          `Restore your pre-pull local workspace snapshot captured at ${capturedLabel}?\n\n` +
+          `This will revert local browser data back to the state saved before the cloud snapshot pull.`
+        );
+        if (!confirmed) return false;
+      }
+
+      this._isApplyingRemote = true;
+      try {
+        LOCAL_SNAPSHOT_STORAGE_KEYS.forEach((k) => {
+          if (Object.prototype.hasOwnProperty.call(snapshot.rawKeys, k)) {
+            const val = snapshot.rawKeys[k];
+            if (val === null || val === undefined) {
+              localStorage.removeItem(k);
+            } else {
+              localStorage.setItem(k, String(val));
+            }
+          }
+        });
+
+        const snapData = snapshot.data || {};
+        const parseArr = (k, fallback) => {
+          try {
+            const raw = localStorage.getItem(k);
+            if (!raw) return Array.isArray(fallback) ? fallback : [];
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch (e) {
+            return Array.isArray(fallback) ? fallback : [];
+          }
+        };
+        const parseObj = (k, fallback) => {
+          try {
+            const raw = localStorage.getItem(k);
+            if (!raw) return (fallback && typeof fallback === 'object') ? fallback : { income: 0, expense: 0 };
+            const parsed = JSON.parse(raw);
+            return (parsed && typeof parsed === 'object') ? parsed : { income: 0, expense: 0 };
+          } catch (e) {
+            return { income: 0, expense: 0 };
+          }
+        };
+
+        window.transactions = parseArr('pro_transactions', snapData.transactions);
+        window.accounts = parseArr('pro_accounts', snapData.accounts);
+        window.accountTransfers = parseArr('pro_account_transfers', snapData.accountTransfers);
+        window.budgetLimits = parseObj('pro_budget_limits', snapData.budgetLimits);
+        window.stockData = parseArr('pro_stock', snapData.stockData);
+        window.pharmacyData = parseArr('pro_pharmacy', snapData.pharmacyData);
+
+        if (typeof window.loadIntegratedDatabases === 'function') window.loadIntegratedDatabases();
+        if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
+        if (typeof window.loadRentalDatabase === 'function') window.loadRentalDatabase();
+        if (typeof window.rpmLoad === 'function') window.rpmLoad();
+        if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+        if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
+        if (typeof window.renderAllViews === 'function') window.renderAllViews();
+      } finally {
+        this._isApplyingRemote = false;
+      }
+
+      this.updateUI();
+      if (showFeedback && typeof window.triggerToast === 'function') {
+        window.triggerToast('Pre-pull local snapshot restored cleanly.', 'success');
+      }
+      return true;
+    },
+
     pullVault: async function(targetVaultId, forceReplace = false) {
       const vaultId = (targetVaultId || this.getVaultId()).trim().toLowerCase();
+      this._lastPullError = null;
       try {
         const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
           ? window.ForecasterAuth.getToken()
@@ -82,91 +217,112 @@
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const res = await fetch(`/api/cloud-sync/vault/${encodeURIComponent(vaultId)}`, { headers });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          let errMsg = `HTTP ${res.status}`;
+          try {
+            const errJson = await res.json();
+            if (errJson && errJson.error) errMsg = `${errJson.error} (HTTP ${res.status})`;
+          } catch (_) {}
+          this._lastPullError = errMsg;
+          throw new Error(errMsg);
+        }
         const data = await res.json();
-        if (!data || !data.ok || !data.vault) return false;
+        if (!data || !data.ok || !data.vault) {
+          this._lastPullError = (data && data.error) || 'Invalid vault response.';
+          return false;
+        }
 
         const remote = data.vault;
 
         if (forceReplace) {
-          // Complete authoritative database synchronization for cross-device sign-in
-          window.transactions = Array.isArray(remote.transactions) ? remote.transactions : [];
-          localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+          // Save a recoverable local snapshot before overwriting local state
+          this.savePrePullLocalSnapshot('pull_vault_replace', vaultId);
 
-          if (Array.isArray(remote.accounts) && remote.accounts.length > 0) {
-            window.accounts = remote.accounts;
-            localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
-          } else {
-            window.accounts = [
-              { id: 'acc_cash_default', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
-              { id: 'acc_bank_default', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
-            ];
-            localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+          this._isApplyingRemote = true;
+          try {
+            // Complete authoritative database synchronization for cross-device sign-in & admin snapshot pull
+            window.transactions = Array.isArray(remote.transactions) ? remote.transactions : [];
+            localStorage.setItem('pro_transactions', JSON.stringify(window.transactions));
+
+            if (Array.isArray(remote.accounts) && remote.accounts.length > 0) {
+              window.accounts = remote.accounts;
+              localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+            } else {
+              const isDemo = vaultId === 'demo-showcase-vault';
+              window.accounts = [
+                { id: isDemo ? 'acc_cash_default' : 'acc_cash_clean', type: 'cash', label: '💵 Cash Wallet', initialBalance: 0, createdAt: new Date().toISOString() },
+                { id: isDemo ? 'acc_bank_default' : 'acc_bank_clean', type: 'card', label: '💳 Main Bank Account', network: 'Visa', mode: 'Debit', bank: 'Primary Bank', initialBalance: 0, createdAt: new Date().toISOString() }
+              ];
+              localStorage.setItem('pro_accounts', JSON.stringify(window.accounts));
+            }
+
+            window.accountTransfers = Array.isArray(remote.accountTransfers) ? remote.accountTransfers : [];
+            localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers));
+
+            window.budgetLimits = (remote.budgetLimits && typeof remote.budgetLimits === 'object') ? remote.budgetLimits : { income: 0, expense: 0 };
+            localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
+
+            if (remote.allocationsMode !== undefined) {
+              localStorage.setItem('pro_allocations_mode', remote.allocationsMode);
+            }
+            if (remote.allocationsMonth !== undefined) {
+              localStorage.setItem('pro_allocations_month', remote.allocationsMonth);
+            }
+            if (Array.isArray(remote.customCategories)) {
+              localStorage.setItem('pro_custom_categories', JSON.stringify(remote.customCategories));
+            }
+            if (Array.isArray(remote.customSubcategories)) {
+              localStorage.setItem('pro_custom_subcategories', JSON.stringify(remote.customSubcategories));
+            }
+
+            window.stockData = Array.isArray(remote.stockData) ? remote.stockData : [];
+            localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+
+            window.pharmacyData = Array.isArray(remote.pharmacyData) ? remote.pharmacyData : [];
+            localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+
+            localStorage.setItem('pro_vehicles', JSON.stringify(Array.isArray(remote.vehicles) ? remote.vehicles : []));
+            localStorage.setItem('pro_vehicle_fuel', JSON.stringify(Array.isArray(remote.fuels) ? remote.fuels : []));
+            localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(Array.isArray(remote.maint) ? remote.maint : []));
+
+            // Rentals & Contracts
+            if (Array.isArray(remote.rentalProperties)) {
+              localStorage.setItem('pro_rental_properties_v1', JSON.stringify(remote.rentalProperties));
+            }
+            if (Array.isArray(remote.rentalContracts)) {
+              localStorage.setItem('pro_rental_contracts_v1', JSON.stringify(remote.rentalContracts));
+            }
+            if (Array.isArray(remote.rentalNotifications)) {
+              localStorage.setItem('pro_rental_notifications_v1', JSON.stringify(remote.rentalNotifications));
+            }
+            if (remote.rentalNotificationConfig) {
+              localStorage.setItem('pro_rental_notification_config_v1', JSON.stringify(remote.rentalNotificationConfig));
+            }
+
+            // User Settings
+            if (remote.userSettings && remote.userSettings.theme) {
+              localStorage.setItem('pro_theme', remote.userSettings.theme);
+            }
+
+            localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+
+            if (typeof window.loadIntegratedDatabases === 'function') window.loadIntegratedDatabases();
+            if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
+            if (typeof window.loadRentalDatabase === 'function') window.loadRentalDatabase();
+            if (typeof window.rpmLoad === 'function') window.rpmLoad();
+            if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
+            if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
+            if (typeof window.renderAllViews === 'function') window.renderAllViews();
+          } finally {
+            this._isApplyingRemote = false;
           }
-
-          window.accountTransfers = Array.isArray(remote.accountTransfers) ? remote.accountTransfers : [];
-          localStorage.setItem('pro_account_transfers', JSON.stringify(window.accountTransfers));
-
-          window.budgetLimits = (remote.budgetLimits && typeof remote.budgetLimits === 'object') ? remote.budgetLimits : { income: 0, expense: 0 };
-          localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
-
-          if (remote.allocationsMode !== undefined) {
-            localStorage.setItem('pro_allocations_mode', remote.allocationsMode);
-          }
-          if (remote.allocationsMonth !== undefined) {
-            localStorage.setItem('pro_allocations_month', remote.allocationsMonth);
-          }
-          if (Array.isArray(remote.customCategories)) {
-            localStorage.setItem('pro_custom_categories', JSON.stringify(remote.customCategories));
-          }
-          if (Array.isArray(remote.customSubcategories)) {
-            localStorage.setItem('pro_custom_subcategories', JSON.stringify(remote.customSubcategories));
-          }
-
-          window.stockData = Array.isArray(remote.stockData) ? remote.stockData : [];
-          localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
-
-          window.pharmacyData = Array.isArray(remote.pharmacyData) ? remote.pharmacyData : [];
-          localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
-
-          localStorage.setItem('pro_vehicles', JSON.stringify(Array.isArray(remote.vehicles) ? remote.vehicles : []));
-          localStorage.setItem('pro_vehicle_fuel', JSON.stringify(Array.isArray(remote.fuels) ? remote.fuels : []));
-          localStorage.setItem('pro_vehicle_maintenance', JSON.stringify(Array.isArray(remote.maint) ? remote.maint : []));
-
-          // Rentals & Contracts
-          if (Array.isArray(remote.rentalProperties)) {
-            localStorage.setItem('pro_rental_properties_v1', JSON.stringify(remote.rentalProperties));
-          }
-          if (Array.isArray(remote.rentalContracts)) {
-            localStorage.setItem('pro_rental_contracts_v1', JSON.stringify(remote.rentalContracts));
-          }
-          if (Array.isArray(remote.rentalNotifications)) {
-            localStorage.setItem('pro_rental_notifications_v1', JSON.stringify(remote.rentalNotifications));
-          }
-          if (remote.rentalNotificationConfig) {
-            localStorage.setItem('pro_rental_notification_config_v1', JSON.stringify(remote.rentalNotificationConfig));
-          }
-
-          // User Settings
-          if (remote.userSettings && remote.userSettings.theme) {
-            localStorage.setItem('pro_theme', remote.userSettings.theme);
-          }
-
-          localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
-
-          if (typeof window.loadIntegratedDatabases === 'function') window.loadIntegratedDatabases();
-          if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
-          if (typeof window.loadRentalDatabase === 'function') window.loadRentalDatabase();
-          if (typeof window.rpmLoad === 'function') window.rpmLoad();
-          if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
-          if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
-          if (typeof window.renderAllViews === 'function') window.renderAllViews();
           this.updateUI();
           return true;
         } else {
           return this.applyRemoteData(remote);
         }
       } catch (err) {
+        if (!this._lastPullError) this._lastPullError = err?.message || 'Network error';
         console.warn('[Forecaster CloudSync] pullVault notice:', err);
         return false;
       }
@@ -556,6 +712,15 @@
       if (autoSyncCheck) {
         autoSyncCheck.checked = isAuto;
       }
+
+      const recoverBtn = document.getElementById('cloud-sync-recover-snapshot-btn');
+      if (recoverBtn) {
+        const snap = this.getPrePullLocalSnapshot();
+        recoverBtn.classList.toggle('hidden', !snap);
+        if (snap && snap.capturedAt) {
+          recoverBtn.title = `Restore pre-pull local snapshot from ${new Date(snap.capturedAt).toLocaleString()}`;
+        }
+      }
     },
 
     scheduleAutoSync: function() {
@@ -568,34 +733,55 @@
       }, 30000);
     },
 
-    restoreHistory: async function(showFeedback = true) {
+    restoreHistory: async function(showFeedback = true, options = {}) {
       try {
-        const vaultId = this.getVaultId();
         const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
           ? window.ForecasterAuth.getToken()
           : (localStorage.getItem('forecaster_auth_token') || '');
 
-        const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const res = await fetch('/api/cloud-sync/restore-history', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ vaultId })
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (data && data.ok && data.vault) {
-          await this.pullVault(vaultId, true);
+        if (!token) {
+          this._lastPullError = 'Authentication required to pull cloud snapshots.';
           if (showFeedback && typeof window.triggerToast === 'function') {
-            window.triggerToast('All history, vehicles, routine medication schedules, and audit register restored successfully!', 'success');
+            window.triggerToast(this._lastPullError, 'error');
           }
-          return true;
+          return false;
         }
+
+        const vaultId = ((options && options.vaultId) || this.getVaultId()).trim().toLowerCase();
+        const localData = this.getLocalData();
+        const localTxnCount = Array.isArray(localData.transactions) ? localData.transactions.length : 0;
+
+        if (!(options && options.skipConfirm) && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+          const confirmed = window.confirm(
+            `Pull cloud snapshot from vault "${vaultId}" and replace your current local workspace data?\n\n` +
+            `A recoverable local snapshot of your current workspace (${localTxnCount} local transaction${localTxnCount === 1 ? '' : 's'}) will be saved automatically before overwriting.\n\n` +
+            `Click OK to pull snapshot, or Cancel to keep your local data.`
+          );
+          if (!confirmed) {
+            if (showFeedback && typeof window.triggerToast === 'function') {
+              window.triggerToast('Cloud snapshot pull cancelled. Local data was preserved.', 'info');
+            }
+            return false;
+          }
+        }
+
+        const pulled = await this.pullVault(vaultId, true);
+        if (!pulled) {
+          if (showFeedback && typeof window.triggerToast === 'function') {
+            window.triggerToast(`Unable to pull cloud snapshot: ${this._lastPullError || 'Check connection or permissions.'}`, 'error');
+          }
+          return false;
+        }
+
+        if (showFeedback && typeof window.triggerToast === 'function') {
+          window.triggerToast(`Cloud snapshot pulled for "${vaultId}". A recoverable pre-pull local snapshot was saved.`, 'success');
+        }
+        return true;
       } catch (err) {
+        this._lastPullError = err?.message || 'Unable to restore cloud snapshot.';
         console.warn('[Forecaster CloudSync] restoreHistory notice:', err);
         if (showFeedback && typeof window.triggerToast === 'function') {
-          window.triggerToast('Unable to restore cloud history. Check connection.', 'error');
+          window.triggerToast('Unable to pull cloud snapshot. Check connection.', 'error');
         }
         return false;
       }
@@ -614,9 +800,9 @@
     }
   };
 
-  window.restoreMasterHistory = function(showFeedback = true) {
+  window.restoreMasterHistory = function(showFeedback = true, options = {}) {
     if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.restoreHistory === 'function') {
-      return window.ForecasterCloudSync.restoreHistory(showFeedback);
+      return window.ForecasterCloudSync.restoreHistory(showFeedback, options);
     }
     return Promise.resolve(false);
   };

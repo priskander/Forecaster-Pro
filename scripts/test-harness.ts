@@ -51,6 +51,7 @@ export async function startIsolatedTestServer(options: IsolatedServerOptions = {
   // Default isolated environment prevents inheriting production settings
   delete childEnv.ALLOWED_ORIGINS;
   delete childEnv.APP_URL;
+  delete childEnv.TRUST_PROXY;
   delete childEnv.INITIAL_ADMIN_EMAIL;
   delete childEnv.INITIAL_ADMIN_PASSWORD;
   delete childEnv.ADMIN_RECOVERY_EMAIL;

