@@ -2773,6 +2773,275 @@ async function runSecurityTestSuite() {
       try { fs.rmSync(demoCollisionDir, { recursive: true, force: true }); } catch {}
     }
 
+    // =========================================================================
+    // 14. Main Admin Control Panel Security, Feature Flag & Recovery Enforcement
+    // =========================================================================
+    console.log('\n--- Test Category 14: Main Admin Control Panel Security & Enforcement ---');
+    const ctrlAdminEmail = `ctrl_admin_${Date.now()}@testcorp.local`;
+    const ctrlAdminPass = randomStrongSecret();
+    const adminCtrlSrv = await startIsolatedTestServer({
+      env: {
+        INITIAL_ADMIN_EMAIL: ctrlAdminEmail,
+        INITIAL_ADMIN_PASSWORD: ctrlAdminPass
+      }
+    });
+    try {
+      const ctrlLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: ctrlAdminEmail, password: ctrlAdminPass }) },
+        adminCtrlSrv.baseUrl
+      );
+      assert(ctrlLogin.status === 200 && !!ctrlLogin.body.token, 'AdminCtrl 14.0: Main Admin authenticated');
+      const ctrlAdminToken = ctrlLogin.body.token;
+      const ctrlAdminId = ctrlLogin.body.user.id;
+
+      // Register two ordinary primary users
+      const u1Email = `ctrl_u1_${Date.now()}@testcorp.local`;
+      const u1Pass = randomStrongSecret();
+      const u1Reg = await request(
+        '/api/auth/register',
+        { method: 'POST', body: JSON.stringify({ name: 'Ctrl User One', email: u1Email, password: u1Pass }) },
+        adminCtrlSrv.baseUrl
+      );
+      assert(u1Reg.status === 201 && !!u1Reg.body.token, 'AdminCtrl 14.0b: Test primary user registered');
+      const u1Id = u1Reg.body.user.id;
+      const u1Token = u1Reg.body.token;
+
+      // 14.1 Dashboard returns environmentStatus, isLocked, activeSessionsCount, outbox; blocks non-admin
+      const nonAdminDash = await request(
+        '/api/admin/dashboard',
+        { headers: { Authorization: `Bearer ${u1Token}` } },
+        adminCtrlSrv.baseUrl
+      );
+      assert(nonAdminDash.status === 403, 'AdminCtrl 14.1a: Non-admin rejected from /api/admin/dashboard (HTTP 403)');
+
+      const ctrlDash = await request(
+        '/api/admin/dashboard',
+        { headers: { Authorization: `Bearer ${ctrlAdminToken}` } },
+        adminCtrlSrv.baseUrl
+      );
+      const u1DashEntry = (ctrlDash.body.users || []).find((u: any) => u.id === u1Id);
+      assert(
+        ctrlDash.status === 200 &&
+        typeof ctrlDash.body.environmentStatus?.registrationsAllowed === 'boolean' &&
+        typeof ctrlDash.body.environmentStatus?.maintenanceActive === 'boolean' &&
+        Array.isArray(ctrlDash.body.outbox) &&
+        !!u1DashEntry &&
+        u1DashEntry.activeSessionsCount >= 1 &&
+        u1DashEntry.isLocked === false,
+        'AdminCtrl 14.1b: Dashboard exposes live environmentStatus, activeSessionsCount, lockout state, and outbox'
+      );
+
+      // 14.2 allowNewRegistrations=false blocks new public sign-ups cleanly while keeping invited sub-users able to activate
+      const disableRegRes = await request(
+        '/api/admin/config',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ctrlAdminToken}` },
+          body: JSON.stringify({ featureFlags: { allowNewRegistrations: false } })
+        },
+        adminCtrlSrv.baseUrl
+      );
+      assert(disableRegRes.status === 200, 'AdminCtrl 14.2a: Main Admin disables public new registrations');
+
+      const blockedSignup = await request(
+        '/api/auth/register',
+        { method: 'POST', body: JSON.stringify({ name: 'Blocked Visitor', email: `blk_${Date.now()}@testcorp.local`, password: randomStrongSecret() }) },
+        adminCtrlSrv.baseUrl
+      );
+      assert(blockedSignup.status === 403, 'AdminCtrl 14.2b: New public registration rejected when allowNewRegistrations=false (HTTP 403)');
+
+      await request(
+        '/api/admin/config',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ctrlAdminToken}` },
+          body: JSON.stringify({ featureFlags: { allowNewRegistrations: true } })
+        },
+        adminCtrlSrv.baseUrl
+      );
+
+      // 14.3 Account suspension revokes sessions immediately and blocks login
+      const suspendRes = await request(
+        `/api/admin/users/${u1Id}/update`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ctrlAdminToken}` },
+          body: JSON.stringify({ status: 'suspended', tier: 'Pro Tier' })
+        },
+        adminCtrlSrv.baseUrl
+      );
+      assert(suspendRes.status === 200 && suspendRes.body.user?.status === 'suspended', 'AdminCtrl 14.3a: Admin suspends user and updates tier');
+
+      const suspendedTokenRes = await request(
+        `/api/cloud-sync/vault/${encodeURIComponent(u1Reg.body.user.vaultId)}`,
+        { headers: { Authorization: `Bearer ${u1Token}` } },
+        adminCtrlSrv.baseUrl
+      );
+      assert(suspendedTokenRes.status === 401, 'AdminCtrl 14.3b: Suspended user token immediately invalidated (HTTP 401)');
+
+      const suspendedLoginRes = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: u1Email, password: u1Pass }) },
+        adminCtrlSrv.baseUrl
+      );
+      assert(suspendedLoginRes.status === 403, 'AdminCtrl 14.3c: Suspended user cannot log in even with valid password (HTTP 403)');
+
+      // Re-activate user
+      const reactivateRes = await request(
+        `/api/admin/users/${u1Id}/update`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ctrlAdminToken}` },
+          body: JSON.stringify({ status: 'active' })
+        },
+        adminCtrlSrv.baseUrl
+      );
+      assert(reactivateRes.status === 200 && reactivateRes.body.user?.status === 'active', 'AdminCtrl 14.3d: Admin reactivates suspended user');
+
+      // 14.4 Brute-force lockout + admin unlockAccount
+      for (let i = 0; i < 5; i++) {
+        await request(
+          '/api/auth/login',
+          { method: 'POST', body: JSON.stringify({ email: u1Email, password: 'WrongLockPass#999!' }) },
+          adminCtrlSrv.baseUrl
+        );
+      }
+      const lockedCheck = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: u1Email, password: u1Pass }) },
+        adminCtrlSrv.baseUrl
+      );
+      assert(lockedCheck.status === 423, 'AdminCtrl 14.4a: 5 failed attempts lock account (HTTP 423)');
+
+      const adminUnlockRes = await request(
+        `/api/admin/users/${u1Id}/update`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ctrlAdminToken}` },
+          body: JSON.stringify({ unlockAccount: true })
+        },
+        adminCtrlSrv.baseUrl
+      );
+      assert(adminUnlockRes.status === 200 && adminUnlockRes.body.user?.isLocked === false, 'AdminCtrl 14.4b: Admin unlockAccount clears lockout');
+
+      const unlockedLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: u1Email, password: u1Pass }) },
+        adminCtrlSrv.baseUrl
+      );
+      assert(unlockedLogin.status === 200 && !!unlockedLogin.body.token, 'AdminCtrl 14.4c: Unlocked user authenticates cleanly (HTTP 200)');
+      const u1FreshToken = unlockedLogin.body.token;
+
+      // 14.5 Maintenance Mode blocks standard user login (503) while Main Admin retains bypass access (200)
+      const maintOnRes = await request(
+        '/api/admin/config',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ctrlAdminToken}` },
+          body: JSON.stringify({
+            maintenanceMode: { enabled: true, message: 'Scheduled security upgrade', allowAdminBypass: true, affectedPlatforms: ['web'] },
+            broadcastNotice: { enabled: true, type: 'warning', message: 'Scheduled maintenance at midnight' }
+          })
+        },
+        adminCtrlSrv.baseUrl
+      );
+      assert(maintOnRes.status === 200 && maintOnRes.body.systemConfig?.broadcastNotice?.type === 'warning', 'AdminCtrl 14.5a: Maintenance & broadcast type=warning saved');
+
+      const userMaintLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: u1Email, password: u1Pass }) },
+        adminCtrlSrv.baseUrl
+      );
+      assert(userMaintLogin.status === 503 && userMaintLogin.body.maintenance === true, 'AdminCtrl 14.5b: Maintenance Mode blocks regular user login (HTTP 503)');
+
+      const adminMaintLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: ctrlAdminEmail, password: ctrlAdminPass }) },
+        adminCtrlSrv.baseUrl
+      );
+      assert(adminMaintLogin.status === 200 && !!adminMaintLogin.body.token, 'AdminCtrl 14.5c: Main Admin bypasses Maintenance Mode during outage (HTTP 200)');
+      const adminMaintToken = adminMaintLogin.body.token;
+
+      await request(
+        '/api/admin/config',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${adminMaintToken}` },
+          body: JSON.stringify({ maintenanceMode: { enabled: false } })
+        },
+        adminCtrlSrv.baseUrl
+      );
+
+      // 14.6 Bulk session revocation preserves calling admin session while invalidating other tokens
+      const revokeAllRes = await request(
+        '/api/admin/sessions/revoke-all',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${adminMaintToken}` }
+        },
+        adminCtrlSrv.baseUrl
+      );
+      assert(revokeAllRes.status === 200 && revokeAllRes.body.revokedCount >= 1, 'AdminCtrl 14.6a: Bulk revoke invalidates other active user sessions');
+
+      const u1AfterRevokeAll = await request(
+        `/api/cloud-sync/vault/${encodeURIComponent(u1Reg.body.user.vaultId)}`,
+        { headers: { Authorization: `Bearer ${u1FreshToken}` } },
+        adminCtrlSrv.baseUrl
+      );
+      assert(u1AfterRevokeAll.status === 401, 'AdminCtrl 14.6b: Victim session returns HTTP 401 after bulk revoke');
+
+      const adminStillValid = await request(
+        '/api/admin/dashboard',
+        { headers: { Authorization: `Bearer ${adminMaintToken}` } },
+        adminCtrlSrv.baseUrl
+      );
+      assert(adminStillValid.status === 200, 'AdminCtrl 14.6c: Calling Main Admin session remains valid after bulk revoke');
+
+      // 14.7 Sanitized System Export strips secrets and requires Main Admin
+      const unauthExport = await request('/api/admin/system-export', {}, adminCtrlSrv.baseUrl);
+      assert(unauthExport.status === 401, 'AdminCtrl 14.7a: /api/admin/system-export rejects unauthenticated requests (HTTP 401)');
+
+      const exportRes = await request(
+        '/api/admin/system-export',
+        { headers: { Authorization: `Bearer ${adminMaintToken}` } },
+        adminCtrlSrv.baseUrl
+      );
+      const exportStr = JSON.stringify(exportRes.body);
+      assert(
+        exportRes.status === 200 &&
+        exportRes.body.export?.format === 'forecaster-pro-admin-export' &&
+        !exportStr.includes('passwordHash') &&
+        !exportStr.includes('encryptedPass') &&
+        !exportStr.includes('resetTempPasswordHash'),
+        'AdminCtrl 14.7b: Sanitized System Export succeeds and strips all password hashes, salts, and SMTP secrets'
+      );
+
+      // 14.8 Delete user protects Main Admin and removes disposable account
+      const deleteSelfBlock = await request(
+        `/api/admin/users/${ctrlAdminId}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${adminMaintToken}` } },
+        adminCtrlSrv.baseUrl
+      );
+      assert(deleteSelfBlock.status === 403, 'AdminCtrl 14.8a: Deleting Main Administrator account blocked (HTTP 403)');
+
+      const deleteU1Res = await request(
+        `/api/admin/users/${u1Id}?deleteVault=true`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${adminMaintToken}` } },
+        adminCtrlSrv.baseUrl
+      );
+      assert(deleteU1Res.status === 200, 'AdminCtrl 14.8b: Main Admin deletes regular user account (HTTP 200)');
+
+      const u1AfterDeleteLogin = await request(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email: u1Email, password: u1Pass }) },
+        adminCtrlSrv.baseUrl
+      );
+      assert(u1AfterDeleteLogin.status === 401, 'AdminCtrl 14.8c: Deleted user can no longer authenticate (HTTP 401)');
+    } finally {
+      await adminCtrlSrv.stop(true);
+    }
+
     // 13.10 Hardcoded credential scan across runtime source & frontend assets
     const forbiddenLiterals = ['DemoPassword123!', 'usr_peter_badir', 'peter@badir.com'];
     const filesToScan = [

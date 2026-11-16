@@ -36,6 +36,15 @@
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
+  function escapeHtml(val) {
+    return String(val ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   const ROLE_CONFIG = {
     main_admin: {
       label: 'Main Admin',
@@ -1600,6 +1609,7 @@ ${mail.body}
         this._adminData = data;
         this._adminUsers = data.users || [];
         this._adminAuditLogs = data.auditLogs || [];
+        this._adminOutbox = data.outbox || [];
 
         // 1. Populate Overview KPIs
         const kpiUsers = document.getElementById('admin-kpi-users');
@@ -1631,6 +1641,40 @@ ${mail.body}
         if (kpiOutbox) kpiOutbox.textContent = (data.telemetry?.outboxCount || 0).toString();
         if (kpiMemory) kpiMemory.textContent = `${data.telemetry?.memoryRssMb || 0} MB`;
 
+        // 1b. Security Readiness Strip
+        const envSt = data.environmentStatus || {};
+        const envEmailEl = document.getElementById('admin-env-email');
+        const envSmtpBtn = document.getElementById('admin-env-smtp-btn');
+        const envRegEl = document.getElementById('admin-env-registrations');
+        const envMaintEl = document.getElementById('admin-env-maintenance');
+        const envDemoEl = document.getElementById('admin-env-demo');
+
+        if (envEmailEl) {
+          if (envSt.emailConfigured) {
+            envEmailEl.textContent = '✓ Configured';
+            envEmailEl.className = 'text-xs font-extrabold text-emerald-600 dark:text-emerald-400 truncate';
+          } else {
+            envEmailEl.textContent = '⚠ Not Configured';
+            envEmailEl.className = 'text-xs font-extrabold text-amber-600 dark:text-amber-400 truncate';
+          }
+        }
+        if (envSmtpBtn) {
+          envSmtpBtn.textContent = envSt.emailConfigured ? 'Edit SMTP →' : 'Configure →';
+        }
+        if (envRegEl) {
+          const open = envSt.registrationsAllowed !== false;
+          envRegEl.textContent = open ? '✓ Public Open' : '🔒 Invite Only';
+          envRegEl.className = open ? 'text-xs font-extrabold text-emerald-600 dark:text-emerald-400' : 'text-xs font-extrabold text-amber-600 dark:text-amber-400';
+        }
+        if (envMaintEl) {
+          envMaintEl.textContent = envSt.maintenanceActive ? '🚧 Maintenance On' : '✓ Live Online';
+          envMaintEl.className = envSt.maintenanceActive ? 'text-xs font-extrabold text-amber-600 dark:text-amber-400' : 'text-xs font-extrabold text-emerald-600 dark:text-emerald-400';
+        }
+        if (envDemoEl) {
+          envDemoEl.textContent = envSt.demoModeEnabled ? 'Enabled' : 'Disabled';
+          envDemoEl.className = envSt.demoModeEnabled ? 'text-xs font-extrabold text-blue-600 dark:text-blue-400' : 'text-xs font-extrabold text-slate-600 dark:text-slate-300';
+        }
+
         // 2. Platform Status Cards
         const platforms = data.systemConfig?.platforms || {};
         ['web', 'desktop', 'mobile'].forEach(p => {
@@ -1659,15 +1703,13 @@ ${mail.body}
         }
 
         const bcastToggle = document.getElementById('admin-broadcast-toggle');
+        const bcastType = document.getElementById('admin-broadcast-type');
         const bcastMsg = document.getElementById('admin-broadcast-message');
         const bcastLink = document.getElementById('admin-broadcast-link');
         if (bcastToggle) bcastToggle.checked = !!data.systemConfig?.broadcastNotice?.enabled;
-        if (bcastMsg && data.systemConfig?.broadcastNotice?.message) {
-          bcastMsg.value = data.systemConfig.broadcastNotice.message;
-        }
-        if (bcastLink) {
-          bcastLink.value = data.systemConfig?.broadcastNotice?.linkUrl || '';
-        }
+        if (bcastType) bcastType.value = data.systemConfig?.broadcastNotice?.type || 'info';
+        if (bcastMsg) bcastMsg.value = data.systemConfig?.broadcastNotice?.message || '';
+        if (bcastLink) bcastLink.value = data.systemConfig?.broadcastNotice?.linkUrl || '';
 
         // 4. Feature Flags Checkboxes
         const flags = data.systemConfig?.featureFlags || {};
@@ -1682,10 +1724,16 @@ ${mail.body}
         // 5. Users List & Count
         const badgeCount = document.getElementById('admin-users-badge-count');
         if (badgeCount) badgeCount.textContent = (this._adminUsers.length).toString();
-        this.renderAdminUsersList(this._adminUsers);
+        const searchInput = document.getElementById('admin-user-search-input');
+        if (searchInput && searchInput.value.trim()) {
+          this.filterAdminUsersList(searchInput.value);
+        } else {
+          this.renderAdminUsersList(this._adminUsers);
+        }
 
-        // 6. Audit Logs
-        this.renderAdminAuditLogs(this._adminAuditLogs);
+        // 6. Audit Logs & Outbox
+        this.filterAuditLogs(this._activeAuditFilter || 'all');
+        this.renderAdminOutbox(this._adminOutbox);
 
       } catch (err) {
         console.error('[Admin Dashboard Error]', err);
@@ -1693,6 +1741,55 @@ ${mail.body}
           window.triggerToast(err.message, 'error');
         }
       }
+    },
+
+    focusSmtpSettings: function() {
+      this.switchAdminTab('releases');
+      setTimeout(() => {
+        const hostInput = document.getElementById('admin-smtp-host');
+        if (hostInput) {
+          hostInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          hostInput.focus();
+        }
+      }, 60);
+    },
+
+    showAdminConfirm: function(title, message, okLabel = 'Confirm', isDanger = true) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('admin-confirm-modal');
+        const titleEl = document.getElementById('admin-confirm-title');
+        const msgEl = document.getElementById('admin-confirm-message');
+        const okBtn = document.getElementById('admin-confirm-ok-btn');
+        const cancelBtn = document.getElementById('admin-confirm-cancel-btn');
+
+        if (!modal || !okBtn || !cancelBtn) {
+          resolve(false);
+          return;
+        }
+
+        if (titleEl) titleEl.textContent = title;
+        if (msgEl) msgEl.textContent = message;
+        okBtn.textContent = okLabel;
+        okBtn.className = isDanger
+          ? 'px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-xs font-extrabold text-white shadow-xs cursor-pointer'
+          : 'px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-xs font-extrabold text-white shadow-xs cursor-pointer';
+
+        const cleanup = (result) => {
+          modal.classList.add('hidden');
+          modal.style.display = 'none';
+          okBtn.onclick = null;
+          cancelBtn.onclick = null;
+          modal.onclick = null;
+          resolve(result);
+        };
+
+        okBtn.onclick = () => cleanup(true);
+        cancelBtn.onclick = () => cleanup(false);
+        modal.onclick = (e) => { if (e.target === modal) cleanup(false); };
+
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+      });
     },
 
     prepareReleaseModal: function(platform) {
@@ -1708,6 +1805,8 @@ ${mail.body}
 
       const platformEl = document.getElementById('admin-release-platform');
       const versionEl = document.getElementById('admin-release-version');
+      const minVerEl = document.getElementById('admin-release-min-version');
+      const urlEl = document.getElementById('admin-release-url');
       const channelEl = document.getElementById('admin-release-channel');
       const notesEl = document.getElementById('admin-release-notes');
       const forceEl = document.getElementById('admin-release-force');
@@ -1715,6 +1814,8 @@ ${mail.body}
 
       const targetPlatform = platformEl?.value || 'all';
       const version = versionEl?.value?.trim() || '';
+      const minSupportedVersion = minVerEl?.value?.trim() || '';
+      const downloadUrl = urlEl?.value?.trim() || '';
       const channel = channelEl?.value || 'production';
       const releaseNotes = notesEl?.value || '';
       const forceUpdateRequired = !!forceEl?.checked;
@@ -1738,6 +1839,8 @@ ${mail.body}
           body: JSON.stringify({
             targetPlatform,
             version,
+            minSupportedVersion: minSupportedVersion || undefined,
+            downloadUrl: downloadUrl || undefined,
             channel,
             releaseNotes,
             forceUpdateRequired,
@@ -1754,14 +1857,12 @@ ${mail.body}
           window.triggerToast(`🚀 Version v${version} deployed successfully to ${targetPlatform.toUpperCase()}!`, 'success');
         }
 
-        // Clear release version field
         if (versionEl) versionEl.value = '';
+        if (minVerEl) minVerEl.value = '';
+        if (urlEl) urlEl.value = '';
 
-        // Reload admin telemetry & check system banner
         await this.loadAdminDashboard();
         this.checkSystemStatusBanner();
-
-        // Switch to overview to show updated version cards
         this.switchAdminTab('overview');
       } catch (err) {
         if (typeof window.triggerToast === 'function') {
@@ -1783,6 +1884,7 @@ ${mail.body}
       const maintToggle = document.getElementById('admin-maint-toggle');
       const maintMsg = document.getElementById('admin-maint-message');
       const bcastToggle = document.getElementById('admin-broadcast-toggle');
+      const bcastType = document.getElementById('admin-broadcast-type');
       const bcastMsg = document.getElementById('admin-broadcast-message');
       const bcastLink = document.getElementById('admin-broadcast-link');
 
@@ -1795,6 +1897,7 @@ ${mail.body}
 
       const broadcastNotice = {
         enabled: !!bcastToggle?.checked,
+        type: bcastType?.value || 'info',
         message: bcastMsg?.value?.trim() || '',
         linkUrl: bcastLink?.value?.trim() || ''
       };
@@ -1982,6 +2085,67 @@ ${mail.body}
       }
     },
 
+    revokeAllOtherSessions: async function() {
+      const confirmed = await this.showAdminConfirm(
+        'Force Sign-Out All Users',
+        'Revoke every active session token across all Web, Desktop, and Mobile clients except your current Master Admin session? All users will need to log in again.',
+        'Revoke All Sessions',
+        true
+      );
+      if (!confirmed) return;
+
+      try {
+        const token = this.getToken();
+        const res = await fetch('/api/admin/sessions/revoke-all', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to revoke sessions.');
+
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast(data.message || 'Active sessions revoked.', 'success');
+        }
+        this.loadAdminDashboard();
+      } catch (err) {
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast(err.message, 'error');
+        }
+      }
+    },
+
+    downloadSystemExport: async function() {
+      try {
+        const token = this.getToken();
+        const res = await fetch('/api/admin/system-export', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to generate sanitized system export.');
+        }
+        const jsonText = await res.text();
+        const blob = new Blob([jsonText], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `forecaster_system_export_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast('Sanitized system backup downloaded.', 'success');
+        }
+        this.loadAdminDashboard();
+      } catch (err) {
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast(err.message, 'error');
+        }
+      }
+    },
+
     renderAdminUsersList: function(users) {
       const tableBody = document.getElementById('admin-users-table-body');
       if (!tableBody) return;
@@ -1992,7 +2156,14 @@ ${mail.body}
       }
 
       tableBody.innerHTML = users.map(u => {
+        const safeId = escapeHtml(u.id);
+        const safeName = escapeHtml(u.name || 'Unnamed User');
+        const safeEmail = escapeHtml(u.email || '');
+        const safeVault = escapeHtml(u.vaultId || 'No Vault');
+        const safeTier = escapeHtml(u.tier || 'Free Tier');
+        const safeRole = escapeHtml(u.role || 'member');
         const isMaster = !u.isDemo && (u.isMainAdmin || u.role === 'main_admin');
+
         const roleBadge = isMaster
           ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800">Main Admin</span>'
           : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -2000,29 +2171,48 @@ ${mail.body}
               u.role === 'manager' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' :
               u.role === 'viewer' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' :
               'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-            }">${u.role || 'Member'}</span>`;
+            }">${safeRole}</span>`;
 
         const isSuspended = u.status === 'suspended';
         const statusBadge = isSuspended
           ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">Suspended</span>'
           : '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">Active</span>';
 
+        const demoBadge = u.isDemo
+          ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">Demo</span>'
+          : '';
+        const lockedBadge = u.isLocked
+          ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">🔒 Locked</span>'
+          : '';
+        const pwChangeBadge = u.mustChangePassword
+          ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300">PW Reset Req</span>'
+          : '';
+        const sessionsBadge = (u.activeSessionsCount || 0) > 0
+          ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${u.activeSessionsCount} session${u.activeSessionsCount === 1 ? '' : 's'}</span>`
+          : '';
+
         return `
           <div class="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition">
             <div class="flex items-center gap-3 min-w-0">
               <div class="w-9 h-9 rounded-xl ${isMaster ? 'bg-gradient-to-tr from-purple-700 to-indigo-600' : 'bg-gradient-to-tr from-blue-600 to-indigo-600'} text-white font-black text-xs flex items-center justify-center shrink-0">
-                ${getInitials(u.name)}
+                ${escapeHtml(getInitials(u.name))}
               </div>
               <div class="min-w-0">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-xs font-bold text-slate-900 dark:text-white truncate">${u.name}</span>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="text-xs font-bold text-slate-900 dark:text-white truncate">${safeName}</span>
                   ${roleBadge}
                   ${statusBadge}
+                  ${demoBadge}
+                  ${lockedBadge}
+                  ${pwChangeBadge}
+                  ${sessionsBadge}
                 </div>
                 <div class="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap mt-0.5">
-                  <span class="truncate">${u.email}</span>
+                  <span class="truncate">${safeEmail}</span>
                   <span>·</span>
-                  <span class="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">${u.vaultId || 'No Vault'}</span>
+                  <span>${safeTier}</span>
+                  <span>·</span>
+                  <span class="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">${safeVault}</span>
                   <span>·</span>
                   <span class="tabular-nums font-mono">${u.transactionCount || 0} txns</span>
                   <span>·</span>
@@ -2031,13 +2221,21 @@ ${mail.body}
               </div>
             </div>
 
-            <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+            <div class="flex items-center gap-1.5 flex-wrap shrink-0 self-end sm:self-center">
               ${!isMaster ? `
-                <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition cursor-pointer" onclick="window.ForecasterAuth.openEditUserModal('${u.id}', '${encodeURIComponent(u.name)}', '${u.email}', '${u.role}', '${u.tier}', '${u.status || 'active'}')">
+                ${u.isLocked ? `
+                  <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-800 dark:text-amber-300 transition cursor-pointer" onclick="window.ForecasterAuth.quickUnlockUser('${safeId}')">
+                    🔓 Unlock
+                  </button>
+                ` : ''}
+                <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition cursor-pointer" onclick="window.ForecasterAuth.openEditUserModal('${safeId}')">
                   Edit
                 </button>
-                <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition cursor-pointer" onclick="window.ForecasterAuth.resetUserVault('${u.id}', '${encodeURIComponent(u.name)}')">
+                <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-amber-200 dark:border-amber-900/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-700 dark:text-amber-400 transition cursor-pointer" onclick="window.ForecasterAuth.resetUserVault('${safeId}')">
                   Reset Vault
+                </button>
+                <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition cursor-pointer" onclick="window.ForecasterAuth.deleteUserAccount('${safeId}')">
+                  Delete
                 </button>
               ` : `
                 <span class="text-[10px] font-extrabold text-purple-600 dark:text-purple-400 flex items-center gap-1">
@@ -2062,44 +2260,104 @@ ${mail.body}
         (u.email && u.email.toLowerCase().includes(q)) ||
         (u.role && u.role.toLowerCase().includes(q)) ||
         (u.tier && u.tier.toLowerCase().includes(q)) ||
+        (u.status && u.status.toLowerCase().includes(q)) ||
         (u.vaultId && u.vaultId.toLowerCase().includes(q))
       );
       this.renderAdminUsersList(filtered);
     },
 
-    openEditUserModal: function(userId, encodedName, email, currentRole, currentTier, currentStatus) {
-      const name = decodeURIComponent(encodedName);
-      const newRole = prompt(`Update role for ${name} (${email}):\nAllowed: owner, manager, member, viewer`, currentRole);
-      if (newRole === null) return;
+    openEditUserModal: function(userId) {
+      const user = (this._adminUsers || []).find(u => u.id === userId);
+      if (!user) return;
 
-      const cleanRole = newRole.trim().toLowerCase();
-      if (!['owner', 'manager', 'member', 'viewer'].includes(cleanRole)) {
-        alert('Invalid role. Must be owner, manager, member, or viewer.');
-        return;
+      const modal = document.getElementById('admin-edit-user-modal');
+      const idEl = document.getElementById('admin-edit-user-id');
+      const identityEl = document.getElementById('admin-edit-user-identity');
+      const roleEl = document.getElementById('admin-edit-user-role');
+      const tierEl = document.getElementById('admin-edit-user-tier');
+      const statusEl = document.getElementById('admin-edit-user-status');
+      const passEl = document.getElementById('admin-edit-user-password');
+      const unlockEl = document.getElementById('admin-edit-user-unlock');
+      const forcePwEl = document.getElementById('admin-edit-user-force-pw');
+      const revokeEl = document.getElementById('admin-edit-user-revoke');
+      const errEl = document.getElementById('admin-edit-user-error');
+
+      if (!modal) return;
+      if (idEl) idEl.value = user.id;
+      if (identityEl) identityEl.textContent = `${user.name} (${user.email})`;
+      if (roleEl) {
+        const ownerOpt = roleEl.querySelector('option[value="owner"]');
+        if (ownerOpt) ownerOpt.disabled = !!user.isDemo;
+        roleEl.value = ['owner', 'manager', 'member', 'viewer'].includes(user.role) ? user.role : 'member';
+      }
+      if (tierEl) tierEl.value = user.tier || 'Free Tier';
+      if (statusEl) statusEl.value = user.status === 'suspended' ? 'suspended' : 'active';
+      if (passEl) passEl.value = '';
+      if (unlockEl) unlockEl.checked = !!user.isLocked;
+      if (forcePwEl) forcePwEl.checked = !!user.mustChangePassword;
+      if (revokeEl) revokeEl.checked = false;
+      if (errEl) {
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
       }
 
-      const wantResetPass = confirm(`Would you like to set a new password for ${name}? Click OK to change password, or Cancel to keep existing.`);
-      let newPass = undefined;
-      if (wantResetPass) {
-        const passPrompt = prompt(`Enter new strong password for ${name} (min 8 chars, upper, lower, digit, symbol):`);
-        if (passPrompt !== null) {
-          const check = this.evaluatePasswordStrength(passPrompt);
-          if (!check.meetsMinimum) {
-            alert(check.requirementMessage);
-            return;
-          }
-          newPass = passPrompt;
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+    },
+
+    closeEditUserModal: function() {
+      const modal = document.getElementById('admin-edit-user-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+    },
+
+    submitAdminEditUserModal: async function(event) {
+      if (event) event.preventDefault();
+      const userId = document.getElementById('admin-edit-user-id')?.value || '';
+      const role = document.getElementById('admin-edit-user-role')?.value || 'member';
+      const tier = document.getElementById('admin-edit-user-tier')?.value || 'Free Tier';
+      const status = document.getElementById('admin-edit-user-status')?.value || 'active';
+      const newPassword = document.getElementById('admin-edit-user-password')?.value || '';
+      const unlockAccount = !!document.getElementById('admin-edit-user-unlock')?.checked;
+      const forcePasswordChange = !!document.getElementById('admin-edit-user-force-pw')?.checked;
+      const revokeSessions = !!document.getElementById('admin-edit-user-revoke')?.checked;
+      const errEl = document.getElementById('admin-edit-user-error');
+
+      const showModalError = (msg) => {
+        if (!errEl) return;
+        errEl.textContent = msg;
+        errEl.classList.remove('hidden');
+      };
+
+      if (newPassword) {
+        const check = this.evaluatePasswordStrength(newPassword);
+        if (!check.meetsMinimum) {
+          showModalError(check.requirementMessage);
+          return;
         }
       }
 
-      this.submitUserAccountUpdate(userId, cleanRole, currentTier, currentStatus, newPass);
+      const ok = await this.submitUserAccountUpdate(userId, {
+        role,
+        tier,
+        status,
+        newPassword: newPassword || undefined,
+        unlockAccount,
+        forcePasswordChange,
+        revokeSessions
+      }, showModalError);
+
+      if (ok) {
+        this.closeEditUserModal();
+      }
     },
 
-    submitUserAccountUpdate: async function(userId, role, tier, status, newPassword) {
+    submitUserAccountUpdate: async function(userId, updates, onError) {
       try {
         const token = this.getToken();
-        const payload = { role, tier, status };
-        if (newPassword) payload.newPassword = newPassword;
+        const payload = typeof updates === 'object' && updates !== null ? updates : {};
 
         const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/update`, {
           method: 'POST',
@@ -2114,9 +2372,56 @@ ${mail.body}
         if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to update user.');
 
         if (typeof window.triggerToast === 'function') {
-          window.triggerToast('User account successfully updated!', 'success');
+          window.triggerToast(data.message || 'User account successfully updated!', 'success');
         }
 
+        await this.loadAdminDashboard();
+        return true;
+      } catch (err) {
+        if (typeof onError === 'function') onError(err.message);
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast(err.message, 'error');
+        }
+        return false;
+      }
+    },
+
+    quickUnlockUser: async function(userId) {
+      const user = (this._adminUsers || []).find(u => u.id === userId);
+      const label = user ? `${user.name} (${user.email})` : userId;
+      const confirmed = await this.showAdminConfirm(
+        'Unlock Account',
+        `Clear brute-force lockout and reset failed login attempts for ${label}?`,
+        'Unlock User',
+        false
+      );
+      if (!confirmed) return;
+      await this.submitUserAccountUpdate(userId, { unlockAccount: true });
+    },
+
+    deleteUserAccount: async function(userId) {
+      const user = (this._adminUsers || []).find(u => u.id === userId);
+      const label = user ? `${user.name} (${user.email})` : userId;
+      const confirmed = await this.showAdminConfirm(
+        'Delete User Account',
+        `Permanently remove user ${label} and revoke all active sessions? If the user's vault is not shared with any other user, it will also be cleaned up.`,
+        'Delete Account',
+        true
+      );
+      if (!confirmed) return;
+
+      try {
+        const token = this.getToken();
+        const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}?deleteVault=true`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to delete user.');
+
+        if (typeof window.triggerToast === 'function') {
+          window.triggerToast(data.message || 'User deleted.', 'success');
+        }
         this.loadAdminDashboard();
       } catch (err) {
         if (typeof window.triggerToast === 'function') {
@@ -2125,11 +2430,16 @@ ${mail.body}
       }
     },
 
-    resetUserVault: async function(userId, encodedName) {
-      const name = decodeURIComponent(encodedName);
-      if (!confirm(`DANGER: Are you sure you want to clear all transactions in the private database vault for ${name}? This action cannot be undone.`)) {
-        return;
-      }
+    resetUserVault: async function(userId) {
+      const user = (this._adminUsers || []).find(u => u.id === userId);
+      const label = user ? `${user.name} (${user.email})` : userId;
+      const confirmed = await this.showAdminConfirm(
+        'Reset User Vault Transactions',
+        `Clear all transactions and transfers in the private database vault for ${label}? This action cannot be undone.`,
+        'Reset Vault',
+        true
+      );
+      if (!confirmed) return;
 
       try {
         const token = this.getToken();
@@ -2142,7 +2452,7 @@ ${mail.body}
         if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to reset vault.');
 
         if (typeof window.triggerToast === 'function') {
-          window.triggerToast(`Vault reset for ${name}! Clean database active.`, 'success');
+          window.triggerToast(`Vault reset for ${label}! Clean database active.`, 'success');
         }
 
         this.loadAdminDashboard();
@@ -2161,7 +2471,12 @@ ${mail.body}
         return;
       }
 
-      const sure = confirm('Assign demonstration dataset (training payment accounts, transactions, and depletion models) for training & marketing purposes?');
+      const sure = await this.showAdminConfirm(
+        'Assign Demo Training Dataset',
+        'Load sample payment accounts, transactions, stock items, and pharmacy telemetry into the active vault for training & marketing demonstrations?',
+        'Assign Demo Data',
+        false
+      );
       if (!sure) return;
 
       try {
@@ -2213,7 +2528,12 @@ ${mail.body}
         return;
       }
 
-      const sure = confirm('Remove all demo data and return account to a 100% clean and clear slate?');
+      const sure = await this.showAdminConfirm(
+        'Clear All Demo & Training Data',
+        'Remove all transactions, accounts, stock, and pharmacy records from this workspace and return to a 100% clean slate?',
+        'Clear All Data',
+        true
+      );
       if (!sure) return;
 
       try {
@@ -2281,19 +2601,23 @@ ${mail.body}
 
         const badgeClass = categoryColors[l.category] || 'text-slate-600 bg-slate-100 border-slate-200';
         const formattedTime = new Date(l.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' + new Date(l.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        const safeCat = escapeHtml((l.category || '').replace('_', ' '));
+        const safeAction = escapeHtml(l.action || '');
+        const safeEmail = escapeHtml(l.adminEmail || '');
+        const safeDetails = escapeHtml(l.details || '');
 
         return `
           <div class="p-3 sm:p-3.5 flex flex-col sm:flex-row sm:items-start justify-between gap-2 hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition">
             <div class="space-y-1 min-w-0">
               <div class="flex items-center gap-2 flex-wrap font-sans">
-                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${badgeClass}">${(l.category || '').replace('_', ' ')}</span>
-                <span class="font-bold text-xs text-slate-900 dark:text-white">${l.action}</span>
-                <span class="text-[10px] text-slate-400">by ${l.adminEmail}</span>
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${badgeClass}">${safeCat}</span>
+                <span class="font-bold text-xs text-slate-900 dark:text-white">${safeAction}</span>
+                <span class="text-[10px] text-slate-400">by ${safeEmail}</span>
               </div>
-              <p class="text-slate-700 dark:text-slate-300 font-mono text-[11px] break-words">${l.details}</p>
+              <p class="text-slate-700 dark:text-slate-300 font-mono text-[11px] break-words">${safeDetails}</p>
             </div>
             <div class="text-[10px] text-slate-400 tabular-nums shrink-0 font-mono self-start sm:self-center">
-              ${formattedTime}
+              ${escapeHtml(formattedTime)}
             </div>
           </div>
         `;
@@ -2301,13 +2625,74 @@ ${mail.body}
     },
 
     filterAuditLogs: function(category) {
+      this._activeAuditFilter = category || 'all';
+      const filterBtns = document.querySelectorAll('[data-audit-filter]');
+      filterBtns.forEach(btn => {
+        const isActive = btn.getAttribute('data-audit-filter') === this._activeAuditFilter;
+        btn.className = isActive
+          ? 'px-2.5 py-1 text-[11px] font-bold rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 cursor-pointer'
+          : 'px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer';
+      });
+
       if (!this._adminAuditLogs) return;
-      if (category === 'all') {
+      if (this._activeAuditFilter === 'all') {
         this.renderAdminAuditLogs(this._adminAuditLogs);
         return;
       }
-      const filtered = this._adminAuditLogs.filter(l => l.category === category);
+      const filtered = this._adminAuditLogs.filter(l => l.category === this._activeAuditFilter);
       this.renderAdminAuditLogs(filtered);
+    },
+
+    exportAuditLogsJson: function() {
+      const logs = this._adminAuditLogs || [];
+      const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `forecaster_audit_logs_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+
+    renderAdminOutbox: function(items) {
+      const outboxEl = document.getElementById('admin-outbox-list');
+      if (!outboxEl) return;
+
+      if (!items || items.length === 0) {
+        outboxEl.innerHTML = '<div class="p-6 text-center text-xs text-slate-400">No outbound email records found.</div>';
+        return;
+      }
+
+      outboxEl.innerHTML = items.map(item => {
+        const st = item.status || 'pending_transport';
+        const statusClass = st === 'delivered'
+          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+          : st === 'failed'
+            ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+            : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+        const sentTime = item.sentAt ? new Date(item.sentAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+        return `
+          <div class="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition">
+            <div class="min-w-0 space-y-0.5">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${statusClass}">${escapeHtml(st)}</span>
+                <span class="font-bold text-xs text-slate-900 dark:text-white truncate">${escapeHtml(item.subject || 'System Email')}</span>
+              </div>
+              <div class="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
+                <span>To: <strong>${escapeHtml(item.to || '')}</strong></span>
+                <span>·</span>
+                <span>Kind: ${escapeHtml(item.kind || 'general')}</span>
+                ${item.deliveryProvider ? `<span>·</span><span>Via: ${escapeHtml(item.deliveryProvider)}</span>` : ''}
+              </div>
+              ${item.deliveryError ? `<div class="text-[11px] text-rose-600 dark:text-rose-400 font-mono break-words">${escapeHtml(item.deliveryError)}</div>` : ''}
+            </div>
+            <div class="text-[10px] text-slate-400 font-mono shrink-0">${escapeHtml(sentTime)}</div>
+          </div>
+        `;
+      }).join('');
     },
 
     checkSystemStatusBanner: async function() {
@@ -2320,9 +2705,21 @@ ${mail.body}
         const banner = document.getElementById('system-broadcast-banner');
         const msgEl = document.getElementById('system-broadcast-message');
         const linkEl = document.getElementById('system-broadcast-link');
+        const iconEl = document.getElementById('system-broadcast-icon');
+
+        const baseBanner = 'w-full px-4 py-2 text-white text-xs font-bold shadow-md z-40 relative';
+        const typeStyles = {
+          info: 'bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700',
+          success: 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700',
+          warning: 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700',
+          urgent: 'bg-gradient-to-r from-rose-700 via-red-600 to-rose-700'
+        };
+        const typeIcons = { info: '📢', success: '✅', warning: '⚠️', urgent: '🚨' };
 
         if (data.broadcast && data.broadcast.enabled && data.broadcast.message) {
+          const bType = typeStyles[data.broadcast.type] ? data.broadcast.type : 'info';
           if (msgEl) msgEl.textContent = data.broadcast.message;
+          if (iconEl) iconEl.textContent = typeIcons[bType] || '📢';
           if (linkEl) {
             if (data.broadcast.linkUrl) {
               linkEl.href = data.broadcast.linkUrl;
@@ -2331,7 +2728,16 @@ ${mail.body}
               linkEl.classList.add('hidden');
             }
           }
-          if (banner) banner.classList.remove('hidden');
+          if (banner) {
+            banner.className = `${baseBanner} ${typeStyles[bType]}`;
+          }
+        } else if (data.maintenance && data.maintenance.enabled) {
+          if (msgEl) msgEl.textContent = data.maintenance.message || 'Forecaster Pro is currently in Maintenance Mode.';
+          if (iconEl) iconEl.textContent = '🚧';
+          if (linkEl) linkEl.classList.add('hidden');
+          if (banner) {
+            banner.className = `${baseBanner} ${typeStyles.warning}`;
+          }
         } else if (banner) {
           banner.classList.add('hidden');
         }

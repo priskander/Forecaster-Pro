@@ -53,6 +53,8 @@ export async function startIsolatedTestServer(options: IsolatedServerOptions = {
   delete childEnv.APP_URL;
   delete childEnv.INITIAL_ADMIN_EMAIL;
   delete childEnv.INITIAL_ADMIN_PASSWORD;
+  delete childEnv.ADMIN_RECOVERY_EMAIL;
+  delete childEnv.ADMIN_RECOVERY_PASSWORD;
   delete childEnv.ENABLE_DEMO_MODE;
   delete childEnv.DEMO_USER_EMAIL;
   delete childEnv.DEMO_USER_PASSWORD;

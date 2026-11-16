@@ -2266,6 +2266,13 @@ async function startServer() {
         return res.status(409).json({ ok: false, error: 'An account with this email address already exists. Please sign in.' });
       }
 
+      if (db.systemConfig?.featureFlags?.allowNewRegistrations === false) {
+        return res.status(403).json({
+          ok: false,
+          error: 'New public account registrations are currently paused by the system administrator.'
+        });
+      }
+
       // Completely new primary user: create their own private, isolated database/vault!
       // "Don't relate a new create account to the same historical database let him create his own"
       const salt = crypto.randomBytes(16).toString('hex');
@@ -2404,6 +2411,23 @@ async function startServer() {
         delete user.resetTempPasswordHash;
         delete user.resetTempPasswordSalt;
         delete user.resetTokenExpiresAt;
+      }
+
+      if (user.status === 'suspended') {
+        return res.status(403).json({
+          ok: false,
+          error: 'This account has been suspended by an administrator. Please contact your workspace administrator.'
+        });
+      }
+
+      const isMasterAccount = !user.isDemo && (!!user.isMainAdmin || user.role === 'main_admin');
+      const maint = db.systemConfig?.maintenanceMode;
+      if (maint?.enabled && !(maint.allowAdminBypass !== false && isMasterAccount)) {
+        return res.status(503).json({
+          ok: false,
+          maintenance: true,
+          error: maint.message || 'Forecaster Pro is currently undergoing scheduled maintenance. Please try again shortly.'
+        });
       }
 
       // Successful login resets lockout counters
@@ -4451,8 +4475,17 @@ async function startServer() {
       const admin = requireMainAdmin(req, res);
       if (!admin) return;
 
+      const nowTs = Date.now();
+      const sessionCountsByUser: Record<string, number> = {};
+      Object.values(db.tokens || {}).forEach((rec: any) => {
+        if (rec && typeof rec === 'object' && rec.userId && (!rec.expiresAt || nowTs < rec.expiresAt)) {
+          sessionCountsByUser[rec.userId] = (sessionCountsByUser[rec.userId] || 0) + 1;
+        }
+      });
+
       const usersList = Object.values(db.users || {}).map(u => {
         const vault = u.vaultId ? db.vaults[u.vaultId] : null;
+        const isLocked = Boolean(u.lockoutUntil && nowTs < u.lockoutUntil);
         return {
           id: u.id,
           name: u.name,
@@ -4460,8 +4493,14 @@ async function startServer() {
           role: u.role,
           tier: u.tier,
           isPrimary: !!u.isPrimary,
+          isDemo: !!u.isDemo,
           isMainAdmin: !u.isDemo && (!!u.isMainAdmin || u.role === 'main_admin'),
           status: u.status || 'active',
+          isLocked,
+          lockoutUntil: isLocked ? u.lockoutUntil : undefined,
+          failedLoginAttempts: u.failedLoginAttempts || 0,
+          mustChangePassword: !!u.mustChangePassword,
+          activeSessionsCount: sessionCountsByUser[u.id] || 0,
           parentId: u.parentId,
           vaultId: u.vaultId,
           createdAt: u.createdAt,
@@ -4490,6 +4529,14 @@ async function startServer() {
         },
         systemConfig: getSanitizedSystemConfig(db.systemConfig),
         emailStatus: getSafeEmailStatus(),
+        environmentStatus: {
+          demoModeEnabled: isDemoModeEnabled(),
+          emailConfigured: isEmailTransportConfigured(),
+          recoveryEnvSet: Boolean((process.env.ADMIN_RECOVERY_PASSWORD || '').trim()),
+          registrationsAllowed: db.systemConfig?.featureFlags?.allowNewRegistrations !== false,
+          maintenanceActive: !!db.systemConfig?.maintenanceMode?.enabled,
+          auditLogCount: (db.auditLog || []).length
+        },
         telemetry: {
           uptimeSeconds: Math.floor(process.uptime()),
           serverStartedAt: db.systemConfig?.telemetry?.serverStartedAt || new Date().toISOString(),
@@ -4533,13 +4580,18 @@ async function startServer() {
       }
 
       if (broadcastNotice) {
+        const allowedNoticeTypes = ['info', 'warning', 'success', 'urgent'];
+        const cleanType = allowedNoticeTypes.includes(broadcastNotice.type)
+          ? broadcastNotice.type
+          : (db.systemConfig!.broadcastNotice?.type || 'info');
         db.systemConfig!.broadcastNotice = {
           ...db.systemConfig!.broadcastNotice,
           ...broadcastNotice,
+          type: cleanType,
           updatedAt: new Date().toISOString()
         };
         logAdminAction(admin.email, 'BROADCAST_NOTICE_UPDATED', 'platform_release',
-          `Broadcast banner ${broadcastNotice.enabled ? 'ENABLED' : 'DISABLED'}: "${broadcastNotice.message || ''}"`);
+          `Broadcast banner ${broadcastNotice.enabled ? 'ENABLED' : 'DISABLED'} (${cleanType}): "${broadcastNotice.message || ''}"`);
       }
 
       if (featureFlags) {
@@ -4641,7 +4693,7 @@ async function startServer() {
         return res.status(404).json({ ok: false, error: 'User not found.' });
       }
 
-      const { role, tier, status, newPassword, revokeSessions } = req.body || {};
+      const { role, tier, status, newPassword, revokeSessions, unlockAccount, forcePasswordChange } = req.body || {};
 
       // Protection for Master Admin account
       const isTargetMaster = !targetUser.isDemo && (!!targetUser.isMainAdmin || targetUser.role === 'main_admin');
@@ -4664,15 +4716,27 @@ async function startServer() {
           targetUser.role = role;
         }
       }
-      if (tier) targetUser.tier = tier;
+      if (tier && typeof tier === 'string') {
+        targetUser.tier = tier.trim();
+      }
       if (status) {
+        if (!['active', 'suspended'].includes(status)) {
+          return res.status(400).json({ ok: false, error: 'Status must be active or suspended.' });
+        }
         targetUser.status = status;
         if (status === 'suspended') {
           revokeUserSessions(targetUser.id);
         }
       }
+      if (unlockAccount === true) {
+        targetUser.failedLoginAttempts = 0;
+        delete targetUser.lockoutUntil;
+      }
       if (revokeSessions === true) {
         revokeUserSessions(targetUser.id);
+      }
+      if (forcePasswordChange === true) {
+        targetUser.mustChangePassword = true;
       }
       if (newPassword !== undefined && String(newPassword).length > 0) {
         const pwdCheck = validateStrongPassword(String(newPassword));
@@ -4683,12 +4747,12 @@ async function startServer() {
         const salt = crypto.randomBytes(16).toString('hex');
         targetUser.passwordHash = hashPassword(String(newPassword), salt);
         targetUser.salt = salt;
-        targetUser.mustChangePassword = false;
+        targetUser.mustChangePassword = forcePasswordChange === true;
         delete targetUser.temporaryPassword;
       }
 
       logAdminAction(admin.email, 'USER_ACCOUNT_MANAGED', 'user_management',
-        `Admin modified user ${targetUser.email} (Role: ${targetUser.role}, Tier: ${targetUser.tier}, Status: ${targetUser.status || 'active'}, RevokedSessions: ${revokeSessions === true || status === 'suspended'})`);
+        `Admin modified user ${targetUser.email} (Role: ${targetUser.role}, Tier: ${targetUser.tier}, Status: ${targetUser.status || 'active'}, Unlocked: ${unlockAccount === true}, RevokedSessions: ${revokeSessions === true || status === 'suspended'})`);
 
       saveDatabase(db);
       res.json({
@@ -4701,11 +4765,126 @@ async function startServer() {
           role: targetUser.role,
           tier: targetUser.tier,
           status: targetUser.status || 'active',
+          isLocked: Boolean(targetUser.lockoutUntil && Date.now() < targetUser.lockoutUntil),
           vaultId: targetUser.vaultId
         }
       });
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // 4b. Delete non-admin User Account cleanly
+  app.delete('/api/admin/users/:userId', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const targetId = req.params.userId;
+      const targetUser = (db.users || {})[targetId];
+      if (!targetUser) {
+        return res.status(404).json({ ok: false, error: 'User not found.' });
+      }
+
+      const isTargetMaster = !targetUser.isDemo && (!!targetUser.isMainAdmin || targetUser.role === 'main_admin');
+      if (isTargetMaster || targetUser.id === admin.id) {
+        return res.status(403).json({ ok: false, error: 'The Master Administrator account cannot be deleted.' });
+      }
+
+      revokeUserSessions(targetUser.id);
+      const deletedEmail = targetUser.email;
+      const deletedVaultId = targetUser.vaultId;
+      delete db.users![targetId];
+
+      // Only delete isolated vault when explicitly requested AND no remaining users share it
+      if (req.query.deleteVault === 'true' && deletedVaultId && deletedVaultId !== DEFAULT_VAULT_ID && deletedVaultId !== 'demo-showcase-vault') {
+        const stillReferenced = Object.values(db.users || {}).some(u => u.vaultId === deletedVaultId);
+        if (!stillReferenced) {
+          delete db.vaults[deletedVaultId];
+        }
+      }
+
+      logAdminAction(admin.email, 'USER_DELETED', 'user_management',
+        `Admin removed account ${deletedEmail} (${targetId}).`);
+      saveDatabase(db);
+
+      return res.json({ ok: true, message: `Account ${deletedEmail} deleted.` });
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // 4c. Bulk Revoke All Non-Admin Sessions (retains calling Main Admin token)
+  app.post('/api/admin/sessions/revoke-all', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const callerToken = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      let revokedCount = 0;
+      if (db.tokens) {
+        Object.keys(db.tokens).forEach(tok => {
+          if (tok !== callerToken) {
+            delete db.tokens![tok];
+            revokedCount++;
+          }
+        });
+      }
+
+      logAdminAction(admin.email, 'BULK_SESSIONS_REVOKED', 'security',
+        `Main Admin force-signed out ${revokedCount} active user session(s).`);
+      saveDatabase(db);
+
+      return res.json({
+        ok: true,
+        revokedCount,
+        message: `Revoked ${revokedCount} active session(s) across all other clients.`
+      });
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // 4d. Export Sanitized System Backup & Diagnostics (Main Admin only; strips all hashes, tokens, and SMTP secrets)
+  app.get('/api/admin/system-export', (req, res) => {
+    try {
+      const admin = requireMainAdmin(req, res);
+      if (!admin) return;
+
+      const sanitizedUsers = Object.values(db.users || {}).map(u => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        tier: u.tier,
+        isPrimary: !!u.isPrimary,
+        isDemo: !!u.isDemo,
+        isMainAdmin: !u.isDemo && (!!u.isMainAdmin || u.role === 'main_admin'),
+        status: u.status || 'active',
+        vaultId: u.vaultId,
+        createdAt: u.createdAt,
+        lastLogin: u.lastLogin
+      }));
+
+      const snapshot = {
+        format: 'forecaster-pro-admin-export',
+        exportedAt: new Date().toISOString(),
+        exportedBy: admin.email,
+        systemConfig: getSanitizedSystemConfig(db.systemConfig),
+        users: sanitizedUsers,
+        vaults: db.vaults,
+        outbox: (db.outbox || []).slice(0, 100),
+        auditLog: (db.auditLog || []).slice(0, 200)
+      };
+
+      logAdminAction(admin.email, 'SYSTEM_EXPORT_DOWNLOADED', 'security',
+        `Exported sanitized system diagnostics & vault snapshot (${sanitizedUsers.length} users, ${Object.keys(db.vaults || {}).length} vaults).`);
+      saveDatabase(db);
+
+      res.setHeader('Content-Disposition', `attachment; filename="forecaster_system_export_${new Date().toISOString().slice(0, 10)}.json"`);
+      return res.json({ ok: true, export: snapshot });
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, error: err.message });
     }
   });
 

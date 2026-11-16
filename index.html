@@ -3845,6 +3845,50 @@
             </div>
           </div>
 
+          <!-- Environment Readiness, Sessions & System Backup Controls -->
+          <div class="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>🔐</span> Security Readiness, Sessions &amp; System Controls
+                </h4>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Live runtime security posture, global session revocation, and sanitized diagnostics export.
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 shrink-0">
+                <button type="button" class="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer" onclick="window.ForecasterAuth.revokeAllOtherSessions()">
+                  <span>🚪</span> Force Sign-Out All Users
+                </button>
+                <button type="button" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer" onclick="window.ForecasterAuth.downloadSystemExport()">
+                  <span>📦</span> Export System Backup
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+              <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="text-[10px] font-bold text-slate-400 uppercase">Email Transport</div>
+                  <div id="admin-env-email" class="text-xs font-extrabold text-amber-600 truncate">Checking...</div>
+                </div>
+                <button type="button" id="admin-env-smtp-btn" class="px-2 py-1 rounded-lg bg-purple-100 hover:bg-purple-200 dark:bg-purple-950 dark:hover:bg-purple-900 text-purple-700 dark:text-purple-300 text-[10px] font-bold shrink-0 cursor-pointer" onclick="window.ForecasterAuth.focusSmtpSettings()">SMTP &rarr;</button>
+              </div>
+              <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                <div class="text-[10px] font-bold text-slate-400 uppercase">Registrations</div>
+                <div id="admin-env-registrations" class="text-xs font-extrabold text-slate-700 dark:text-slate-200">Checking...</div>
+              </div>
+              <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                <div class="text-[10px] font-bold text-slate-400 uppercase">Maintenance</div>
+                <div id="admin-env-maintenance" class="text-xs font-extrabold text-slate-700 dark:text-slate-200">Checking...</div>
+              </div>
+              <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                <div class="text-[10px] font-bold text-slate-400 uppercase">Demo Mode</div>
+                <div id="admin-env-demo" class="text-xs font-extrabold text-slate-700 dark:text-slate-200">Checking...</div>
+              </div>
+            </div>
+          </div>
+
           <!-- Demonstration & Training Data Controls (Admin Authority Only) -->
           <div class="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40 border border-purple-200 dark:border-purple-800/70 space-y-3">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -3987,6 +4031,17 @@
                 </div>
               </div>
 
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label for="admin-release-min-version" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Min Supported Version (Optional)</label>
+                  <input type="text" id="admin-release-min-version" placeholder="e.g. 2.0.0" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white"/>
+                </div>
+                <div>
+                  <label for="admin-release-url" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Optional Download / Release Notes URL</label>
+                  <input type="url" id="admin-release-url" placeholder="https://..." class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"/>
+                </div>
+              </div>
+
               <div>
                 <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Release Notes &amp; Changelog (one note per line)</label>
                 <textarea id="admin-release-notes" rows="3" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-mono" placeholder="• Enhanced offline multi-device transaction sync&#10;• Added Main Admin Master Dashboard&#10;• Performance fixes on low-power devices"></textarea>
@@ -4053,6 +4108,15 @@
                     <input type="checkbox" id="admin-broadcast-toggle" class="sr-only peer"/>
                     <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
                   </label>
+                </div>
+                <div>
+                  <label for="admin-broadcast-type" class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Banner Severity / Theme</label>
+                  <select id="admin-broadcast-type" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs font-semibold text-slate-900 dark:text-white">
+                    <option value="info">📢 Info (Indigo / Blue)</option>
+                    <option value="success">✅ Success / Release (Emerald)</option>
+                    <option value="warning">⚠️ Warning / Notice (Amber)</option>
+                    <option value="urgent">🚨 Urgent Alert (Rose / Red)</option>
+                  </select>
                 </div>
                 <div>
                   <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Broadcast Banner Text</label>
@@ -4259,6 +4323,19 @@
             <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
               <div>
                 <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <span>📳</span> Mobile Haptic &amp; Touch Feedback
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Enables tactile feedback cues on supported mobile browsers and WebAPK devices.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input type="checkbox" id="flag-mobileHapticFeedback" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
                   <span>🚪</span> Public New User Registrations
                 </div>
                 <p class="text-[11px] text-slate-500 mt-0.5">Allow visitors to create new primary accounts on the registration screen.</p>
@@ -4301,18 +4378,115 @@
               <p class="text-xs text-slate-500 mt-0.5">Immutable record of releases, configuration adjustments, and security operations.</p>
             </div>
             <div class="flex items-center gap-1.5 flex-wrap">
-              <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('all')">All</button>
-              <button type="button" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('platform_release')">Releases</button>
-              <button type="button" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('feature_flag')">Features</button>
-              <button type="button" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('user_management')">Users</button>
+              <button type="button" data-audit-filter="all" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('all')">All</button>
+              <button type="button" data-audit-filter="platform_release" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('platform_release')">Releases</button>
+              <button type="button" data-audit-filter="feature_flag" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('feature_flag')">Features</button>
+              <button type="button" data-audit-filter="maintenance" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('maintenance')">Maintenance</button>
+              <button type="button" data-audit-filter="user_management" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('user_management')">Users</button>
+              <button type="button" data-audit-filter="security" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer" onclick="window.ForecasterAuth.filterAuditLogs('security')">Security</button>
+              <button type="button" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white cursor-pointer" onclick="window.ForecasterAuth.exportAuditLogsJson()">📥 Export JSON</button>
             </div>
           </div>
 
-          <div class="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50/50 dark:bg-slate-900/60 divide-y divide-slate-100 dark:divide-slate-800 font-mono text-xs max-h-[460px] overflow-y-auto custom-scrollbar" id="admin-audit-logs-list">
+          <div class="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50/50 dark:bg-slate-900/60 divide-y divide-slate-100 dark:divide-slate-800 font-mono text-xs max-h-[340px] overflow-y-auto custom-scrollbar" id="admin-audit-logs-list">
             <div class="p-6 text-center text-xs text-slate-400 font-sans">Loading audit stream...</div>
+          </div>
+
+          <div class="pt-2 space-y-2">
+            <div>
+              <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>📬</span> Recent Outbound Email Delivery Outbox
+              </h4>
+              <p class="text-xs text-slate-500 mt-0.5">Shows password reset, invitation, and transport dispatch outcomes (recovery secrets redacted).</p>
+            </div>
+            <div class="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50/50 dark:bg-slate-900/60 divide-y divide-slate-100 dark:divide-slate-800 text-xs max-h-[260px] overflow-y-auto custom-scrollbar" id="admin-outbox-list">
+              <div class="p-6 text-center text-xs text-slate-400">No outbound email records found.</div>
+            </div>
           </div>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Edit User Modal (replaces native browser prompt/confirm) -->
+  <div id="admin-edit-user-modal" class="hidden fixed inset-0 z-[130] overflow-y-auto bg-slate-950/75 backdrop-blur-sm p-3 sm:p-6 flex items-center justify-center" style="display: none;" onclick="if (event.target === this) window.ForecasterAuth.closeEditUserModal()" role="dialog" aria-modal="true" aria-labelledby="admin-edit-user-title">
+    <div class="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 p-5 sm:p-6 space-y-4 my-auto" onclick="event.stopPropagation()">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h4 id="admin-edit-user-title" class="text-base font-extrabold text-slate-900 dark:text-white">Manage User Account</h4>
+          <p id="admin-edit-user-identity" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5"></p>
+        </div>
+        <button type="button" aria-label="Close" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center cursor-pointer" onclick="window.ForecasterAuth.closeEditUserModal()">&times;</button>
+      </div>
+
+      <form id="admin-edit-user-form" class="space-y-3" onsubmit="window.ForecasterAuth.submitAdminEditUserModal(event)">
+        <input type="hidden" id="admin-edit-user-id"/>
+        <div id="admin-edit-user-error" class="hidden p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-xs font-semibold text-rose-700 dark:text-rose-300"></div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <div>
+            <label for="admin-edit-user-role" class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Role</label>
+            <select id="admin-edit-user-role" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-semibold text-slate-900 dark:text-white">
+              <option value="owner">Owner</option>
+              <option value="manager">Manager</option>
+              <option value="member">Member</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </div>
+          <div>
+            <label for="admin-edit-user-tier" class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Subscription Tier</label>
+            <select id="admin-edit-user-tier" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-semibold text-slate-900 dark:text-white">
+              <option value="Free Tier">Free Tier</option>
+              <option value="Pro Tier">Pro Tier</option>
+              <option value="Enterprise Tier">Enterprise Tier</option>
+            </select>
+          </div>
+          <div>
+            <label for="admin-edit-user-status" class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Account Status</label>
+            <select id="admin-edit-user-status" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2 text-xs font-semibold text-slate-900 dark:text-white">
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label for="admin-edit-user-password" class="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Set New Strong Password (optional)</label>
+          <input type="password" id="admin-edit-user-password" autocomplete="new-password" placeholder="Leave blank to keep existing password" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"/>
+        </div>
+
+        <div class="space-y-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-xs">
+          <label class="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
+            <input type="checkbox" id="admin-edit-user-unlock" class="w-4 h-4 text-purple-600 rounded"/>
+            <span>Clear login lockout &amp; reset failed attempt counter</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
+            <input type="checkbox" id="admin-edit-user-force-pw" class="w-4 h-4 text-purple-600 rounded"/>
+            <span>Require password change on next sign-in</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
+            <input type="checkbox" id="admin-edit-user-revoke" class="w-4 h-4 text-purple-600 rounded"/>
+            <span>Revoke all active session tokens for this user</span>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button type="button" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer" onclick="window.ForecasterAuth.closeEditUserModal()">Cancel</button>
+          <button type="submit" class="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-xs font-extrabold text-white shadow-xs cursor-pointer">Save Account Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Admin In-App Confirmation Modal (replaces browser confirm/alert in iframe-safe UI) -->
+  <div id="admin-confirm-modal" class="hidden fixed inset-0 z-[140] overflow-y-auto bg-slate-950/80 backdrop-blur-sm p-3 sm:p-6 flex items-center justify-center" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="admin-confirm-title">
+    <div class="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 p-5 sm:p-6 space-y-4 my-auto" onclick="event.stopPropagation()">
+      <h4 id="admin-confirm-title" class="text-base font-extrabold text-slate-900 dark:text-white">Confirm Action</h4>
+      <p id="admin-confirm-message" class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed"></p>
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button type="button" id="admin-confirm-cancel-btn" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">Cancel</button>
+        <button type="button" id="admin-confirm-ok-btn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-xs font-extrabold text-white shadow-xs cursor-pointer">Confirm</button>
       </div>
     </div>
   </div>
