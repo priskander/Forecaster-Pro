@@ -478,24 +478,6 @@
             </button>
           </div>
 
-          <!-- Cloud Sync Quick Bar -->
-          <div class="p-3 bg-slate-50/70 dark:bg-slate-900/40">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="text-base">☁️</span>
-                <div>
-                  <button type="button" id="header-cloud-sync-pill" class="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 hover:underline" onclick="window.ForecasterCloudSync.syncNow(true)">
-                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Cloud Synced
-                  </button>
-                  <p class="text-[9px] text-slate-404">Cross-device persistent database</p>
-                </div>
-              </div>
-              <button type="button" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold transition shadow-xs cursor-pointer" onclick="window.ForecasterCloudSync.syncNow(true)">
-                Sync Now
-              </button>
-            </div>
-          </div>
-
           <!-- Utility & Management Options -->
           <div class="p-2 space-y-0.5 text-xs font-semibold text-slate-707 dark:text-slate-200">
             <button type="button" class="w-full text-left px-3 py-2 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold transition flex items-center justify-between cursor-pointer" onclick="window.ForecasterAuth.openEditProfileModal(); window.ForecasterAuth.closeProfileDropdown()">
@@ -524,9 +506,6 @@
             <button type="button" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/60 transition flex items-center gap-2.5 cursor-pointer" onclick="window.ForecasterSubscription.openModal(); window.ForecasterAuth.closeProfileDropdown()">
               <span>💎</span> SaaS Subscription Plans
             </button>
-            <button type="button" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/60 transition flex items-center gap-2.5 cursor-pointer" id="gh-sync-header-btn" onclick="window.ForecasterGitHubSync.openModal(); window.ForecasterAuth.closeProfileDropdown()">
-              <i class="fa-brands fa-github text-sm"></i> GitHub Cloud Sync &amp; Backup
-            </button>
             <a href="/landing" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/60 transition flex items-center justify-between cursor-pointer text-slate-700 dark:text-slate-200">
               <span class="flex items-center gap-2.5">
                 <span>🌐</span> Product Landing Page &amp; Tour
@@ -535,14 +514,8 @@
             </a>
           </div>
 
-          <!-- Data Backups & PWA App Installation -->
+          <!-- PWA App Installation -->
           <div class="p-2 space-y-0.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
-            <button type="button" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/60 transition flex items-center gap-2.5 cursor-pointer" onclick="downloadBackupJSON(); window.ForecasterAuth.closeProfileDropdown()">
-              <span>📋</span> Download Full Backup JSON
-            </button>
-            <button type="button" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/60 transition flex items-center gap-2.5 cursor-pointer" onclick="window.backupPaymentAccounts(); window.ForecasterAuth.closeProfileDropdown()">
-              <span>💳</span> Download Accounts Backup
-            </button>
             <button type="button" id="header-pwa-install-btn" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/60 transition flex items-center gap-2.5 text-blue-600 dark:text-blue-400 font-bold cursor-pointer" onclick="window.triggerPWAInstall(); window.ForecasterAuth.closeProfileDropdown()">
               <i class="fa-solid fa-download"></i> Install Forecaster PWA
             </button>
@@ -589,7 +562,7 @@
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0 cursor-pointer" href="javascript:void(0)" onclick="switchView('vehicles', this)" data-view="vehicles" data-tab="vehicles" id="nav-tab-vehicles"><span>🚗</span> Vehicles</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('stock', this); setStockPharmacyModule('inventory')"><span>📦</span> Inventory &amp; Supply Hub</a>
     <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('accounts', this)"><span>💳</span> Accounts</a>
-    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('reports', this)"><span>📄</span> Reports &amp; Backups</a>
+    <a class="nav-link flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold hover:text-blue-600 px-3 py-2 rounded-lg transition-all flex-shrink-0" href="javascript:void(0)" onclick="switchView('reports', this)"><span>📄</span> Reports</a>
   </nav>
 
   <!-- TOAST NOTIFICATION HOST -->
@@ -2103,15 +2076,6 @@
               <h2 class="text-base font-bold text-slate-900 dark:text-white">Registered Payment Accounts</h2>
               <p class="text-xs text-slate-404">Manage bank cards, mobile wallets, and cash reserves</p>
             </div>
-            <div class="flex items-center gap-2">
-              <button type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition shadow-sm" onclick="window.backupPaymentAccounts()" title="Download JSON backup of payment accounts and transfers">
-                <span>📥</span> Backup
-              </button>
-              <button type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition shadow-sm" onclick="document.getElementById('upload-accounts-backup-file')?.click()" title="Upload and restore payment accounts backup JSON file">
-                <span>📤</span> Upload Backup
-              </button>
-              <input type="file" id="upload-accounts-backup-file" class="hidden" accept=".json,application/json" onchange="window.importPaymentAccountsBackup(event)"/>
-            </div>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="accounts-list-cards"></div>
         </div>
@@ -2217,96 +2181,15 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <h2 class="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white mb-2"><span>📄</span> Executive Summaries</h2>
-          <div class="space-y-4">
-            <button class="w-full bg-emerald-600 text-white p-4 rounded-xl flex items-center justify-between hover:bg-emerald-700 transition" onclick="exportToExcel()">
-              <div class="flex items-center gap-3"><span class="text-2xl">📊</span><div class="text-left"><div class="font-bold">Export Full Spreadsheet (XLSX)</div><div class="text-xs opacity-85">Complete transactions, inventory &amp; medication logs</div></div></div><span>📥</span>
-            </button>
-            <button class="w-full bg-rose-600 text-white p-4 rounded-xl flex items-center justify-between hover:bg-rose-700 transition" onclick="exportToPDF()">
-              <div class="flex items-center gap-3"><span class="text-2xl">📄</span><div class="text-left"><div class="font-bold">Download PDF Status Digest</div><div class="text-xs opacity-85">Dynamic indicators, consumption &amp; alerts</div></div></div><span>📥</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
-            <div>
-              <h2 class="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white"><span>☁️</span> Cross-Device Cloud Database Sync</h2>
-              <p class="text-xs text-slate-404">Real-time ledger and account synchronization accessible anywhere</p>
-            </div>
-            <span id="cloud-sync-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 self-start sm:self-auto">
-              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Cloud Connected
-            </span>
-          </div>
-
-          <div class="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Cloud Vault / Shared Ledger Key</label>
-                <p class="text-[10px] text-slate-400">Open on your phone or other device with this key to access your ledger</p>
-              </div>
-              <div class="flex items-center gap-2">
-                <input type="text" id="cloud-sync-vault-input" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold w-40 text-slate-900 dark:text-white" placeholder="shared-main-vault"/>
-                <button type="button" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm" onclick="window.ForecasterCloudSync.setVaultId(document.getElementById('cloud-sync-vault-input').value)">
-                  Connect
-                </button>
-              </div>
-            </div>
-
-            <div class="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-xs font-semibold">
-              <span class="text-slate-500 dark:text-slate-400">Last Synced: <span id="cloud-sync-last-time" class="font-bold text-slate-800 dark:text-slate-200">Just now</span></span>
-              <span id="cloud-sync-txn-count" class="text-blue-600 dark:text-blue-400 font-bold">0 transactions cross-device</span>
-            </div>
-
-            <div class="flex items-center justify-between pt-1">
-              <label class="inline-flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-300">
-                <input type="checkbox" id="cloud-sync-autosync-toggle" class="rounded border-slate-300 text-blue-600" checked onchange="window.ForecasterCloudSync.setAutoSync(this.checked)"/>
-                <span>Automatic continuous sync</span>
-              </label>
-              <button type="button" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm" onclick="window.ForecasterCloudSync.syncNow(true)">
-                <span>🔄</span> Sync Now
-              </button>
-            </div>
-          </div>
-
-          <h3 class="text-xs font-bold text-slate-404 uppercase tracking-wider pt-2 border-t border-slate-100 dark:border-slate-700">Enterprise JSON Backup &amp; Restoration (v2.0)</h3>
-          <div class="space-y-3">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm" onclick="downloadBackupJSON('all')">
-                <div class="flex items-center gap-2.5 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>📋</span> Full Snapshot Backup</div><span>📥</span>
-              </div>
-              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm" onclick="window.backupPaymentAccounts()">
-                <div class="flex items-center gap-2.5 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>💳</span> Accounts Backup</div><span>📥</span>
-              </div>
-            </div>
-
-            <!-- Modular Backup Selector -->
-            <div class="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-              <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300">📦 Independent Modular Backups:</label>
-              <div class="flex flex-wrap gap-1.5">
-                <button type="button" onclick="downloadBackupJSON('financial')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">💵 Financial</button>
-                <button type="button" onclick="downloadBackupJSON('budgets')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">📊 Budgets</button>
-                <button type="button" onclick="downloadBackupJSON('inventory')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">💊 Stock &amp; Pharmacy</button>
-                <button type="button" onclick="downloadBackupJSON('parts')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">⚙️ Spare Parts</button>
-                <button type="button" onclick="downloadBackupJSON('fleet')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">🚗 Vehicles &amp; Fleet</button>
-                <button type="button" onclick="downloadBackupJSON('rentals')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">🏠 Rental Contracts</button>
-                <button type="button" onclick="downloadBackupJSON('settings')" class="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition">⚙️ Settings</button>
-              </div>
-            </div>
-
-            <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm" onclick="window.ForecasterGitHubSync.openModal()">
-              <div class="flex items-center gap-2.5 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>☁️</span> GitHub Gist / Repo Backup</div><span>↗️</span>
-            </div>
-
-            <div class="border-2 border-dashed border-slate-300 dark:border-slate-700 p-5 rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:bg-blue-50/40 dark:hover:bg-slate-800/60 transition cursor-pointer relative text-center" onclick="document.getElementById('import-json-file')?.click()">
-              <input accept=".json,application/json" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full" id="import-json-file" onchange="importBackupJSON(event)" type="file"/>
-              <span class="text-2xl mb-1">📁</span>
-              <p class="font-bold text-slate-700 dark:text-slate-200 text-xs">Upload &amp; Restore Backup (Safe Validation &amp; Deduplication)</p>
-              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Pre-flight diagnostics, duplicate prevention, and non-destructive merge protection</p>
-            </div>
-          </div>
+      <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <h2 class="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white mb-4"><span>📄</span> Executive Summaries</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <button class="w-full bg-emerald-600 text-white p-4 rounded-xl flex items-center justify-between hover:bg-emerald-700 transition" onclick="exportToExcel()">
+            <div class="flex items-center gap-3"><span class="text-2xl">📊</span><div class="text-left"><div class="font-bold">Export Full Spreadsheet (XLSX)</div><div class="text-xs opacity-85">Complete transactions, inventory &amp; medication logs</div></div></div><span>📥</span>
+          </button>
+          <button class="w-full bg-rose-600 text-white p-4 rounded-xl flex items-center justify-between hover:bg-rose-700 transition" onclick="exportToPDF()">
+            <div class="flex items-center gap-3"><span class="text-2xl">📄</span><div class="text-left"><div class="font-bold">Download PDF Status Digest</div><div class="text-xs opacity-85">Dynamic indicators, consumption &amp; alerts</div></div></div><span>📥</span>
+          </button>
         </div>
       </div>
     </div>
@@ -2346,21 +2229,14 @@
         <button type="button" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none cursor-pointer" onclick="window.toggleMobileDrawer(false)">&times;</button>
       </div>
 
-      <!-- Quick Theme & Cloud Sync Bar -->
-      <div class="grid grid-cols-2 gap-2 pb-2">
-        <button type="button" class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl text-left flex items-center justify-between border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer" onclick="toggleDarkMode()">
+      <!-- Quick Theme Bar -->
+      <div class="pb-2">
+        <button type="button" class="w-full p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl text-left flex items-center justify-between border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer" onclick="toggleDarkMode()">
           <span class="flex items-center gap-2">
             <span class="moon-icon">🌙</span><span class="sun-icon hidden">☀️</span>
             <span>Theme Mode</span>
           </span>
           <span class="text-[10px] text-slate-404 font-normal">Switch</span>
-        </button>
-        <button type="button" class="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl text-left flex items-center justify-between border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer" onclick="window.ForecasterCloudSync.syncNow(true); window.toggleMobileDrawer(false)">
-          <span class="flex items-center gap-1.5">
-            <span>☁️</span>
-            <span>Cloud Sync</span>
-          </span>
-          <span class="text-[10px] text-emerald-600 font-bold">Sync</span>
         </button>
       </div>
 
@@ -2399,7 +2275,7 @@
           <span>👁️</span> Insights &amp; Alerts
         </button>
         <button type="button" class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-left flex items-center gap-2.5 border border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer" onclick="switchView('reports'); window.toggleMobileDrawer(false)">
-          <span>📄</span> Reports &amp; Backups
+          <span>📄</span> Reports
         </button>
         <a href="/landing" class="p-3 bg-blue-50/70 dark:bg-blue-950/40 rounded-2xl text-left flex items-center justify-between border border-blue-200/60 dark:border-blue-800/40 hover:bg-blue-100/60 dark:hover:bg-blue-900/40 cursor-pointer col-span-2">
           <span class="flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-300">
@@ -2411,18 +2287,11 @@
 
       <!-- Quick Modals & Tool Buttons -->
       <div class="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-        <button type="button" class="w-full p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-between cursor-pointer" onclick="window.backupPaymentAccounts(); window.toggleMobileDrawer(false)">
-          <span class="flex items-center gap-2"><span>💳</span> Download Accounts Backup</span>
-          <span class="text-[10px] text-blue-600 font-bold">JSON</span>
-        </button>
         <button type="button" id="drawer-pwa-install-btn" class="w-full p-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer" onclick="window.triggerPWAInstall(); window.toggleMobileDrawer(false)">
           <i class="fa-solid fa-download"></i> Install Forecaster Pro PWA
         </button>
         <button type="button" id="drawer-android-apk-btn" class="w-full p-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-sm" onclick="window.openAndroidAPKModal(); window.toggleMobileDrawer(false)">
           <i class="fa-brands fa-android text-base"></i> Download Android APK
-        </button>
-        <button type="button" class="w-full p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer" onclick="window.ForecasterGitHubSync.openModal(); window.toggleMobileDrawer(false)">
-          <i class="fa-brands fa-github"></i> GitHub Cloud Sync &amp; Backup
         </button>
         <button type="button" class="w-full p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer" onclick="window.ForecasterSubscription.openModal(); window.toggleMobileDrawer(false)">
           <span>💎</span> SaaS Subscription Plans
@@ -2928,74 +2797,8 @@
     </div>
   </div>
 
-  <!-- =================== GITHUB CLOUD SYNC MODAL =================== -->
-  <div class="hidden fixed inset-0 z-[70] overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" id="github-sync-modal">
-    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-5">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
-        <div>
-          <span class="text-[10px] font-black uppercase tracking-wider text-slate-404">Decentralized Cloud Storage</span>
-          <h3 class="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-            <i class="fa-brands fa-github text-xl"></i> GitHub Cloud Sync
-          </h3>
-        </div>
-        <button class="text-slate-404 hover:text-slate-600 text-2xl leading-none" onclick="window.ForecasterGitHubSync.closeModal()">&times;</button>
-      </div>
-
-      <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl">
-        <span class="text-xs font-bold text-slate-600 dark:text-slate-400">Sync Status:</span>
-        <span id="gh-sync-status-badge"></span>
-      </div>
-
-      <form id="github-sync-form" class="space-y-4">
-        <div>
-          <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">GitHub Personal Access Token (PAT)</label>
-          <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="gh-sync-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" type="password" required/>
-          <p class="text-[10px] text-slate-404 mt-1">Token with <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">gist</code> or <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">repo</code> scope.</p>
-        </div>
-
-        <div>
-          <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Sync Target</label>
-          <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="gh-sync-mode" onchange="window.ForecasterGitHubSync.toggleModeFields(this.value)">
-            <option value="gist">Private GitHub Gist (Easiest)</option>
-            <option value="repo">GitHub Repository (username/repo)</option>
-          </select>
-        </div>
-
-        <div id="gh-sync-gist-wrap">
-          <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Existing Gist ID (Optional)</label>
-          <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="gh-sync-gist-id" placeholder="Leave blank to auto-create a private Gist" type="text"/>
-        </div>
-
-        <div class="hidden space-y-3" id="gh-sync-repo-wrap">
-          <div>
-            <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Repository Name</label>
-            <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="gh-sync-repo" placeholder="owner/repo" type="text"/>
-          </div>
-          <div>
-            <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Branch</label>
-            <input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold" id="gh-sync-branch" value="main" type="text"/>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <input type="checkbox" id="gh-sync-autosync" class="rounded border-slate-300 text-blue-600"/>
-          <label for="gh-sync-autosync" class="text-xs font-semibold text-slate-600 dark:text-slate-400">Save settings for automatic future backups</label>
-        </div>
-
-        <div class="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
-          <button type="button" id="gh-push-btn" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" onclick="window.ForecasterGitHubSync.pushToGitHub()">
-            <span>☁️</span> Push to GitHub
-          </button>
-          <button type="button" id="gh-pull-btn" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5" onclick="window.ForecasterGitHubSync.pullFromGitHub()">
-            <span>⬇️</span> Pull &amp; Restore
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
   <!-- =================== ENTERPRISE BACKUP RESTORATION & REVIEW MODAL =================== -->
-  <div class="hidden fixed inset-0 z-[80] overflow-y-auto bg-slate-950/80 backdrop-blur-md p-3 sm:p-6 flex items-center justify-center transition-all duration-200" id="backup-restore-review-modal" role="dialog" aria-modal="true" aria-labelledby="backup-review-modal-title">
+  <div class="hidden fixed inset-0 z-[135] overflow-y-auto bg-slate-950/80 backdrop-blur-md p-3 sm:p-6 flex items-center justify-center transition-all duration-200" id="backup-restore-review-modal" role="dialog" aria-modal="true" aria-labelledby="backup-review-modal-title">
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl relative text-slate-900 dark:text-white space-y-5 animate-in fade-in zoom-in-95 duration-150">
       <div class="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
         <div class="flex items-center gap-3">
@@ -3777,7 +3580,7 @@
         </div>
 
         <!-- Responsive Segmented Admin Tabs Navigation -->
-        <div class="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl mt-3 sm:mt-4 border border-slate-200/80 dark:border-slate-700/60">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl mt-3 sm:mt-4 border border-slate-200/80 dark:border-slate-700/60">
           <button type="button" id="admin-tab-btn-overview" class="px-2.5 sm:px-3 py-2 text-xs font-bold rounded-xl bg-purple-600 text-white shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('overview')">
             <span>📊</span> Overview
           </button>
@@ -3787,10 +3590,13 @@
           <button type="button" id="admin-tab-btn-features" class="px-2.5 sm:px-3 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('features')">
             <span>⚙️</span> Feature Flags
           </button>
+          <button type="button" id="admin-tab-btn-sync" class="px-2.5 sm:px-3 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('sync')">
+            <span>☁️</span> Sync &amp; Backups
+          </button>
           <button type="button" id="admin-tab-btn-users" class="px-2.5 sm:px-3 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('users')">
             <span>👥</span> Users &amp; Vaults (<span id="admin-users-badge-count">0</span>)
           </button>
-          <button type="button" id="admin-tab-btn-audit" class="col-span-2 sm:col-span-1 px-2.5 sm:px-3 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('audit')">
+          <button type="button" id="admin-tab-btn-audit" class="px-2.5 sm:px-3 py-2 text-xs font-semibold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 flex items-center justify-center gap-1.5 transition cursor-pointer text-center" onclick="window.ForecasterAuth.switchAdminTab('audit')">
             <span>📜</span> Audit Logs
           </button>
         </div>
@@ -4348,7 +4154,182 @@
           </div>
         </div>
 
-        <!-- PANE 4: USERS & DATABASE VAULTS -->
+        <!-- PANE 4: CLOUD SYNC, GITHUB SYNC & ENTERPRISE BACKUPS (MAIN ADMIN ONLY) -->
+        <div id="admin-tab-pane-sync" class="hidden space-y-5">
+          <!-- Card 1: Cross-Device Cloud Database Sync -->
+          <div class="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200/70 dark:border-slate-700">
+              <div>
+                <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>☁️</span> Cross-Device Cloud Database Sync
+                </h4>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Admin-controlled real-time vault synchronization, cloud pull recovery, and master ledger binding.
+                </p>
+              </div>
+              <span id="cloud-sync-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 self-start sm:self-auto">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Cloud Connected
+              </span>
+            </div>
+
+            <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <label for="cloud-sync-vault-input" class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Cloud Vault / Shared Ledger Key</label>
+                  <p class="text-[10px] text-slate-400">Bind or switch the target synchronized workspace database vault</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <input type="text" id="cloud-sync-vault-input" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold w-44 text-slate-900 dark:text-white" placeholder="shared-main-vault"/>
+                  <button type="button" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer" onclick="window.ForecasterCloudSync.setVaultId(document.getElementById('cloud-sync-vault-input').value)">
+                    Connect
+                  </button>
+                </div>
+              </div>
+
+              <div class="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-xs font-semibold">
+                <span class="text-slate-500 dark:text-slate-400">Last Synced: <span id="cloud-sync-last-time" class="font-bold text-slate-800 dark:text-slate-200">Just now</span></span>
+                <span id="cloud-sync-txn-count" class="text-blue-600 dark:text-blue-400 font-bold">0 transactions cross-device</span>
+              </div>
+
+              <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <label class="inline-flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <input type="checkbox" id="cloud-sync-autosync-toggle" class="rounded border-slate-300 text-blue-600" checked onchange="window.ForecasterCloudSync.setAutoSync(this.checked)"/>
+                  <span>Automatic continuous sync</span>
+                </label>
+                <div class="flex items-center gap-2">
+                  <button type="button" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition cursor-pointer" onclick="window.restoreMasterHistory(true)">
+                    ⬇️ Pull Cloud Snapshot
+                  </button>
+                  <button type="button" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer" onclick="window.ForecasterCloudSync.syncNow(true)">
+                    <span>🔄</span> Sync Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: GitHub Cloud Sync & Decentralized Repository Backup -->
+          <div class="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200/70 dark:border-slate-700">
+              <div>
+                <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <i class="fa-brands fa-github text-base"></i> GitHub Cloud Sync &amp; Repository Backup
+                </h4>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Encrypted push/pull snapshots to a private GitHub Gist or private GitHub repository.
+                </p>
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Last Sync: <span id="gh-sync-last-time" class="font-bold text-slate-800 dark:text-slate-200">Never</span></span>
+                <span id="gh-sync-status-badge"></span>
+              </div>
+            </div>
+
+            <form id="github-sync-form" class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3.5">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label for="gh-sync-token" class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">GitHub Personal Access Token (PAT)</label>
+                  <input class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" type="password" required/>
+                  <p class="text-[10px] text-slate-400 mt-1">Token with <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">gist</code> or <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">repo</code> scope.</p>
+                </div>
+
+                <div>
+                  <label for="gh-sync-mode" class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Sync Target</label>
+                  <select class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-mode" onchange="window.ForecasterGitHubSync.toggleModeFields(this.value)">
+                    <option value="gist">Private GitHub Gist (Easiest)</option>
+                    <option value="repo">GitHub Repository (username/repo)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div id="gh-sync-gist-wrap">
+                <label for="gh-sync-gist-id" class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Existing Gist ID (Optional)</label>
+                <input class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-gist-id" placeholder="Leave blank to auto-create a private Gist" type="text"/>
+              </div>
+
+              <div class="hidden" id="gh-sync-repo-wrap">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label for="gh-sync-repo" class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Repository Name</label>
+                    <input class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-repo" placeholder="owner/repo" type="text"/>
+                  </div>
+                  <div>
+                    <label for="gh-sync-branch" class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Branch</label>
+                    <input class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-branch" value="main" type="text"/>
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <input type="checkbox" id="gh-sync-autosync" class="rounded border-slate-300 text-blue-600"/>
+                <label for="gh-sync-autosync" class="text-xs font-semibold text-slate-600 dark:text-slate-400">Save settings for automatic future backups</label>
+              </div>
+
+              <div class="flex flex-wrap gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                <button type="submit" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer">
+                  <span>💾</span> Save GitHub Settings
+                </button>
+                <button type="button" id="gh-push-btn" class="flex-1 min-w-[140px] py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer" onclick="window.ForecasterGitHubSync.pushToGitHub()">
+                  <span>☁️</span> Push to GitHub
+                </button>
+                <button type="button" id="gh-pull-btn" class="flex-1 min-w-[140px] py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer" onclick="window.ForecasterGitHubSync.pullFromGitHub()">
+                  <span>⬇️</span> Pull &amp; Restore
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Card 3: Enterprise JSON Backup & Restoration (v2.0) -->
+          <div class="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-4">
+            <div class="pb-2 border-b border-slate-200/70 dark:border-slate-700">
+              <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>📦</span> Enterprise JSON Backup &amp; Restoration (v2.0)
+              </h4>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Download full snapshots, sanitized system exports, modular domain archives, or restore JSON backups with pre-flight deduplication.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <button type="button" class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between hover:border-blue-500 transition shadow-xs cursor-pointer text-left" onclick="downloadBackupJSON('all')">
+                <span class="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>📋</span> Full Snapshot</span><span>📥</span>
+              </button>
+              <button type="button" class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between hover:border-purple-500 transition shadow-xs cursor-pointer text-left" onclick="window.ForecasterAuth.downloadSystemExport()">
+                <span class="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>🗄️</span> System Backup</span><span>📥</span>
+              </button>
+              <button type="button" class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between hover:border-blue-500 transition shadow-xs cursor-pointer text-left" onclick="window.backupPaymentAccounts()">
+                <span class="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-bold text-xs"><span>💳</span> Accounts Backup</span><span>📥</span>
+              </button>
+              <button type="button" class="bg-blue-50 dark:bg-blue-950/50 p-3 rounded-xl border border-blue-200 dark:border-blue-800 flex items-center justify-between hover:bg-blue-100 dark:hover:bg-blue-900/50 transition shadow-xs cursor-pointer text-left" onclick="document.getElementById('upload-accounts-backup-file')?.click()">
+                <span class="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-bold text-xs"><span>📤</span> Restore Accounts</span><span>📁</span>
+              </button>
+              <input type="file" id="upload-accounts-backup-file" class="hidden" accept=".json,application/json" onchange="window.importPaymentAccountsBackup(event)"/>
+            </div>
+
+            <!-- Modular Backup Selector -->
+            <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+              <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300">📦 Independent Modular Backups:</label>
+              <div class="flex flex-wrap gap-1.5">
+                <button type="button" onclick="downloadBackupJSON('financial')" class="px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer">💵 Financial</button>
+                <button type="button" onclick="downloadBackupJSON('budgets')" class="px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer">📊 Budgets</button>
+                <button type="button" onclick="downloadBackupJSON('inventory')" class="px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer">💊 Stock &amp; Pharmacy</button>
+                <button type="button" onclick="downloadBackupJSON('parts')" class="px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer">⚙️ Spare Parts</button>
+                <button type="button" onclick="downloadBackupJSON('fleet')" class="px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer">🚗 Vehicles &amp; Fleet</button>
+                <button type="button" onclick="downloadBackupJSON('rentals')" class="px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer">🏠 Rental Contracts</button>
+                <button type="button" onclick="downloadBackupJSON('settings')" class="px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer">⚙️ Settings</button>
+              </div>
+            </div>
+
+            <div class="border-2 border-dashed border-slate-300 dark:border-slate-700 p-5 rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:bg-blue-50/40 dark:hover:bg-slate-800/60 transition cursor-pointer relative text-center bg-white dark:bg-slate-900" onclick="document.getElementById('import-json-file')?.click()">
+              <input accept=".json,application/json" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full" id="import-json-file" onchange="importBackupJSON(event)" type="file"/>
+              <span class="text-2xl mb-1">📁</span>
+              <p class="font-bold text-slate-700 dark:text-slate-200 text-xs">Upload &amp; Restore Backup (Safe Validation &amp; Deduplication)</p>
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Pre-flight diagnostics, duplicate prevention, and non-destructive merge protection</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- PANE 5: USERS & DATABASE VAULTS -->
         <div id="admin-tab-pane-users" class="hidden space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>

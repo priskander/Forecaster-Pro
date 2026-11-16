@@ -41,9 +41,7 @@
       return updated;
     },
 
-    openModal: function() {
-      const modal = document.getElementById('github-sync-modal');
-      if (!modal) return;
+    populateForm: function() {
       const cfg = this.getConfig();
       const tokenInput = document.getElementById('gh-sync-token');
       const modeSelect = document.getElementById('gh-sync-mode');
@@ -63,7 +61,13 @@
       if (autoSyncCheck) autoSyncCheck.checked = !!cfg.autoSync;
 
       this.updateUI();
-      modal.classList.remove('hidden');
+    },
+
+    openModal: function() {
+      this.populateForm();
+      if (window.ForecasterAuth && typeof window.ForecasterAuth.openMainAdminPanel === 'function') {
+        window.ForecasterAuth.openMainAdminPanel('sync');
+      }
     },
 
     closeModal: function() {
@@ -122,8 +126,20 @@
       };
     },
 
+    syncConfigFromForm: function() {
+      const form = document.getElementById('github-sync-form');
+      if (!form) return this.getConfig();
+      const mode = document.getElementById('gh-sync-mode')?.value || 'gist';
+      const token = (document.getElementById('gh-sync-token')?.value || '').trim();
+      const gistId = (document.getElementById('gh-sync-gist-id')?.value || '').trim();
+      const repo = (document.getElementById('gh-sync-repo')?.value || '').trim();
+      const branch = (document.getElementById('gh-sync-branch')?.value || '').trim() || 'main';
+      const autoSync = !!document.getElementById('gh-sync-autosync')?.checked;
+      return this.saveConfig({ mode, token, gistId, repo, branch, autoSync });
+    },
+
     pushToGitHub: async function() {
-      const cfg = this.getConfig();
+      const cfg = this.syncConfigFromForm();
       if (!cfg.token) {
         if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a GitHub Personal Access Token.', 'error');
         return;
@@ -239,7 +255,7 @@
     },
 
     pullFromGitHub: async function() {
-      const cfg = this.getConfig();
+      const cfg = this.syncConfigFromForm();
       if (!cfg.token) {
         if (typeof window.triggerToast === 'function') window.triggerToast('Please provide a GitHub Personal Access Token.', 'error');
         return;
@@ -318,20 +334,13 @@
 
   // Bind modal form submit & triggers
   window.addEventListener('DOMContentLoaded', function() {
-    window.ForecasterGitHubSync.updateUI();
+    window.ForecasterGitHubSync.populateForm();
 
     const form = document.getElementById('github-sync-form');
     if (form) {
       form.addEventListener('submit', function(e) {
         e.preventDefault();
-        const mode = document.getElementById('gh-sync-mode')?.value || 'gist';
-        const token = (document.getElementById('gh-sync-token')?.value || '').trim();
-        const gistId = (document.getElementById('gh-sync-gist-id')?.value || '').trim();
-        const repo = (document.getElementById('gh-sync-repo')?.value || '').trim();
-        const branch = (document.getElementById('gh-sync-branch')?.value || '').trim() || 'main';
-        const autoSync = !!document.getElementById('gh-sync-autosync')?.checked;
-
-        window.ForecasterGitHubSync.saveConfig({ mode, token, gistId, repo, branch, autoSync });
+        window.ForecasterGitHubSync.syncConfigFromForm();
         if (typeof window.triggerToast === 'function') {
           window.triggerToast('GitHub Cloud Sync settings saved.', 'success');
         }

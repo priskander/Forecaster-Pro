@@ -1564,7 +1564,7 @@ ${mail.body}
 
     switchAdminTab: function(tab) {
       this.activeAdminTab = tab;
-      const tabs = ['overview', 'releases', 'features', 'users', 'audit'];
+      const tabs = ['overview', 'releases', 'features', 'sync', 'users', 'audit'];
 
       tabs.forEach(t => {
         const pane = document.getElementById(`admin-tab-pane-${t}`);
@@ -1579,7 +1579,16 @@ ${mail.body}
         }
       });
 
-      if (tab === 'overview' || tab === 'releases' || tab === 'users' || tab === 'audit') {
+      if (tab === 'sync') {
+        if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.updateUI === 'function') {
+          window.ForecasterCloudSync.updateUI(false);
+        }
+        if (window.ForecasterGitHubSync && typeof window.ForecasterGitHubSync.populateForm === 'function') {
+          window.ForecasterGitHubSync.populateForm();
+        }
+      }
+
+      if (tab === 'overview' || tab === 'releases' || tab === 'sync' || tab === 'users' || tab === 'audit') {
         if (!this._adminDashboardLoaded) {
           this.loadAdminDashboard();
         }
@@ -1734,6 +1743,14 @@ ${mail.body}
         // 6. Audit Logs & Outbox
         this.filterAuditLogs(this._activeAuditFilter || 'all');
         this.renderAdminOutbox(this._adminOutbox);
+
+        // 7. Refresh Cloud Sync & GitHub Sync panels inside Admin Suite
+        if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.updateUI === 'function') {
+          window.ForecasterCloudSync.updateUI(false);
+        }
+        if (window.ForecasterGitHubSync && typeof window.ForecasterGitHubSync.populateForm === 'function') {
+          window.ForecasterGitHubSync.populateForm();
+        }
 
       } catch (err) {
         console.error('[Admin Dashboard Error]', err);
