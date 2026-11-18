@@ -94,22 +94,66 @@
     },
 
     savePrePullLocalSnapshot: function(reason = 'cloud_snapshot_pull', targetVaultId = null) {
+      this._lastSnapshotError = null;
       try {
         const rawKeys = {};
         LOCAL_SNAPSHOT_STORAGE_KEYS.forEach((k) => {
           rawKeys[k] = localStorage.getItem(k);
         });
+        const expectedLocalData = this.getLocalData();
         const snapshot = {
           snapshotVersion: '1.0.0',
           reason,
           targetVaultId: targetVaultId || this.getVaultId(),
           capturedAt: new Date().toISOString(),
-          data: this.getLocalData(),
+          data: expectedLocalData,
           rawKeys
         };
-        localStorage.setItem(LOCAL_SAFETY_SNAPSHOT_KEY, JSON.stringify(snapshot));
+        const serialized = JSON.stringify(snapshot);
+        localStorage.setItem(LOCAL_SAFETY_SNAPSHOT_KEY, serialized);
+
+        // Mandatory read-back verification without altering or deleting any existing recovery key on failure
+        const readBackRaw = localStorage.getItem(LOCAL_SAFETY_SNAPSHOT_KEY);
+        if (!readBackRaw || typeof readBackRaw !== 'string') {
+          throw new Error('Recovery snapshot read-back returned empty storage data.');
+        }
+        let parsed;
+        try {
+          parsed = JSON.parse(readBackRaw);
+        } catch (parseErr) {
+          throw new Error('Recovery snapshot read-back JSON could not be parsed.');
+        }
+        if (
+          !parsed ||
+          typeof parsed !== 'object' ||
+          parsed.capturedAt !== snapshot.capturedAt ||
+          parsed.reason !== snapshot.reason ||
+          parsed.targetVaultId !== snapshot.targetVaultId ||
+          !parsed.rawKeys ||
+          typeof parsed.rawKeys !== 'object' ||
+          !parsed.data ||
+          typeof parsed.data !== 'object'
+        ) {
+          throw new Error('Recovery snapshot read-back metadata mismatch.');
+        }
+        const allRawKeysMatch = LOCAL_SNAPSHOT_STORAGE_KEYS.every((k) => parsed.rawKeys[k] === rawKeys[k]);
+        if (!allRawKeysMatch) {
+          throw new Error('Recovery snapshot read-back storage keys mismatch.');
+        }
+        const expectedTxnLen = Array.isArray(expectedLocalData.transactions) ? expectedLocalData.transactions.length : 0;
+        const expectedAccLen = Array.isArray(expectedLocalData.accounts) ? expectedLocalData.accounts.length : 0;
+        if (
+          !Array.isArray(parsed.data.transactions) ||
+          parsed.data.transactions.length !== expectedTxnLen ||
+          !Array.isArray(parsed.data.accounts) ||
+          parsed.data.accounts.length !== expectedAccLen
+        ) {
+          throw new Error('Recovery snapshot read-back transaction/account state mismatch.');
+        }
+
         return snapshot;
       } catch (err) {
+        this._lastSnapshotError = err?.message || 'Unable to store or verify pre-pull local snapshot.';
         console.warn('[Forecaster CloudSync] Could not store pre-pull local snapshot:', err);
         return null;
       }
@@ -235,8 +279,38 @@
         const remote = data.vault;
 
         if (forceReplace) {
-          // Save a recoverable local snapshot before overwriting local state
-          this.savePrePullLocalSnapshot('pull_vault_replace', vaultId);
+          // Capture expected pre-pull state before attempting mandatory snapshot write
+          const expectedRawTxns = localStorage.getItem('pro_transactions');
+          const expectedRawAccs = localStorage.getItem('pro_accounts');
+          const expectedPrePullState = this.getLocalData();
+
+          // Mandatory: save recoverable pre-pull local snapshot BEFORE any localStorage or in-memory mutation
+          const savedSnapshot = this.savePrePullLocalSnapshot('pull_vault_replace', vaultId);
+          const readBackSnapshot = savedSnapshot ? this.getPrePullLocalSnapshot() : null;
+
+          const expectedTxnLen = Array.isArray(expectedPrePullState.transactions) ? expectedPrePullState.transactions.length : 0;
+          const expectedAccLen = Array.isArray(expectedPrePullState.accounts) ? expectedPrePullState.accounts.length : 0;
+
+          const snapshotVerified = Boolean(
+            savedSnapshot &&
+            readBackSnapshot &&
+            readBackSnapshot.capturedAt === savedSnapshot.capturedAt &&
+            readBackSnapshot.targetVaultId === vaultId &&
+            readBackSnapshot.rawKeys &&
+            readBackSnapshot.rawKeys.pro_transactions === expectedRawTxns &&
+            readBackSnapshot.rawKeys.pro_accounts === expectedRawAccs &&
+            readBackSnapshot.data &&
+            Array.isArray(readBackSnapshot.data.transactions) &&
+            readBackSnapshot.data.transactions.length === expectedTxnLen &&
+            Array.isArray(readBackSnapshot.data.accounts) &&
+            readBackSnapshot.data.accounts.length === expectedAccLen
+          );
+
+          if (!snapshotVerified) {
+            const reasonDetail = this._lastSnapshotError ? ` (${this._lastSnapshotError})` : '';
+            this._lastPullError = `Pre-pull recovery snapshot could not be saved or verified${reasonDetail}. Cloud pull aborted and local data was preserved.`;
+            return false;
+          }
 
           this._isApplyingRemote = true;
           try {

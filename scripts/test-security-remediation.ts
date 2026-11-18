@@ -3841,7 +3841,9 @@ async function runSecurityTestSuite() {
       const authScriptCode = fs.readFileSync(path.resolve(process.cwd(), 'src/scripts/auth-manager.js'), 'utf-8');
       vm.runInNewContext(authScriptCode, authDom.sandbox);
 
+      const maliciousSubId = `sub_id_'_"_<script>`;
       const authActionsCalled: string[] = [];
+      const deletedSubUserUrls: string[] = [];
       authDom.setFetch(async (url: string, opts?: any) => {
         if (url === '/api/auth/sub-users' && (!opts?.method || opts.method === 'GET')) {
           return {
@@ -3850,7 +3852,7 @@ async function runSecurityTestSuite() {
             json: async () => ({
               ok: true,
               subUsers: [{
-                id: `sub_id_'_"_<script>`,
+                id: maliciousSubId,
                 name: xssPayloadName,
                 email: xssPayloadEmail,
                 role: 'member',
@@ -3892,6 +3894,11 @@ async function runSecurityTestSuite() {
           authActionsCalled.push('resend');
           return { ok: true, status: 200, json: async () => ({ ok: true }) };
         }
+        if (String(url).startsWith('/api/auth/sub-users/') && opts?.method === 'DELETE') {
+          authActionsCalled.push('delete');
+          deletedSubUserUrls.push(String(url));
+          return { ok: true, status: 200, json: async () => ({ ok: true }) };
+        }
         return { ok: false, status: 404, json: async () => ({ ok: false, error: '<script>err</script>' }) };
       });
 
@@ -3904,8 +3911,13 @@ async function runSecurityTestSuite() {
       const hasInlineHandlerAttr =
         /<[a-z][^>]*\son[a-z]+\s*=/i.test(subMarkup) ||
         subDescendants.some(el => Object.keys(el.attributes).some(k => k.toLowerCase().startsWith('on')));
+      authDom.setConfirm(true);
+      authDom.resetConfirmCalls();
       if (resendBtn) resendBtn.click();
+      if (deleteBtn) deleteBtn.click();
+      await new Promise(resolve => setTimeout(resolve, 15));
 
+      const expectedDeleteUrl = `/api/auth/sub-users/${encodeURIComponent(maliciousSubId)}`;
       assert(
         !subMarkup.includes('<script') &&
         !subMarkup.includes('<img') &&
@@ -3920,9 +3932,12 @@ async function runSecurityTestSuite() {
         !!deleteBtn &&
         (resendBtn?.listeners['click']?.length || 0) === 1 &&
         (deleteBtn?.listeners['click']?.length || 0) === 1 &&
-        authActionsCalled.includes('resend'),
-        'XSS 16.1a: loadSubUsers builds safe DOM nodes with textContent and event listeners (zero inline onclick or unescaped HTML)',
-        `hasDangerousTag=${hasDangerousTag} hasInlineHandlerAttr=${hasInlineHandlerAttr} actions=${authActionsCalled.join(',')}`
+        authActionsCalled.includes('resend') &&
+        authActionsCalled.includes('delete') &&
+        authDom.getConfirmCalls() === 1 &&
+        deletedSubUserUrls.includes(expectedDeleteUrl),
+        'XSS 16.1a: loadSubUsers builds safe DOM nodes with textContent and working Resend + Remove event listeners (zero inline onclick or unescaped HTML)',
+        `hasDangerousTag=${hasDangerousTag} hasInlineHandlerAttr=${hasInlineHandlerAttr} actions=${authActionsCalled.join(',')} deleted=${deletedSubUserUrls.join(',')}`
       );
 
       await authDom.sandbox.window.ForecasterAuth.loadDispatchedEmails();
@@ -4296,6 +4311,121 @@ async function runSecurityTestSuite() {
         ownerBVault !== ownerAVault,
         'PullSnapshot 16.3e: Vault read endpoint enforces HTTP 401 unauth, HTTP 403 cross-tenant, and HTTP 200 authorized pull'
       );
+
+      // 16.3f Mandatory Pre-Pull Snapshot Failure Regression: Quota/Storage Exception on save
+      const localAccountsBeforeFail = [{ id: 'acc_local_unsaved_1', type: 'cash', label: 'Local Safe Account', initialBalance: 500 }];
+      const priorValidSnapshotSentinel = JSON.stringify({
+        snapshotVersion: '1.0.0',
+        reason: 'prior_valid_backup',
+        targetVaultId: ownerAVault,
+        capturedAt: '2026-11-15T12:00:00.000Z',
+        data: { transactions: localUnsavedTxns, accounts: localAccountsBeforeFail },
+        rawKeys: { pro_transactions: JSON.stringify(localUnsavedTxns), pro_accounts: JSON.stringify(localAccountsBeforeFail) }
+      });
+
+      const failQuotaDom = createMockDomEnv({
+        forecaster_auth_token: ownerAToken,
+        forecaster_auth_user: JSON.stringify({ id: regA.body.user.id, vaultId: ownerAVault }),
+        pro_transactions: JSON.stringify(localUnsavedTxns),
+        pro_accounts: JSON.stringify(localAccountsBeforeFail),
+        forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel
+      });
+      failQuotaDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+      failQuotaDom.setConfirm(true);
+      failQuotaDom.sandbox.window.transactions = [...localUnsavedTxns];
+      failQuotaDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+      let remoteRenderCalledOnQuotaFail = false;
+      failQuotaDom.sandbox.window.renderAllViews = () => { remoteRenderCalledOnQuotaFail = true; };
+      const origQuotaSetItem = failQuotaDom.sandbox.localStorage.setItem;
+      failQuotaDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_v1') {
+          throw new Error('QuotaExceededError: Storage quota exceeded');
+        }
+        return origQuotaSetItem(k, v);
+      };
+      vm.runInNewContext(cloudSyncCode, failQuotaDom.sandbox);
+
+      failQuotaDom.toasts.length = 0;
+      const quotaPullOk = await failQuotaDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+      const quotaLastError = String(failQuotaDom.sandbox.window.ForecasterCloudSync._lastPullError || '');
+      const quotaTxnsAfter = JSON.parse(failQuotaDom.storage.get('pro_transactions') || '[]');
+      const quotaAccsAfter = JSON.parse(failQuotaDom.storage.get('pro_accounts') || '[]');
+      const quotaPriorSnapAfter = failQuotaDom.storage.get('forecaster_pre_pull_local_snapshot_v1');
+
+      assert(
+        quotaPullOk === false &&
+        quotaTxnsAfter.length === 1 &&
+        quotaTxnsAfter[0].id === 'tx_local_unsaved_1' &&
+        failQuotaDom.sandbox.window.transactions.length === 1 &&
+        failQuotaDom.sandbox.window.transactions[0].id === 'tx_local_unsaved_1' &&
+        quotaAccsAfter.length === 1 &&
+        quotaAccsAfter[0].id === 'acc_local_unsaved_1' &&
+        failQuotaDom.sandbox.window.accounts.length === 1 &&
+        failQuotaDom.sandbox.window.accounts[0].id === 'acc_local_unsaved_1' &&
+        !remoteRenderCalledOnQuotaFail &&
+        !failQuotaDom.toasts.some(t => t.variant === 'success') &&
+        failQuotaDom.toasts.some(t => t.variant === 'error' && t.msg.includes('Unable to pull cloud snapshot')) &&
+        quotaLastError.toLowerCase().includes('recovery snapshot') &&
+        quotaPriorSnapAfter === priorValidSnapshotSentinel,
+        'PullSnapshot 16.3f: Storage quota exception during pre-pull snapshot aborts pull, reports error, preserves local txns/accounts & prior snapshot',
+        `quotaPullOk=${quotaPullOk} err=${quotaLastError}`
+      );
+
+      // 16.3g Mandatory Pre-Pull Snapshot Failure Regression: Written snapshot cannot be read back or parsed
+      for (const badReadMode of ['corrupt_json', 'null_readback'] as const) {
+        const failReadDom = createMockDomEnv({
+          forecaster_auth_token: ownerAToken,
+          forecaster_auth_user: JSON.stringify({ id: regA.body.user.id, vaultId: ownerAVault }),
+          pro_transactions: JSON.stringify(localUnsavedTxns),
+          pro_accounts: JSON.stringify(localAccountsBeforeFail)
+        });
+        failReadDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+        failReadDom.setConfirm(true);
+        failReadDom.sandbox.window.transactions = [...localUnsavedTxns];
+        failReadDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+        let remoteRenderCalledOnReadFail = false;
+        failReadDom.sandbox.window.renderAllViews = () => { remoteRenderCalledOnReadFail = true; };
+
+        const origReadGetItem = failReadDom.sandbox.localStorage.getItem;
+        let removeCalledOnSnapshotKey = false;
+        const origReadRemoveItem = failReadDom.sandbox.localStorage.removeItem;
+        failReadDom.sandbox.localStorage.removeItem = (k: string) => {
+          if (k === 'forecaster_pre_pull_local_snapshot_v1') removeCalledOnSnapshotKey = true;
+          return origReadRemoveItem(k);
+        };
+        failReadDom.sandbox.localStorage.getItem = (k: string) => {
+          if (k === 'forecaster_pre_pull_local_snapshot_v1') {
+            return badReadMode === 'corrupt_json' ? '{corrupt_unparseable_snapshot' : null;
+          }
+          return origReadGetItem(k);
+        };
+        vm.runInNewContext(cloudSyncCode, failReadDom.sandbox);
+
+        failReadDom.toasts.length = 0;
+        const readFailPullOk = await failReadDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+        const readFailErr = String(failReadDom.sandbox.window.ForecasterCloudSync._lastPullError || '');
+        const readFailTxnsAfter = JSON.parse(failReadDom.storage.get('pro_transactions') || '[]');
+        const readFailAccsAfter = JSON.parse(failReadDom.storage.get('pro_accounts') || '[]');
+
+        assert(
+          readFailPullOk === false &&
+          readFailTxnsAfter.length === 1 &&
+          readFailTxnsAfter[0].id === 'tx_local_unsaved_1' &&
+          failReadDom.sandbox.window.transactions.length === 1 &&
+          failReadDom.sandbox.window.transactions[0].id === 'tx_local_unsaved_1' &&
+          readFailAccsAfter.length === 1 &&
+          readFailAccsAfter[0].id === 'acc_local_unsaved_1' &&
+          failReadDom.sandbox.window.accounts.length === 1 &&
+          failReadDom.sandbox.window.accounts[0].id === 'acc_local_unsaved_1' &&
+          !remoteRenderCalledOnReadFail &&
+          !removeCalledOnSnapshotKey &&
+          !failReadDom.toasts.some(t => t.variant === 'success') &&
+          failReadDom.toasts.some(t => t.variant === 'error') &&
+          readFailErr.toLowerCase().includes('recovery snapshot'),
+          `PullSnapshot 16.3g (${badReadMode}): Unreadable/unparseable pre-pull snapshot aborts pull cleanly and preserves all local txns/accounts`,
+          `pullOk=${readFailPullOk} err=${readFailErr}`
+        );
+      }
 
       // 16.4 Mirrored src/ and public/ file synchronization parity
       const mirrorPairs: Array<[string, string]> = [
