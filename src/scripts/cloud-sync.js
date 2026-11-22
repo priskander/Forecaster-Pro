@@ -12,6 +12,8 @@
   const AUTOSYNC_STORAGE_KEY = 'forecaster_cloud_autosync_enabled';
   const LAST_SYNC_KEY = 'forecaster_cloud_last_sync_time';
   const LOCAL_SAFETY_SNAPSHOT_KEY = 'forecaster_pre_pull_local_snapshot_v1';
+  const LOCAL_SAFETY_SNAPSHOT_STAGING_KEY = 'forecaster_pre_pull_local_snapshot_staging_v1';
+  const LOCAL_SAFETY_SNAPSHOT_PREV_KEY = 'forecaster_pre_pull_local_snapshot_prev_v1';
   const DEFAULT_VAULT_ID = 'shared-main-vault';
 
   const LOCAL_SNAPSHOT_STORAGE_KEYS = [
@@ -78,6 +80,95 @@
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
+  function canonicalizeForCompare(val) {
+    if (val === null || val === undefined) return val === undefined ? undefined : null;
+    if (val instanceof Date) return val.toISOString();
+    if (Array.isArray(val)) {
+      return val.map((item) => (item === undefined ? null : canonicalizeForCompare(item)));
+    }
+    if (typeof val === 'object') {
+      const sorted = {};
+      const keys = Object.keys(val).sort();
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        if (val[k] !== undefined) {
+          sorted[k] = canonicalizeForCompare(val[k]);
+        }
+      }
+      return sorted;
+    }
+    return val;
+  }
+
+  function areValuesDeepEqual(a, b) {
+    try {
+      return JSON.stringify(canonicalizeForCompare(a)) === JSON.stringify(canonicalizeForCompare(b));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function verifySnapshotIntegrity(parsed, expectedSnapshot) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, reason: 'Snapshot payload is missing or invalid.' };
+    }
+    if (!expectedSnapshot || typeof expectedSnapshot !== 'object') {
+      return { ok: false, reason: 'Expected snapshot reference is invalid.' };
+    }
+    if (
+      parsed.snapshotVersion !== expectedSnapshot.snapshotVersion ||
+      parsed.reason !== expectedSnapshot.reason ||
+      parsed.targetVaultId !== expectedSnapshot.targetVaultId ||
+      parsed.capturedAt !== expectedSnapshot.capturedAt
+    ) {
+      return { ok: false, reason: 'Snapshot metadata mismatch.' };
+    }
+    if (!parsed.rawKeys || typeof parsed.rawKeys !== 'object' || Array.isArray(parsed.rawKeys)) {
+      return { ok: false, reason: 'Snapshot raw storage keys missing or invalid.' };
+    }
+    const expectedRawKeys = expectedSnapshot.rawKeys || {};
+    if (!areValuesDeepEqual(Object.keys(parsed.rawKeys).sort(), Object.keys(expectedRawKeys).sort())) {
+      return { ok: false, reason: 'Snapshot raw storage key set mismatch.' };
+    }
+    for (let i = 0; i < LOCAL_SNAPSHOT_STORAGE_KEYS.length; i++) {
+      const k = LOCAL_SNAPSHOT_STORAGE_KEYS[i];
+      if (!Object.prototype.hasOwnProperty.call(parsed.rawKeys, k) || parsed.rawKeys[k] !== expectedRawKeys[k]) {
+        return { ok: false, reason: `Snapshot raw storage key mismatch for "${k}".` };
+      }
+    }
+    if (!parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
+      return { ok: false, reason: 'Snapshot captured workspace data object is missing or invalid.' };
+    }
+    if (!areValuesDeepEqual(parsed.data, expectedSnapshot.data)) {
+      return { ok: false, reason: 'Complete captured snapshot data did not match expected pre-pull state.' };
+    }
+    return { ok: true, reason: null };
+  }
+
+  function parseValidSnapshotObject(raw) {
+    if (!raw || typeof raw !== 'string') return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        Array.isArray(parsed) ||
+        !parsed.rawKeys ||
+        typeof parsed.rawKeys !== 'object' ||
+        Array.isArray(parsed.rawKeys) ||
+        !parsed.capturedAt ||
+        !parsed.data ||
+        typeof parsed.data !== 'object' ||
+        Array.isArray(parsed.data)
+      ) {
+        return null;
+      }
+      return parsed;
+    } catch (e) {
+      return null;
+    }
+  }
+
   window.ForecasterCloudSync = {
     getVaultId: function() {
       return getStoredVaultId();
@@ -95,7 +186,100 @@
 
     savePrePullLocalSnapshot: function(reason = 'cloud_snapshot_pull', targetVaultId = null) {
       this._lastSnapshotError = null;
+      let stagingVerified = false;
+      let stagedVerifiedRaw = null;
+      let previousActiveRaw = null;
+      let previousActiveParsed = null;
+      let hasValidPreviousActive = false;
+      let prevBackupStored = false;
+
+      const cleanupKeySafe = (key) => {
+        try {
+          localStorage.removeItem(key);
+        } catch (cleanupErr) {
+          console.warn(`[Forecaster CloudSync] Could not clean up temporary key "${key}":`, cleanupErr);
+        }
+      };
+
+      const verifyPreviousActiveAt = (key) => {
+        try {
+          const readRaw = localStorage.getItem(key);
+          if (!readRaw || typeof readRaw !== 'string') return false;
+          if (readRaw === previousActiveRaw) return true;
+          const readParsed = parseValidSnapshotObject(readRaw);
+          return Boolean(readParsed && previousActiveParsed && areValuesDeepEqual(readParsed, previousActiveParsed));
+        } catch (_) {
+          return false;
+        }
+      };
+
+      const attemptRestorePreviousActive = (failureContextMsg) => {
+        let restoredToActive = false;
+        let restoreFailureMsg = '';
+
+        if (hasValidPreviousActive) {
+          if (verifyPreviousActiveAt(LOCAL_SAFETY_SNAPSHOT_KEY)) {
+            restoredToActive = true;
+          } else {
+            try {
+              localStorage.setItem(LOCAL_SAFETY_SNAPSHOT_KEY, previousActiveRaw);
+              if (verifyPreviousActiveAt(LOCAL_SAFETY_SNAPSHOT_KEY)) {
+                restoredToActive = true;
+              } else {
+                restoreFailureMsg = 'Restored active snapshot failed read-back verification.';
+              }
+            } catch (restoreErr) {
+              restoreFailureMsg = restoreErr?.message || 'Active snapshot restoration write failed.';
+            }
+          }
+
+          if (restoredToActive) {
+            if (prevBackupStored) {
+              cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_PREV_KEY);
+            }
+            this._lastSnapshotError =
+              `${failureContextMsg}. Previous active recovery snapshot was restored and verified intact; staged snapshot was preserved.`;
+            return null;
+          }
+
+          // CRITICAL: Both promotion AND restoration to active key failed — retain best available recovery copies and never claim restoration succeeded
+          const retainedLocations = [];
+          if (prevBackupStored && verifyPreviousActiveAt(LOCAL_SAFETY_SNAPSHOT_PREV_KEY)) {
+            retainedLocations.push(LOCAL_SAFETY_SNAPSHOT_PREV_KEY);
+          }
+          if (stagingVerified) {
+            retainedLocations.push(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
+          }
+          const locationText = retainedLocations.length > 0
+            ? `Recoverable snapshot copies remain preserved in ${retainedLocations.join(' and ')}`
+            : 'In-memory recovery state was preserved cleanly on abort';
+          this._lastSnapshotError =
+            `CRITICAL RECOVERY ERROR: ${failureContextMsg}, and automatic restoration of the active recovery key failed (${restoreFailureMsg}). ` +
+            `${locationText}; manual recovery may be necessary.`;
+          return null;
+        }
+
+        if (stagingVerified) {
+          this._lastSnapshotError =
+            `CRITICAL RECOVERY ERROR: ${failureContextMsg}. No prior active snapshot existed, so the verified staged snapshot remains preserved in ${LOCAL_SAFETY_SNAPSHOT_STAGING_KEY}; manual recovery may be necessary.`;
+        } else {
+          this._lastSnapshotError = failureContextMsg;
+        }
+        return null;
+      };
+
       try {
+        // Step 0: Preserve existing valid active recovery snapshot before staging or promotion
+        try {
+          previousActiveRaw = localStorage.getItem(LOCAL_SAFETY_SNAPSHOT_KEY);
+          previousActiveParsed = parseValidSnapshotObject(previousActiveRaw);
+          hasValidPreviousActive = Boolean(previousActiveRaw && previousActiveParsed);
+        } catch (readPrevErr) {
+          previousActiveRaw = null;
+          previousActiveParsed = null;
+          hasValidPreviousActive = false;
+        }
+
         const rawKeys = {};
         LOCAL_SNAPSHOT_STORAGE_KEYS.forEach((k) => {
           rawKeys[k] = localStorage.getItem(k);
@@ -110,48 +294,91 @@
           rawKeys
         };
         const serialized = JSON.stringify(snapshot);
-        localStorage.setItem(LOCAL_SAFETY_SNAPSHOT_KEY, serialized);
 
-        // Mandatory read-back verification without altering or deleting any existing recovery key on failure
-        const readBackRaw = localStorage.getItem(LOCAL_SAFETY_SNAPSHOT_KEY);
-        if (!readBackRaw || typeof readBackRaw !== 'string') {
-          throw new Error('Recovery snapshot read-back returned empty storage data.');
-        }
-        let parsed;
+        // Stage 1: Write candidate snapshot ONLY to staging key (active snapshot stays untouched)
         try {
-          parsed = JSON.parse(readBackRaw);
-        } catch (parseErr) {
-          throw new Error('Recovery snapshot read-back JSON could not be parsed.');
-        }
-        if (
-          !parsed ||
-          typeof parsed !== 'object' ||
-          parsed.capturedAt !== snapshot.capturedAt ||
-          parsed.reason !== snapshot.reason ||
-          parsed.targetVaultId !== snapshot.targetVaultId ||
-          !parsed.rawKeys ||
-          typeof parsed.rawKeys !== 'object' ||
-          !parsed.data ||
-          typeof parsed.data !== 'object'
-        ) {
-          throw new Error('Recovery snapshot read-back metadata mismatch.');
-        }
-        const allRawKeysMatch = LOCAL_SNAPSHOT_STORAGE_KEYS.every((k) => parsed.rawKeys[k] === rawKeys[k]);
-        if (!allRawKeysMatch) {
-          throw new Error('Recovery snapshot read-back storage keys mismatch.');
-        }
-        const expectedTxnLen = Array.isArray(expectedLocalData.transactions) ? expectedLocalData.transactions.length : 0;
-        const expectedAccLen = Array.isArray(expectedLocalData.accounts) ? expectedLocalData.accounts.length : 0;
-        if (
-          !Array.isArray(parsed.data.transactions) ||
-          parsed.data.transactions.length !== expectedTxnLen ||
-          !Array.isArray(parsed.data.accounts) ||
-          parsed.data.accounts.length !== expectedAccLen
-        ) {
-          throw new Error('Recovery snapshot read-back transaction/account state mismatch.');
+          localStorage.setItem(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY, serialized);
+        } catch (stageWriteErr) {
+          cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
+          this._lastSnapshotError = stageWriteErr?.message || 'Failed to write staged pre-pull recovery snapshot.';
+          return null;
         }
 
-        return snapshot;
+        // Stage 2 & 3: Read back, parse, and verify staging snapshot completely BEFORE deleting or promoting anything
+        try {
+          const stagedRaw = localStorage.getItem(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
+          if (!stagedRaw || typeof stagedRaw !== 'string') {
+            throw new Error('Staged recovery snapshot read-back returned empty storage data.');
+          }
+          let stagedParsed;
+          try {
+            stagedParsed = JSON.parse(stagedRaw);
+          } catch (parseErr) {
+            throw new Error('Staged recovery snapshot read-back JSON could not be parsed.');
+          }
+          const stagingCheck = verifySnapshotIntegrity(stagedParsed, snapshot);
+          if (!stagingCheck.ok) {
+            throw new Error(`Staged recovery snapshot verification failed: ${stagingCheck.reason}`);
+          }
+          stagedVerifiedRaw = stagedRaw;
+          stagingVerified = true;
+        } catch (stageVerifyErr) {
+          cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
+          this._lastSnapshotError = stageVerifyErr?.message || 'Staged recovery snapshot verification failed.';
+          return null;
+        }
+
+        // Stage 3b: Preserve previous valid active snapshot in temporary backup key BEFORE overwriting active key
+        if (hasValidPreviousActive) {
+          try {
+            localStorage.setItem(LOCAL_SAFETY_SNAPSHOT_PREV_KEY, previousActiveRaw);
+            if (!verifyPreviousActiveAt(LOCAL_SAFETY_SNAPSHOT_PREV_KEY)) {
+              throw new Error('Temporary backup of previous recovery snapshot failed read-back verification.');
+            }
+            prevBackupStored = true;
+          } catch (prevBackupErr) {
+            cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_PREV_KEY);
+            this._lastSnapshotError =
+              `Could not back up previous recovery snapshot before promotion (${prevBackupErr?.message || 'storage error'}). Existing active snapshot remains untouched.`;
+            return null;
+          }
+        }
+
+        // Stage 4: Promote verified staged snapshot to active key while staging and backup copies remain intact
+        try {
+          localStorage.setItem(LOCAL_SAFETY_SNAPSHOT_KEY, stagedVerifiedRaw);
+        } catch (promoteErr) {
+          return attemptRestorePreviousActive(
+            `Active recovery snapshot promotion write failed (${promoteErr?.message || 'storage write error'})`
+          );
+        }
+
+        // Stage 5: Final read-back verification of promoted active recovery snapshot
+        try {
+          const activeRaw = localStorage.getItem(LOCAL_SAFETY_SNAPSHOT_KEY);
+          if (!activeRaw || typeof activeRaw !== 'string') {
+            throw new Error('Promoted active recovery snapshot final read-back returned empty storage data.');
+          }
+          let activeParsed;
+          try {
+            activeParsed = JSON.parse(activeRaw);
+          } catch (parseErr) {
+            throw new Error('Promoted active recovery snapshot final read-back JSON could not be parsed.');
+          }
+          const activeCheck = verifySnapshotIntegrity(activeParsed, snapshot);
+          if (!activeCheck.ok) {
+            throw new Error(`Promoted active recovery snapshot final verification failed: ${activeCheck.reason}`);
+          }
+
+          // Stage 6: Only clean up staging and temporary recovery keys AFTER final active verification succeeds
+          cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
+          cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_PREV_KEY);
+          return activeParsed;
+        } catch (finalVerifyErr) {
+          return attemptRestorePreviousActive(
+            finalVerifyErr?.message || 'Promoted active recovery snapshot final verification failed'
+          );
+        }
       } catch (err) {
         this._lastSnapshotError = err?.message || 'Unable to store or verify pre-pull local snapshot.';
         console.warn('[Forecaster CloudSync] Could not store pre-pull local snapshot:', err);
@@ -162,10 +389,7 @@
     getPrePullLocalSnapshot: function() {
       try {
         const raw = localStorage.getItem(LOCAL_SAFETY_SNAPSHOT_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object' || !parsed.rawKeys || !parsed.capturedAt) return null;
-        return parsed;
+        return parseValidSnapshotObject(raw);
       } catch (e) {
         return null;
       }
@@ -279,35 +503,29 @@
         const remote = data.vault;
 
         if (forceReplace) {
-          // Capture expected pre-pull state before attempting mandatory snapshot write
-          const expectedRawTxns = localStorage.getItem('pro_transactions');
-          const expectedRawAccs = localStorage.getItem('pro_accounts');
+          // Capture complete expected pre-pull state before attempting staged snapshot save
+          const expectedRawKeys = {};
+          LOCAL_SNAPSHOT_STORAGE_KEYS.forEach((k) => {
+            expectedRawKeys[k] = localStorage.getItem(k);
+          });
           const expectedPrePullState = this.getLocalData();
 
-          // Mandatory: save recoverable pre-pull local snapshot BEFORE any localStorage or in-memory mutation
+          // Mandatory: stage, verify, promote, and final-verify pre-pull local snapshot BEFORE mutating local workspace
           const savedSnapshot = this.savePrePullLocalSnapshot('pull_vault_replace', vaultId);
           const readBackSnapshot = savedSnapshot ? this.getPrePullLocalSnapshot() : null;
+          const finalPullCheck = (savedSnapshot && readBackSnapshot)
+            ? verifySnapshotIntegrity(readBackSnapshot, {
+                snapshotVersion: savedSnapshot.snapshotVersion,
+                reason: 'pull_vault_replace',
+                targetVaultId: vaultId,
+                capturedAt: savedSnapshot.capturedAt,
+                rawKeys: expectedRawKeys,
+                data: expectedPrePullState
+              })
+            : { ok: false, reason: this._lastSnapshotError || 'Recovery snapshot missing or unreadable.' };
 
-          const expectedTxnLen = Array.isArray(expectedPrePullState.transactions) ? expectedPrePullState.transactions.length : 0;
-          const expectedAccLen = Array.isArray(expectedPrePullState.accounts) ? expectedPrePullState.accounts.length : 0;
-
-          const snapshotVerified = Boolean(
-            savedSnapshot &&
-            readBackSnapshot &&
-            readBackSnapshot.capturedAt === savedSnapshot.capturedAt &&
-            readBackSnapshot.targetVaultId === vaultId &&
-            readBackSnapshot.rawKeys &&
-            readBackSnapshot.rawKeys.pro_transactions === expectedRawTxns &&
-            readBackSnapshot.rawKeys.pro_accounts === expectedRawAccs &&
-            readBackSnapshot.data &&
-            Array.isArray(readBackSnapshot.data.transactions) &&
-            readBackSnapshot.data.transactions.length === expectedTxnLen &&
-            Array.isArray(readBackSnapshot.data.accounts) &&
-            readBackSnapshot.data.accounts.length === expectedAccLen
-          );
-
-          if (!snapshotVerified) {
-            const reasonDetail = this._lastSnapshotError ? ` (${this._lastSnapshotError})` : '';
+          if (!finalPullCheck.ok) {
+            const reasonDetail = finalPullCheck.reason ? ` (${finalPullCheck.reason})` : '';
             this._lastPullError = `Pre-pull recovery snapshot could not be saved or verified${reasonDetail}. Cloud pull aborted and local data was preserved.`;
             return false;
           }

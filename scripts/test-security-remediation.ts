@@ -4096,20 +4096,31 @@ async function runSecurityTestSuite() {
           headers: { Authorization: `Bearer ${ownerAToken}` },
           body: JSON.stringify({
             transactions: [
-              { id: 'tx_init_1', amount: 9999, type: 'income', date: '2026-11-16', description: 'Seed Leak' },
+              { id: 'tx_demo_1', amount: 3100, type: 'income', date: '2026-11-16', description: 'Demo Seed Leak 1' },
+              { id: 'tx_init_1', amount: 9999, type: 'income', date: '2026-11-16', description: 'Init Seed Leak 1' },
               { id: 'tx_owner_clean_1', amount: 250, type: 'income', date: '2026-11-16', description: 'Owner Clean Record' }
             ]
           })
         },
         p1123Srv.baseUrl
       );
+      const vaultVerifyAfterSeedPost = await request(
+        `/api/cloud-sync/vault/${encodeURIComponent(ownerAVault)}`,
+        { headers: { Authorization: `Bearer ${ownerAToken}` } },
+        p1123Srv.baseUrl
+      );
       const postSeedIds = (seedPlusCleanPost.body?.transactions || []).map((t: any) => t.id);
+      const persistedVaultTxnIds = (vaultVerifyAfterSeedPost.body?.vault?.transactions || []).map((t: any) => t.id);
       assert(
         seedPlusCleanPost.status === 200 &&
-        seedPlusCleanPost.body?.filteredDemoSeedCount === 1 &&
+        seedPlusCleanPost.body?.filteredDemoSeedCount === 2 &&
+        !postSeedIds.includes('tx_demo_1') &&
         !postSeedIds.includes('tx_init_1') &&
-        postSeedIds.includes('tx_owner_clean_1'),
-        'P1123 16.2d: POST /api/cloud-sync/transactions strips DEMO_SEED_IDS (tx_init_1) from non-demo vaults while preserving valid transactions'
+        postSeedIds.includes('tx_owner_clean_1') &&
+        !persistedVaultTxnIds.includes('tx_demo_1') &&
+        !persistedVaultTxnIds.includes('tx_init_1') &&
+        persistedVaultTxnIds.includes('tx_owner_clean_1'),
+        'P1123 16.2d: POST /api/cloud-sync/transactions strips both tx_demo_1 and tx_init_1 from non-demo vaults and persists neither'
       );
 
       // Member append-only, idempotency & existing record tamper protection
@@ -4312,118 +4323,445 @@ async function runSecurityTestSuite() {
         'PullSnapshot 16.3e: Vault read endpoint enforces HTTP 401 unauth, HTTP 403 cross-tenant, and HTTP 200 authorized pull'
       );
 
-      // 16.3f Mandatory Pre-Pull Snapshot Failure Regression: Quota/Storage Exception on save
+      // 16.3f Mandatory Staged Pre-Pull Snapshot Failure Regression: Quota/Storage Exception on staging key
       const localAccountsBeforeFail = [{ id: 'acc_local_unsaved_1', type: 'cash', label: 'Local Safe Account', initialBalance: 500 }];
+      const localBudgetsBeforeFail = { income: 4200, expense: 1850, categories: { fuel: 300, rent: 950 } };
+      const localStockBeforeFail = [{ id: 'stk_local_1', name: 'Filter Pack', qty: 7 }];
+      const localVehiclesBeforeFail = [{ id: 'veh_local_1', plate: 'ABC-999' }];
+      const localRentalsBeforeFail = [{ id: 'rent_local_1', unit: 'Apt 4B' }];
+      const localThemeBeforeFail = 'dark';
+
+      const seedFullLocalWorkspace = () => ({
+        forecaster_auth_token: ownerAToken,
+        forecaster_auth_user: JSON.stringify({ id: regA.body.user.id, vaultId: ownerAVault }),
+        pro_transactions: JSON.stringify(localUnsavedTxns),
+        pro_accounts: JSON.stringify(localAccountsBeforeFail),
+        pro_budget_limits: JSON.stringify(localBudgetsBeforeFail),
+        pro_stock: JSON.stringify(localStockBeforeFail),
+        pro_vehicles: JSON.stringify(localVehiclesBeforeFail),
+        pro_rental_properties_v1: JSON.stringify(localRentalsBeforeFail),
+        pro_theme: localThemeBeforeFail
+      });
+
+      const assertFullLocalWorkspaceUnchanged = (domEnv: any) => {
+        const txns = JSON.parse(domEnv.storage.get('pro_transactions') || '[]');
+        const accs = JSON.parse(domEnv.storage.get('pro_accounts') || '[]');
+        const budgets = JSON.parse(domEnv.storage.get('pro_budget_limits') || '{}');
+        const stock = JSON.parse(domEnv.storage.get('pro_stock') || '[]');
+        const vehicles = JSON.parse(domEnv.storage.get('pro_vehicles') || '[]');
+        const rentals = JSON.parse(domEnv.storage.get('pro_rental_properties_v1') || '[]');
+        return (
+          JSON.stringify(txns) === JSON.stringify(localUnsavedTxns) &&
+          JSON.stringify(domEnv.sandbox.window.transactions) === JSON.stringify(localUnsavedTxns) &&
+          JSON.stringify(accs) === JSON.stringify(localAccountsBeforeFail) &&
+          JSON.stringify(domEnv.sandbox.window.accounts) === JSON.stringify(localAccountsBeforeFail) &&
+          JSON.stringify(budgets) === JSON.stringify(localBudgetsBeforeFail) &&
+          JSON.stringify(domEnv.sandbox.window.budgetLimits) === JSON.stringify(localBudgetsBeforeFail) &&
+          JSON.stringify(stock) === JSON.stringify(localStockBeforeFail) &&
+          JSON.stringify(domEnv.sandbox.window.stockData) === JSON.stringify(localStockBeforeFail) &&
+          JSON.stringify(vehicles) === JSON.stringify(localVehiclesBeforeFail) &&
+          JSON.stringify(rentals) === JSON.stringify(localRentalsBeforeFail) &&
+          domEnv.storage.get('pro_theme') === localThemeBeforeFail
+        );
+      };
+
       const priorValidSnapshotSentinel = JSON.stringify({
         snapshotVersion: '1.0.0',
         reason: 'prior_valid_backup',
         targetVaultId: ownerAVault,
         capturedAt: '2026-11-15T12:00:00.000Z',
-        data: { transactions: localUnsavedTxns, accounts: localAccountsBeforeFail },
-        rawKeys: { pro_transactions: JSON.stringify(localUnsavedTxns), pro_accounts: JSON.stringify(localAccountsBeforeFail) }
+        data: {
+          transactions: localUnsavedTxns,
+          accounts: localAccountsBeforeFail,
+          budgetLimits: localBudgetsBeforeFail,
+          stockData: localStockBeforeFail
+        },
+        rawKeys: {
+          pro_transactions: JSON.stringify(localUnsavedTxns),
+          pro_accounts: JSON.stringify(localAccountsBeforeFail),
+          pro_budget_limits: JSON.stringify(localBudgetsBeforeFail),
+          pro_stock: JSON.stringify(localStockBeforeFail),
+          pro_vehicles: JSON.stringify(localVehiclesBeforeFail),
+          pro_rental_properties_v1: JSON.stringify(localRentalsBeforeFail),
+          pro_theme: localThemeBeforeFail
+        }
       });
 
       const failQuotaDom = createMockDomEnv({
-        forecaster_auth_token: ownerAToken,
-        forecaster_auth_user: JSON.stringify({ id: regA.body.user.id, vaultId: ownerAVault }),
-        pro_transactions: JSON.stringify(localUnsavedTxns),
-        pro_accounts: JSON.stringify(localAccountsBeforeFail),
+        ...seedFullLocalWorkspace(),
         forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel
       });
       failQuotaDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
       failQuotaDom.setConfirm(true);
       failQuotaDom.sandbox.window.transactions = [...localUnsavedTxns];
       failQuotaDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+      failQuotaDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+      failQuotaDom.sandbox.window.stockData = [...localStockBeforeFail];
       let remoteRenderCalledOnQuotaFail = false;
       failQuotaDom.sandbox.window.renderAllViews = () => { remoteRenderCalledOnQuotaFail = true; };
+      let activeKeyWriteOrDeleteAttempted = false;
       const origQuotaSetItem = failQuotaDom.sandbox.localStorage.setItem;
+      const origQuotaRemoveItem = failQuotaDom.sandbox.localStorage.removeItem;
       failQuotaDom.sandbox.localStorage.setItem = (k: string, v: string) => {
-        if (k === 'forecaster_pre_pull_local_snapshot_v1') {
-          throw new Error('QuotaExceededError: Storage quota exceeded');
+        if (k === 'forecaster_pre_pull_local_snapshot_staging_v1') {
+          throw new Error('QuotaExceededError: Storage quota exceeded while staging');
         }
+        if (k === 'forecaster_pre_pull_local_snapshot_v1') activeKeyWriteOrDeleteAttempted = true;
         return origQuotaSetItem(k, v);
+      };
+      failQuotaDom.sandbox.localStorage.removeItem = (k: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_v1') activeKeyWriteOrDeleteAttempted = true;
+        return origQuotaRemoveItem(k);
       };
       vm.runInNewContext(cloudSyncCode, failQuotaDom.sandbox);
 
       failQuotaDom.toasts.length = 0;
       const quotaPullOk = await failQuotaDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
       const quotaLastError = String(failQuotaDom.sandbox.window.ForecasterCloudSync._lastPullError || '');
-      const quotaTxnsAfter = JSON.parse(failQuotaDom.storage.get('pro_transactions') || '[]');
-      const quotaAccsAfter = JSON.parse(failQuotaDom.storage.get('pro_accounts') || '[]');
       const quotaPriorSnapAfter = failQuotaDom.storage.get('forecaster_pre_pull_local_snapshot_v1');
 
       assert(
         quotaPullOk === false &&
-        quotaTxnsAfter.length === 1 &&
-        quotaTxnsAfter[0].id === 'tx_local_unsaved_1' &&
-        failQuotaDom.sandbox.window.transactions.length === 1 &&
-        failQuotaDom.sandbox.window.transactions[0].id === 'tx_local_unsaved_1' &&
-        quotaAccsAfter.length === 1 &&
-        quotaAccsAfter[0].id === 'acc_local_unsaved_1' &&
-        failQuotaDom.sandbox.window.accounts.length === 1 &&
-        failQuotaDom.sandbox.window.accounts[0].id === 'acc_local_unsaved_1' &&
+        assertFullLocalWorkspaceUnchanged(failQuotaDom) &&
+        !activeKeyWriteOrDeleteAttempted &&
+        !failQuotaDom.storage.has('forecaster_pre_pull_local_snapshot_staging_v1') &&
         !remoteRenderCalledOnQuotaFail &&
         !failQuotaDom.toasts.some(t => t.variant === 'success') &&
         failQuotaDom.toasts.some(t => t.variant === 'error' && t.msg.includes('Unable to pull cloud snapshot')) &&
         quotaLastError.toLowerCase().includes('recovery snapshot') &&
         quotaPriorSnapAfter === priorValidSnapshotSentinel,
-        'PullSnapshot 16.3f: Storage quota exception during pre-pull snapshot aborts pull, reports error, preserves local txns/accounts & prior snapshot',
+        'PullSnapshot 16.3f: Staging quota exception aborts pull, preserves active snapshot byte-for-byte and all local workspace modules',
         `quotaPullOk=${quotaPullOk} err=${quotaLastError}`
       );
 
-      // 16.3g Mandatory Pre-Pull Snapshot Failure Regression: Written snapshot cannot be read back or parsed
-      for (const badReadMode of ['corrupt_json', 'null_readback'] as const) {
-        const failReadDom = createMockDomEnv({
-          forecaster_auth_token: ownerAToken,
-          forecaster_auth_user: JSON.stringify({ id: regA.body.user.id, vaultId: ownerAVault }),
-          pro_transactions: JSON.stringify(localUnsavedTxns),
-          pro_accounts: JSON.stringify(localAccountsBeforeFail)
+      // 16.3g Mandatory Staged Pre-Pull Snapshot Failure Regression: Corrupt JSON, Null Read-Back, Incomplete & Altered Snapshot Data
+      const failureModes = ['corrupt_json', 'null_readback', 'incomplete_snapshot_data', 'altered_nested_module_data'] as const;
+      for (const badMode of failureModes) {
+        const failStageDom = createMockDomEnv({
+          ...seedFullLocalWorkspace(),
+          forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel
         });
-        failReadDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
-        failReadDom.setConfirm(true);
-        failReadDom.sandbox.window.transactions = [...localUnsavedTxns];
-        failReadDom.sandbox.window.accounts = [...localAccountsBeforeFail];
-        let remoteRenderCalledOnReadFail = false;
-        failReadDom.sandbox.window.renderAllViews = () => { remoteRenderCalledOnReadFail = true; };
+        failStageDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+        failStageDom.setConfirm(true);
+        failStageDom.sandbox.window.transactions = [...localUnsavedTxns];
+        failStageDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+        failStageDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+        failStageDom.sandbox.window.stockData = [...localStockBeforeFail];
+        let remoteRenderCalled = false;
+        failStageDom.sandbox.window.renderAllViews = () => { remoteRenderCalled = true; };
 
-        const origReadGetItem = failReadDom.sandbox.localStorage.getItem;
-        let removeCalledOnSnapshotKey = false;
-        const origReadRemoveItem = failReadDom.sandbox.localStorage.removeItem;
-        failReadDom.sandbox.localStorage.removeItem = (k: string) => {
-          if (k === 'forecaster_pre_pull_local_snapshot_v1') removeCalledOnSnapshotKey = true;
-          return origReadRemoveItem(k);
+        const origGetItem = failStageDom.sandbox.localStorage.getItem;
+        const origSetItem = failStageDom.sandbox.localStorage.setItem;
+        const origRemoveItem = failStageDom.sandbox.localStorage.removeItem;
+        let activeTouched = false;
+
+        failStageDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+          if (k === 'forecaster_pre_pull_local_snapshot_v1') activeTouched = true;
+          return origSetItem(k, v);
         };
-        failReadDom.sandbox.localStorage.getItem = (k: string) => {
-          if (k === 'forecaster_pre_pull_local_snapshot_v1') {
-            return badReadMode === 'corrupt_json' ? '{corrupt_unparseable_snapshot' : null;
+        failStageDom.sandbox.localStorage.removeItem = (k: string) => {
+          if (k === 'forecaster_pre_pull_local_snapshot_v1') activeTouched = true;
+          return origRemoveItem(k);
+        };
+        failStageDom.sandbox.localStorage.getItem = (k: string) => {
+          if (k === 'forecaster_pre_pull_local_snapshot_staging_v1') {
+            if (badMode === 'corrupt_json') return '{corrupt_unparseable_staging_json';
+            if (badMode === 'null_readback') return null;
+            const raw = origGetItem(k);
+            if (!raw) return raw;
+            const parsed = JSON.parse(raw);
+            if (badMode === 'incomplete_snapshot_data') {
+              delete parsed.data.vehicles;
+              delete parsed.rawKeys.pro_stock;
+              return JSON.stringify(parsed);
+            }
+            if (badMode === 'altered_nested_module_data') {
+              // Keep transactions & accounts array lengths identical while tampering nested budget & field values
+              parsed.data.budgetLimits.expense = 999999;
+              parsed.data.transactions[0].amount = 1;
+              return JSON.stringify(parsed);
+            }
           }
-          return origReadGetItem(k);
+          return origGetItem(k);
         };
-        vm.runInNewContext(cloudSyncCode, failReadDom.sandbox);
+        vm.runInNewContext(cloudSyncCode, failStageDom.sandbox);
 
-        failReadDom.toasts.length = 0;
-        const readFailPullOk = await failReadDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
-        const readFailErr = String(failReadDom.sandbox.window.ForecasterCloudSync._lastPullError || '');
-        const readFailTxnsAfter = JSON.parse(failReadDom.storage.get('pro_transactions') || '[]');
-        const readFailAccsAfter = JSON.parse(failReadDom.storage.get('pro_accounts') || '[]');
+        failStageDom.toasts.length = 0;
+        const failPullOk = await failStageDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+        const failErr = String(failStageDom.sandbox.window.ForecasterCloudSync._lastPullError || '');
+        const activeAfterFail = failStageDom.storage.get('forecaster_pre_pull_local_snapshot_v1');
 
         assert(
-          readFailPullOk === false &&
-          readFailTxnsAfter.length === 1 &&
-          readFailTxnsAfter[0].id === 'tx_local_unsaved_1' &&
-          failReadDom.sandbox.window.transactions.length === 1 &&
-          failReadDom.sandbox.window.transactions[0].id === 'tx_local_unsaved_1' &&
-          readFailAccsAfter.length === 1 &&
-          readFailAccsAfter[0].id === 'acc_local_unsaved_1' &&
-          failReadDom.sandbox.window.accounts.length === 1 &&
-          failReadDom.sandbox.window.accounts[0].id === 'acc_local_unsaved_1' &&
-          !remoteRenderCalledOnReadFail &&
-          !removeCalledOnSnapshotKey &&
-          !failReadDom.toasts.some(t => t.variant === 'success') &&
-          failReadDom.toasts.some(t => t.variant === 'error') &&
-          readFailErr.toLowerCase().includes('recovery snapshot'),
-          `PullSnapshot 16.3g (${badReadMode}): Unreadable/unparseable pre-pull snapshot aborts pull cleanly and preserves all local txns/accounts`,
-          `pullOk=${readFailPullOk} err=${readFailErr}`
+          failPullOk === false &&
+          !activeTouched &&
+          activeAfterFail === priorValidSnapshotSentinel &&
+          !failStageDom.storage.has('forecaster_pre_pull_local_snapshot_staging_v1') &&
+          assertFullLocalWorkspaceUnchanged(failStageDom) &&
+          !remoteRenderCalled &&
+          !failStageDom.toasts.some(t => t.variant === 'success') &&
+          failStageDom.toasts.some(t => t.variant === 'error') &&
+          failErr.toLowerCase().includes('recovery snapshot'),
+          `PullSnapshot 16.3g (${badMode}): Staging failure aborts pull cleanly, leaves prior active snapshot byte-for-byte intact, and preserves all workspace modules`,
+          `pullOk=${failPullOk} activeTouched=${activeTouched} err=${failErr}`
+        );
+      }
+
+      // 16.3h Scenario A — Staged Pre-Pull Snapshot Success: Stage -> Preserve Prev -> Promote -> Final Verify -> Cleanup Staging & Prev
+      const promoteDom = createMockDomEnv({
+        ...seedFullLocalWorkspace(),
+        forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel
+      });
+      promoteDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+      promoteDom.setConfirm(true);
+      promoteDom.sandbox.window.transactions = [...localUnsavedTxns];
+      promoteDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+      promoteDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+      promoteDom.sandbox.window.stockData = [...localStockBeforeFail];
+
+      const opTrace: string[] = [];
+      const origPromoSetItem = promoteDom.sandbox.localStorage.setItem;
+      const origPromoRemoveItem = promoteDom.sandbox.localStorage.removeItem;
+      promoteDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_staging_v1') opTrace.push('set:staging');
+        if (k === 'forecaster_pre_pull_local_snapshot_prev_v1') opTrace.push('set:prev');
+        if (k === 'forecaster_pre_pull_local_snapshot_v1') opTrace.push('set:active');
+        return origPromoSetItem(k, v);
+      };
+      promoteDom.sandbox.localStorage.removeItem = (k: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_staging_v1') opTrace.push('remove:staging');
+        if (k === 'forecaster_pre_pull_local_snapshot_prev_v1') opTrace.push('remove:prev');
+        if (k === 'forecaster_pre_pull_local_snapshot_v1') opTrace.push('remove:active');
+        return origPromoRemoveItem(k);
+      };
+      vm.runInNewContext(cloudSyncCode, promoteDom.sandbox);
+
+      promoteDom.toasts.length = 0;
+      const promotePullOk = await promoteDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+      const promotedRaw = promoteDom.storage.get('forecaster_pre_pull_local_snapshot_v1');
+      const promotedSnap = promoteDom.sandbox.window.ForecasterCloudSync.getPrePullLocalSnapshot();
+      const pulledTxnsAfterPromote = JSON.parse(promoteDom.storage.get('pro_transactions') || '[]');
+      const rollbackOkAfterPromote = promoteDom.sandbox.window.ForecasterCloudSync.restorePrePullLocalSnapshot(true, { skipConfirm: true });
+
+      const setStagingIdx = opTrace.indexOf('set:staging');
+      const setPrevIdx = opTrace.indexOf('set:prev');
+      const setActiveIdx = opTrace.indexOf('set:active');
+      const removeStagingIdx = opTrace.indexOf('remove:staging');
+      const removePrevIdx = opTrace.indexOf('remove:prev');
+
+      assert(
+        promotePullOk === true &&
+        setStagingIdx === 0 &&
+        setPrevIdx > setStagingIdx &&
+        setActiveIdx > setPrevIdx &&
+        removeStagingIdx > setActiveIdx &&
+        removePrevIdx > setActiveIdx &&
+        !opTrace.includes('remove:active') &&
+        !promoteDom.storage.has('forecaster_pre_pull_local_snapshot_staging_v1') &&
+        !promoteDom.storage.has('forecaster_pre_pull_local_snapshot_prev_v1') &&
+        !!promotedRaw &&
+        promotedRaw !== priorValidSnapshotSentinel &&
+        promotedSnap?.data?.budgetLimits?.categories?.rent === 950 &&
+        promotedSnap?.data?.stockData?.[0]?.id === 'stk_local_1' &&
+        promotedSnap?.data?.vehicles?.[0]?.id === 'veh_local_1' &&
+        promotedSnap?.data?.rentalProperties?.[0]?.id === 'rent_local_1' &&
+        promotedSnap?.data?.userSettings?.theme === 'dark' &&
+        pulledTxnsAfterPromote.some((t: any) => t.id === 'tx_owner_clean_1') &&
+        rollbackOkAfterPromote === true &&
+        assertFullLocalWorkspaceUnchanged(promoteDom),
+        'PullSnapshot 16.3h (Scenario A): Successful staging -> prev backup -> promotion -> final verify -> cleanup of temp keys -> clean pull & rollback',
+        `trace=${opTrace.join('->')} promotePullOk=${promotePullOk} rollbackOk=${rollbackOkAfterPromote}`
+      );
+
+      // 16.3i Scenario B — Promotion write failure: staging succeeds, active write fails -> pull aborts, active & staged preserved
+      const promoFailDom = createMockDomEnv({
+        ...seedFullLocalWorkspace(),
+        forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel
+      });
+      promoFailDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+      promoFailDom.setConfirm(true);
+      promoFailDom.sandbox.window.transactions = [...localUnsavedTxns];
+      promoFailDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+      promoFailDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+      promoFailDom.sandbox.window.stockData = [...localStockBeforeFail];
+      let remoteRenderedOnPromoFail = false;
+      promoFailDom.sandbox.window.renderAllViews = () => { remoteRenderedOnPromoFail = true; };
+
+      const origBSetItem = promoFailDom.sandbox.localStorage.setItem;
+      promoFailDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_v1') {
+          throw new Error('Simulated promotion write error');
+        }
+        return origBSetItem(k, v);
+      };
+      vm.runInNewContext(cloudSyncCode, promoFailDom.sandbox);
+
+      promoFailDom.toasts.length = 0;
+      const promoFailPullOk = await promoFailDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+      const promoFailErr = String(promoFailDom.sandbox.window.ForecasterCloudSync._lastPullError || '');
+      const promoFailStagedRaw = promoFailDom.storage.get('forecaster_pre_pull_local_snapshot_staging_v1');
+
+      assert(
+        promoFailPullOk === false &&
+        promoFailDom.storage.get('forecaster_pre_pull_local_snapshot_v1') === priorValidSnapshotSentinel &&
+        !!promoFailStagedRaw &&
+        JSON.parse(promoFailStagedRaw)?.data?.budgetLimits?.expense === 1850 &&
+        assertFullLocalWorkspaceUnchanged(promoFailDom) &&
+        !remoteRenderedOnPromoFail &&
+        !promoFailDom.toasts.some(t => t.variant === 'success') &&
+        promoFailDom.toasts.some(t => t.variant === 'error') &&
+        promoFailErr.toLowerCase().includes('restored'),
+        'PullSnapshot 16.3i (Scenario B): Promotion write failure aborts pull, keeps previous active snapshot + staged snapshot intact, and preserves workspace',
+        `pullOk=${promoFailPullOk} err=${promoFailErr}`
+      );
+
+      // 16.3j Scenario C — Final verification failure: promotion write succeeds but active read-back is corrupt -> aborts & restores previous snapshot
+      const finalFailDom = createMockDomEnv({
+        ...seedFullLocalWorkspace(),
+        forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel
+      });
+      finalFailDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+      finalFailDom.setConfirm(true);
+      finalFailDom.sandbox.window.transactions = [...localUnsavedTxns];
+      finalFailDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+      finalFailDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+      finalFailDom.sandbox.window.stockData = [...localStockBeforeFail];
+      let remoteRenderedOnFinalFail = false;
+      finalFailDom.sandbox.window.renderAllViews = () => { remoteRenderedOnFinalFail = true; };
+
+      const origCSetItem = finalFailDom.sandbox.localStorage.setItem;
+      const origCGetItem = finalFailDom.sandbox.localStorage.getItem;
+      let activeWriteCount = 0;
+      let corruptFirstPromotedRead = false;
+      finalFailDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_v1') {
+          activeWriteCount++;
+          if (activeWriteCount === 1) {
+            corruptFirstPromotedRead = true;
+            return origCSetItem(k, '{corrupted_active_snapshot_payload');
+          }
+        }
+        return origCSetItem(k, v);
+      };
+      finalFailDom.sandbox.localStorage.getItem = (k: string) => {
+        const val = origCGetItem(k);
+        if (k === 'forecaster_pre_pull_local_snapshot_v1' && corruptFirstPromotedRead) {
+          corruptFirstPromotedRead = false;
+          return '{corrupted_active_snapshot_payload';
+        }
+        return val;
+      };
+      vm.runInNewContext(cloudSyncCode, finalFailDom.sandbox);
+
+      finalFailDom.toasts.length = 0;
+      const finalFailPullOk = await finalFailDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+      const finalFailErr = String(finalFailDom.sandbox.window.ForecasterCloudSync._lastPullError || '');
+
+      assert(
+        finalFailPullOk === false &&
+        activeWriteCount === 2 &&
+        finalFailDom.storage.get('forecaster_pre_pull_local_snapshot_v1') === priorValidSnapshotSentinel &&
+        finalFailDom.storage.has('forecaster_pre_pull_local_snapshot_staging_v1') &&
+        assertFullLocalWorkspaceUnchanged(finalFailDom) &&
+        !remoteRenderedOnFinalFail &&
+        !finalFailDom.toasts.some(t => t.variant === 'success') &&
+        finalFailDom.toasts.some(t => t.variant === 'error') &&
+        finalFailErr.toLowerCase().includes('restored'),
+        'PullSnapshot 16.3j (Scenario C): Final active verification failure aborts pull cleanly, restores previous active snapshot, and applies no remote data',
+        `pullOk=${finalFailPullOk} activeWrites=${activeWriteCount} err=${finalFailErr}`
+      );
+
+      // 16.3k Scenario D — Recovery failure: both promotion AND active restoration fail -> retains backup + staging, reports critical manual recovery error
+      const doubleFailDom = createMockDomEnv({
+        ...seedFullLocalWorkspace(),
+        forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel
+      });
+      doubleFailDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+      doubleFailDom.setConfirm(true);
+      doubleFailDom.sandbox.window.transactions = [...localUnsavedTxns];
+      doubleFailDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+      doubleFailDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+      doubleFailDom.sandbox.window.stockData = [...localStockBeforeFail];
+      let remoteRenderedOnDoubleFail = false;
+      doubleFailDom.sandbox.window.renderAllViews = () => { remoteRenderedOnDoubleFail = true; };
+
+      const origDSetItem = doubleFailDom.sandbox.localStorage.setItem;
+      let dActiveSetCalls = 0;
+      doubleFailDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_v1') {
+          dActiveSetCalls++;
+          if (dActiveSetCalls === 1) {
+            // Promotion corrupts active slot before throwing/failing verification
+            origDSetItem(k, '{corrupt_after_failed_promotion');
+            throw new Error('PromotionWriteError: device write fault');
+          }
+          throw new Error('RestorationWriteError: active key locked after fault');
+        }
+        return origDSetItem(k, v);
+      };
+      vm.runInNewContext(cloudSyncCode, doubleFailDom.sandbox);
+
+      doubleFailDom.toasts.length = 0;
+      const doubleFailPullOk = await doubleFailDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+      const doubleFailErr = String(doubleFailDom.sandbox.window.ForecasterCloudSync._lastPullError || '');
+      const preservedPrevCopy = doubleFailDom.storage.get('forecaster_pre_pull_local_snapshot_prev_v1');
+      const preservedStagedCopy = doubleFailDom.storage.get('forecaster_pre_pull_local_snapshot_staging_v1');
+
+      assert(
+        doubleFailPullOk === false &&
+        dActiveSetCalls === 2 &&
+        preservedPrevCopy === priorValidSnapshotSentinel &&
+        !!preservedStagedCopy &&
+        JSON.parse(preservedStagedCopy)?.data?.transactions?.[0]?.id === 'tx_local_unsaved_1' &&
+        doubleFailErr.includes('CRITICAL RECOVERY ERROR') &&
+        doubleFailErr.toLowerCase().includes('manual recovery') &&
+        !/snapshot was restored/i.test(doubleFailErr) &&
+        assertFullLocalWorkspaceUnchanged(doubleFailDom) &&
+        !remoteRenderedOnDoubleFail &&
+        !doubleFailDom.toasts.some(t => t.variant === 'success') &&
+        doubleFailDom.toasts.some(t => t.variant === 'error'),
+        'PullSnapshot 16.3k (Scenario D): Double failure (promotion + restore) retains prev backup & staged copies, reports manual recovery error without claiming restoration',
+        `pullOk=${doubleFailPullOk} calls=${dActiveSetCalls} err=${doubleFailErr}`
+      );
+
+      // 16.3l Scenario E — Storage quota failure across recovery stages (prev backup write & active promotion write)
+      for (const quotaStageKey of ['forecaster_pre_pull_local_snapshot_prev_v1', 'forecaster_pre_pull_local_snapshot_v1'] as const) {
+        const stageQuotaDom = createMockDomEnv({
+          ...seedFullLocalWorkspace(),
+          forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel
+        });
+        stageQuotaDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+        stageQuotaDom.setConfirm(true);
+        stageQuotaDom.sandbox.window.transactions = [...localUnsavedTxns];
+        stageQuotaDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+        stageQuotaDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+        stageQuotaDom.sandbox.window.stockData = [...localStockBeforeFail];
+        let remoteRenderedStageQuota = false;
+        stageQuotaDom.sandbox.window.renderAllViews = () => { remoteRenderedStageQuota = true; };
+
+        const origEQSetItem = stageQuotaDom.sandbox.localStorage.setItem;
+        stageQuotaDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+          if (k === quotaStageKey) {
+            throw new Error(`QuotaExceededError: Storage quota exceeded writing ${quotaStageKey}`);
+          }
+          return origEQSetItem(k, v);
+        };
+        vm.runInNewContext(cloudSyncCode, stageQuotaDom.sandbox);
+
+        stageQuotaDom.toasts.length = 0;
+        const eqPullOk = await stageQuotaDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+        const eqStagedRaw = stageQuotaDom.storage.get('forecaster_pre_pull_local_snapshot_staging_v1');
+
+        assert(
+          eqPullOk === false &&
+          stageQuotaDom.storage.get('forecaster_pre_pull_local_snapshot_v1') === priorValidSnapshotSentinel &&
+          !!eqStagedRaw &&
+          JSON.parse(eqStagedRaw)?.data?.transactions?.[0]?.id === 'tx_local_unsaved_1' &&
+          assertFullLocalWorkspaceUnchanged(stageQuotaDom) &&
+          !remoteRenderedStageQuota &&
+          !stageQuotaDom.toasts.some(t => t.variant === 'success') &&
+          stageQuotaDom.toasts.some(t => t.variant === 'error'),
+          `PullSnapshot 16.3l (Scenario E: quota on ${quotaStageKey}): Aborts pull without losing active snapshot, staged snapshot, or local workspace`,
+          `pullOk=${eqPullOk}`
         );
       }
 
