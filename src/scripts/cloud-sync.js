@@ -169,6 +169,45 @@
     }
   }
 
+  function inspectRecoveryKey(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw || typeof raw !== 'string') {
+        return { raw: null, parsed: null, isValid: false };
+      }
+      const parsed = parseValidSnapshotObject(raw);
+      if (!parsed) {
+        return { raw, parsed: null, isValid: false };
+      }
+      const hasValidMeta =
+        typeof parsed.snapshotVersion === 'string' &&
+        typeof parsed.capturedAt === 'string' &&
+        !isNaN(new Date(parsed.capturedAt).getTime());
+      const hasValidRawKeys = Object.keys(parsed.rawKeys).length > 0;
+      const hasValidData =
+        Array.isArray(parsed.data.transactions) &&
+        Array.isArray(parsed.data.accounts);
+      const isValid = Boolean(hasValidMeta && hasValidRawKeys && hasValidData);
+      return { raw, parsed: isValid ? parsed : null, isValid };
+    } catch (e) {
+      return { raw: null, parsed: null, isValid: false };
+    }
+  }
+
+  function hasOtherValidRecoveryCopy(excludeKey) {
+    const recoveryKeys = [
+      LOCAL_SAFETY_SNAPSHOT_KEY,
+      LOCAL_SAFETY_SNAPSHOT_PREV_KEY,
+      LOCAL_SAFETY_SNAPSHOT_STAGING_KEY
+    ];
+    for (let i = 0; i < recoveryKeys.length; i++) {
+      const k = recoveryKeys[i];
+      if (k === excludeKey) continue;
+      if (inspectRecoveryKey(k).isValid) return true;
+    }
+    return false;
+  }
+
   window.ForecasterCloudSync = {
     getVaultId: function() {
       return getStoredVaultId();
@@ -193,11 +232,41 @@
       let hasValidPreviousActive = false;
       let prevBackupStored = false;
 
-      const cleanupKeySafe = (key) => {
+      // Clean up ONLY an invalid entry created during this failed attempt, and ONLY when another valid recovery copy exists
+      const cleanupInvalidRecoveryKey = (key) => {
         try {
+          const current = inspectRecoveryKey(key);
+          if (current.isValid) {
+            // Never delete a valid recovery copy merely because it is temporary or older
+            return false;
+          }
+          if (!hasOtherValidRecoveryCopy(key)) return false;
           localStorage.removeItem(key);
+          return true;
+        } catch (cleanupErr) {
+          console.warn(`[Forecaster CloudSync] Could not clean up invalid recovery key "${key}":`, cleanupErr);
+          return false;
+        }
+      };
+
+      // Clean up temporary keys AFTER promotion ONLY if promoted active snapshot is verified and remains intact
+      const cleanupPromotedTempKey = (key, expectedPromotedSnapshot) => {
+        try {
+          const activeCheckState = inspectRecoveryKey(LOCAL_SAFETY_SNAPSHOT_KEY);
+          if (
+            !activeCheckState.isValid ||
+            !verifySnapshotIntegrity(activeCheckState.parsed, expectedPromotedSnapshot).ok
+          ) {
+            return false;
+          }
+          if (!hasOtherValidRecoveryCopy(key)) {
+            return false;
+          }
+          localStorage.removeItem(key);
+          return true;
         } catch (cleanupErr) {
           console.warn(`[Forecaster CloudSync] Could not clean up temporary key "${key}":`, cleanupErr);
+          return false;
         }
       };
 
@@ -210,6 +279,30 @@
           return Boolean(readParsed && previousActiveParsed && areValuesDeepEqual(readParsed, previousActiveParsed));
         } catch (_) {
           return false;
+        }
+      };
+
+      const preserveOrRestorePriorKey = (key, priorState, cleanupUnverifiedAttempt = false) => {
+        if (!priorState || !priorState.isValid || !priorState.raw) {
+          if (cleanupUnverifiedAttempt) {
+            try {
+              if (hasOtherValidRecoveryCopy(key)) {
+                localStorage.removeItem(key);
+              }
+            } catch (_) {}
+            return;
+          }
+          cleanupInvalidRecoveryKey(key);
+          return;
+        }
+        try {
+          const curRaw = localStorage.getItem(key);
+          if (curRaw === priorState.raw) return;
+          const curInspect = inspectRecoveryKey(key);
+          if (curInspect.isValid && areValuesDeepEqual(curInspect.parsed, priorState.parsed)) return;
+          localStorage.setItem(key, priorState.raw);
+        } catch (_) {
+          // Do not delete key on restore failure
         }
       };
 
@@ -234,20 +327,17 @@
           }
 
           if (restoredToActive) {
-            if (prevBackupStored) {
-              cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_PREV_KEY);
-            }
             this._lastSnapshotError =
-              `${failureContextMsg}. Previous active recovery snapshot was restored and verified intact; staged snapshot was preserved.`;
+              `${failureContextMsg}. Previous active recovery snapshot was restored and verified intact; temporary recovery copies were preserved.`;
             return null;
           }
 
           // CRITICAL: Both promotion AND restoration to active key failed — retain best available recovery copies and never claim restoration succeeded
           const retainedLocations = [];
-          if (prevBackupStored && verifyPreviousActiveAt(LOCAL_SAFETY_SNAPSHOT_PREV_KEY)) {
+          if (inspectRecoveryKey(LOCAL_SAFETY_SNAPSHOT_PREV_KEY).isValid) {
             retainedLocations.push(LOCAL_SAFETY_SNAPSHOT_PREV_KEY);
           }
-          if (stagingVerified) {
+          if (inspectRecoveryKey(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY).isValid || stagingVerified) {
             retainedLocations.push(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
           }
           const locationText = retainedLocations.length > 0
@@ -259,7 +349,7 @@
           return null;
         }
 
-        if (stagingVerified) {
+        if (stagingVerified || inspectRecoveryKey(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY).isValid) {
           this._lastSnapshotError =
             `CRITICAL RECOVERY ERROR: ${failureContextMsg}. No prior active snapshot existed, so the verified staged snapshot remains preserved in ${LOCAL_SAFETY_SNAPSHOT_STAGING_KEY}; manual recovery may be necessary.`;
         } else {
@@ -269,16 +359,14 @@
       };
 
       try {
-        // Step 0: Preserve existing valid active recovery snapshot before staging or promotion
-        try {
-          previousActiveRaw = localStorage.getItem(LOCAL_SAFETY_SNAPSHOT_KEY);
-          previousActiveParsed = parseValidSnapshotObject(previousActiveRaw);
-          hasValidPreviousActive = Boolean(previousActiveRaw && previousActiveParsed);
-        } catch (readPrevErr) {
-          previousActiveRaw = null;
-          previousActiveParsed = null;
-          hasValidPreviousActive = false;
-        }
+        // Step 0: Inspect & preserve existing valid recovery snapshots across ALL 3 keys BEFORE any write or cleanup
+        const priorActive = inspectRecoveryKey(LOCAL_SAFETY_SNAPSHOT_KEY);
+        previousActiveRaw = priorActive.raw;
+        previousActiveParsed = priorActive.parsed;
+        hasValidPreviousActive = priorActive.isValid;
+
+        const priorStaging = inspectRecoveryKey(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
+        const priorPrev = inspectRecoveryKey(LOCAL_SAFETY_SNAPSHOT_PREV_KEY);
 
         const rawKeys = {};
         LOCAL_SNAPSHOT_STORAGE_KEYS.forEach((k) => {
@@ -295,16 +383,16 @@
         };
         const serialized = JSON.stringify(snapshot);
 
-        // Stage 1: Write candidate snapshot ONLY to staging key (active snapshot stays untouched)
+        // Stage 1: Write candidate snapshot ONLY to staging key (active & previous snapshots untouched)
         try {
           localStorage.setItem(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY, serialized);
         } catch (stageWriteErr) {
-          cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
+          preserveOrRestorePriorKey(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY, priorStaging, false);
           this._lastSnapshotError = stageWriteErr?.message || 'Failed to write staged pre-pull recovery snapshot.';
           return null;
         }
 
-        // Stage 2 & 3: Read back, parse, and verify staging snapshot completely BEFORE deleting or promoting anything
+        // Stage 2 & 3: Read back, parse, and verify staging snapshot completely BEFORE touching active/prev keys
         try {
           const stagedRaw = localStorage.getItem(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
           if (!stagedRaw || typeof stagedRaw !== 'string') {
@@ -323,7 +411,7 @@
           stagedVerifiedRaw = stagedRaw;
           stagingVerified = true;
         } catch (stageVerifyErr) {
-          cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
+          preserveOrRestorePriorKey(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY, priorStaging, true);
           this._lastSnapshotError = stageVerifyErr?.message || 'Staged recovery snapshot verification failed.';
           return null;
         }
@@ -337,9 +425,9 @@
             }
             prevBackupStored = true;
           } catch (prevBackupErr) {
-            cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_PREV_KEY);
+            preserveOrRestorePriorKey(LOCAL_SAFETY_SNAPSHOT_PREV_KEY, priorPrev, true);
             this._lastSnapshotError =
-              `Could not back up previous recovery snapshot before promotion (${prevBackupErr?.message || 'storage error'}). Existing active snapshot remains untouched.`;
+              `Could not back up previous recovery snapshot before promotion (${prevBackupErr?.message || 'storage error'}). Existing recovery snapshots remain preserved.`;
             return null;
           }
         }
@@ -370,9 +458,15 @@
             throw new Error(`Promoted active recovery snapshot final verification failed: ${activeCheck.reason}`);
           }
 
-          // Stage 6: Only clean up staging and temporary recovery keys AFTER final active verification succeeds
-          cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY);
-          cleanupKeySafe(LOCAL_SAFETY_SNAPSHOT_PREV_KEY);
+          // Stage 6: Conservative post-promotion cleanup ONLY after verifying active snapshot remains valid & complete
+          const finalPreCleanCheck = inspectRecoveryKey(LOCAL_SAFETY_SNAPSHOT_KEY);
+          if (!finalPreCleanCheck.isValid || !verifySnapshotIntegrity(finalPreCleanCheck.parsed, snapshot).ok) {
+            return attemptRestorePreviousActive(
+              'Promoted active recovery snapshot failed pre-cleanup verification'
+            );
+          }
+          cleanupPromotedTempKey(LOCAL_SAFETY_SNAPSHOT_STAGING_KEY, snapshot);
+          cleanupPromotedTempKey(LOCAL_SAFETY_SNAPSHOT_PREV_KEY, snapshot);
           return activeParsed;
         } catch (finalVerifyErr) {
           return attemptRestorePreviousActive(

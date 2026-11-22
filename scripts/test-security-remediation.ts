@@ -4765,6 +4765,231 @@ async function runSecurityTestSuite() {
         );
       }
 
+      const priorStagingSentinel = JSON.stringify({
+        snapshotVersion: '1.0.0',
+        reason: 'prior_valid_staging_copy',
+        targetVaultId: ownerAVault,
+        capturedAt: '2026-11-14T08:00:00.000Z',
+        data: {
+          transactions: localUnsavedTxns,
+          accounts: localAccountsBeforeFail,
+          budgetLimits: localBudgetsBeforeFail,
+          stockData: localStockBeforeFail
+        },
+        rawKeys: {
+          pro_transactions: JSON.stringify(localUnsavedTxns),
+          pro_accounts: JSON.stringify(localAccountsBeforeFail),
+          pro_budget_limits: JSON.stringify(localBudgetsBeforeFail),
+          pro_stock: JSON.stringify(localStockBeforeFail),
+          pro_vehicles: JSON.stringify(localVehiclesBeforeFail),
+          pro_rental_properties_v1: JSON.stringify(localRentalsBeforeFail),
+          pro_theme: localThemeBeforeFail
+        }
+      });
+      const priorPrevSentinel = JSON.stringify({
+        snapshotVersion: '1.0.0',
+        reason: 'prior_valid_prev_copy',
+        targetVaultId: ownerAVault,
+        capturedAt: '2026-11-13T09:30:00.000Z',
+        data: {
+          transactions: localUnsavedTxns,
+          accounts: localAccountsBeforeFail,
+          budgetLimits: localBudgetsBeforeFail,
+          stockData: localStockBeforeFail
+        },
+        rawKeys: {
+          pro_transactions: JSON.stringify(localUnsavedTxns),
+          pro_accounts: JSON.stringify(localAccountsBeforeFail),
+          pro_budget_limits: JSON.stringify(localBudgetsBeforeFail),
+          pro_stock: JSON.stringify(localStockBeforeFail),
+          pro_vehicles: JSON.stringify(localVehiclesBeforeFail),
+          pro_rental_properties_v1: JSON.stringify(localRentalsBeforeFail),
+          pro_theme: localThemeBeforeFail
+        }
+      });
+
+      // 16.3m Existing valid staging snapshot preservation on staging write failure
+      const keepStageDom = createMockDomEnv({
+        ...seedFullLocalWorkspace(),
+        forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel,
+        forecaster_pre_pull_local_snapshot_prev_v1: priorPrevSentinel,
+        forecaster_pre_pull_local_snapshot_staging_v1: priorStagingSentinel
+      });
+      keepStageDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+      keepStageDom.setConfirm(true);
+      keepStageDom.sandbox.window.transactions = [...localUnsavedTxns];
+      keepStageDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+      keepStageDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+      keepStageDom.sandbox.window.stockData = [...localStockBeforeFail];
+      let keepStageRemoteRender = false;
+      keepStageDom.sandbox.window.renderAllViews = () => { keepStageRemoteRender = true; };
+
+      const origKeepStageSet = keepStageDom.sandbox.localStorage.setItem;
+      keepStageDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_staging_v1') {
+          throw new Error('QuotaExceededError: staging write blocked');
+        }
+        return origKeepStageSet(k, v);
+      };
+      vm.runInNewContext(cloudSyncCode, keepStageDom.sandbox);
+
+      keepStageDom.toasts.length = 0;
+      const keepStagePullOk = await keepStageDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+      assert(
+        keepStagePullOk === false &&
+        keepStageDom.storage.get('forecaster_pre_pull_local_snapshot_staging_v1') === priorStagingSentinel &&
+        keepStageDom.storage.get('forecaster_pre_pull_local_snapshot_v1') === priorValidSnapshotSentinel &&
+        keepStageDom.storage.get('forecaster_pre_pull_local_snapshot_prev_v1') === priorPrevSentinel &&
+        assertFullLocalWorkspaceUnchanged(keepStageDom) &&
+        !keepStageRemoteRender &&
+        !keepStageDom.toasts.some(t => t.variant === 'success') &&
+        keepStageDom.toasts.some(t => t.variant === 'error'),
+        'PullSnapshot 16.3m: Existing valid staging snapshot remains byte-for-byte unchanged when writing a new staging snapshot fails',
+        `pullOk=${keepStagePullOk}`
+      );
+
+      // 16.3n Existing valid previous snapshot preservation on previous-snapshot write failure
+      const keepPrevDom = createMockDomEnv({
+        ...seedFullLocalWorkspace(),
+        forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel,
+        forecaster_pre_pull_local_snapshot_prev_v1: priorPrevSentinel
+      });
+      keepPrevDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+      keepPrevDom.setConfirm(true);
+      keepPrevDom.sandbox.window.transactions = [...localUnsavedTxns];
+      keepPrevDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+      keepPrevDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+      keepPrevDom.sandbox.window.stockData = [...localStockBeforeFail];
+      let keepPrevRemoteRender = false;
+      keepPrevDom.sandbox.window.renderAllViews = () => { keepPrevRemoteRender = true; };
+
+      const origKeepPrevSet = keepPrevDom.sandbox.localStorage.setItem;
+      keepPrevDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_prev_v1') {
+          throw new Error('WriteError: failed saving new previous snapshot copy');
+        }
+        return origKeepPrevSet(k, v);
+      };
+      vm.runInNewContext(cloudSyncCode, keepPrevDom.sandbox);
+
+      keepPrevDom.toasts.length = 0;
+      const keepPrevPullOk = await keepPrevDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+      const newStagedOnKeepPrev = keepPrevDom.storage.get('forecaster_pre_pull_local_snapshot_staging_v1');
+      assert(
+        keepPrevPullOk === false &&
+        keepPrevDom.storage.get('forecaster_pre_pull_local_snapshot_prev_v1') === priorPrevSentinel &&
+        keepPrevDom.storage.get('forecaster_pre_pull_local_snapshot_v1') === priorValidSnapshotSentinel &&
+        !!newStagedOnKeepPrev &&
+        JSON.parse(newStagedOnKeepPrev)?.data?.transactions?.[0]?.id === 'tx_local_unsaved_1' &&
+        assertFullLocalWorkspaceUnchanged(keepPrevDom) &&
+        !keepPrevRemoteRender &&
+        !keepPrevDom.toasts.some(t => t.variant === 'success') &&
+        keepPrevDom.toasts.some(t => t.variant === 'error'),
+        'PullSnapshot 16.3n: Existing valid previous snapshot remains byte-for-byte unchanged, active unchanged, and staged copy retained on prev-backup write failure',
+        `pullOk=${keepPrevPullOk}`
+      );
+
+      // 16.3o Existing recovery copies preserved during quota failure across all 3 pre-populated keys
+      for (const allThreeQuotaKey of [
+        'forecaster_pre_pull_local_snapshot_staging_v1',
+        'forecaster_pre_pull_local_snapshot_prev_v1',
+        'forecaster_pre_pull_local_snapshot_v1'
+      ] as const) {
+        const allThreeDom = createMockDomEnv({
+          ...seedFullLocalWorkspace(),
+          forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel,
+          forecaster_pre_pull_local_snapshot_prev_v1: priorPrevSentinel,
+          forecaster_pre_pull_local_snapshot_staging_v1: priorStagingSentinel
+        });
+        allThreeDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+        allThreeDom.setConfirm(true);
+        allThreeDom.sandbox.window.transactions = [...localUnsavedTxns];
+        allThreeDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+        allThreeDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+        allThreeDom.sandbox.window.stockData = [...localStockBeforeFail];
+        let allThreeRemoteRender = false;
+        allThreeDom.sandbox.window.renderAllViews = () => { allThreeRemoteRender = true; };
+
+        const origAllThreeSet = allThreeDom.sandbox.localStorage.setItem;
+        allThreeDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+          if (k === allThreeQuotaKey) {
+            throw new Error(`QuotaExceededError: quota exhausted on ${allThreeQuotaKey}`);
+          }
+          return origAllThreeSet(k, v);
+        };
+        vm.runInNewContext(cloudSyncCode, allThreeDom.sandbox);
+
+        allThreeDom.toasts.length = 0;
+        const allThreePullOk = await allThreeDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+        const curActive = allThreeDom.storage.get('forecaster_pre_pull_local_snapshot_v1');
+        const curPrev = allThreeDom.storage.get('forecaster_pre_pull_local_snapshot_prev_v1');
+        const curStaging = allThreeDom.storage.get('forecaster_pre_pull_local_snapshot_staging_v1');
+
+        assert(
+          allThreePullOk === false &&
+          curActive === priorValidSnapshotSentinel &&
+          !!curPrev &&
+          JSON.parse(curPrev)?.data?.transactions?.[0]?.id === 'tx_local_unsaved_1' &&
+          !!curStaging &&
+          JSON.parse(curStaging)?.data?.transactions?.[0]?.id === 'tx_local_unsaved_1' &&
+          assertFullLocalWorkspaceUnchanged(allThreeDom) &&
+          !allThreeRemoteRender &&
+          !allThreeDom.toasts.some(t => t.variant === 'success') &&
+          allThreeDom.toasts.some(t => t.variant === 'error'),
+          `PullSnapshot 16.3o (quota on ${allThreeQuotaKey}): All existing valid recovery copies remain intact and zero remote data applied`,
+          `pullOk=${allThreePullOk}`
+        );
+      }
+
+      // 16.3p Successful cleanup safety: removes temp keys only when promoted active snapshot is verified, never removing the only remaining valid recovery copy
+      const guardedCleanDom = createMockDomEnv({
+        ...seedFullLocalWorkspace(),
+        forecaster_pre_pull_local_snapshot_v1: priorValidSnapshotSentinel
+      });
+      guardedCleanDom.setFetch(async (url: string, opts?: any) => fetch(`${p1123Srv.baseUrl}${url}`, opts as any));
+      guardedCleanDom.setConfirm(true);
+      guardedCleanDom.sandbox.window.transactions = [...localUnsavedTxns];
+      guardedCleanDom.sandbox.window.accounts = [...localAccountsBeforeFail];
+      guardedCleanDom.sandbox.window.budgetLimits = JSON.parse(JSON.stringify(localBudgetsBeforeFail));
+      guardedCleanDom.sandbox.window.stockData = [...localStockBeforeFail];
+      let guardedRemoteRender = false;
+      guardedCleanDom.sandbox.window.renderAllViews = () => { guardedRemoteRender = true; };
+
+      // Simulate active key disappearing immediately after Stage 5 check (before Stage 6 pre-cleanup re-verification)
+      const origGuardedGet = guardedCleanDom.sandbox.localStorage.getItem;
+      let activeReadsAfterPromotion = 0;
+      let sawActivePromotionSet = false;
+      const origGuardedSet = guardedCleanDom.sandbox.localStorage.setItem;
+      guardedCleanDom.sandbox.localStorage.setItem = (k: string, v: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_v1' && activeReadsAfterPromotion === 0 && v !== priorValidSnapshotSentinel) {
+          sawActivePromotionSet = true;
+        }
+        return origGuardedSet(k, v);
+      };
+      guardedCleanDom.sandbox.localStorage.getItem = (k: string) => {
+        if (k === 'forecaster_pre_pull_local_snapshot_v1' && sawActivePromotionSet) {
+          activeReadsAfterPromotion++;
+          if (activeReadsAfterPromotion >= 2) {
+            return null;
+          }
+        }
+        return origGuardedGet(k);
+      };
+      vm.runInNewContext(cloudSyncCode, guardedCleanDom.sandbox);
+
+      guardedCleanDom.toasts.length = 0;
+      const guardedPullOk = await guardedCleanDom.sandbox.window.ForecasterCloudSync.restoreHistory(true, { skipConfirm: true });
+      assert(
+        guardedPullOk === false &&
+        !guardedRemoteRender &&
+        guardedCleanDom.storage.has('forecaster_pre_pull_local_snapshot_staging_v1') &&
+        guardedCleanDom.storage.get('forecaster_pre_pull_local_snapshot_prev_v1') === priorValidSnapshotSentinel &&
+        assertFullLocalWorkspaceUnchanged(guardedCleanDom) &&
+        !guardedCleanDom.toasts.some(t => t.variant === 'success'),
+        'PullSnapshot 16.3p: Conservative cleanup refuses to delete temp recovery copies and aborts pull if active snapshot becomes invalid before cleanup',
+        `guardedPullOk=${guardedPullOk} activeReads=${activeReadsAfterPromotion}`
+      );
+
       // 16.4 Mirrored src/ and public/ file synchronization parity
       const mirrorPairs: Array<[string, string]> = [
         ['index.html', 'public/index.html'],
