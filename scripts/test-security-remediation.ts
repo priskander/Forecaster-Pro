@@ -3678,6 +3678,9 @@ async function runSecurityTestSuite() {
           click() {
             (this.listeners['click'] || []).forEach(fn => fn({ target: this, preventDefault() {} }));
           }
+          dispatchEvent(evt: string) {
+            (this.listeners[evt] || []).forEach(fn => fn({ target: this, preventDefault() {} }));
+          }
           setAttribute(k: string, v: string) { this.attributes[k] = String(v); }
           getAttribute(k: string) { return this.attributes[k] ?? null; }
 
@@ -3753,8 +3756,18 @@ async function runSecurityTestSuite() {
         let nextConfirmResult = true;
         let confirmCalls = 0;
 
+        const consoleLogs: Array<{ level: string; args: any[] }> = [];
+        const trackedConsole = {
+          log: (...args: any[]) => { consoleLogs.push({ level: 'log', args }); },
+          warn: (...args: any[]) => { consoleLogs.push({ level: 'warn', args }); },
+          error: (...args: any[]) => { consoleLogs.push({ level: 'error', args }); },
+          info: (...args: any[]) => { consoleLogs.push({ level: 'info', args }); }
+        };
+
+        const webCryptoImpl = (crypto as any).webcrypto || (globalThis as any).crypto;
+
         const sandbox: any = {
-          console,
+          console: trackedConsole,
           setTimeout: (fn: any) => 0,
           clearTimeout: () => {},
           setInterval: () => 0,
@@ -3772,10 +3785,18 @@ async function runSecurityTestSuite() {
           RegExp,
           Error,
           Promise,
+          Uint8Array,
+          ArrayBuffer,
+          TextEncoder,
+          TextDecoder,
+          btoa: (s: string) => Buffer.from(s, 'binary').toString('base64'),
+          atob: (s: string) => Buffer.from(s, 'base64').toString('binary'),
+          crypto: webCryptoImpl,
           encodeURIComponent,
           decodeURIComponent,
           localStorage: localStorageMock,
           document: documentMock,
+          location: { reload: () => {} },
           fetch: async () => { throw new Error('Mock fetch not configured'); },
           confirm: (_msg?: string) => { confirmCalls++; return nextConfirmResult; },
           alert: () => {},
@@ -3791,6 +3812,10 @@ async function runSecurityTestSuite() {
         sandbox.window.confirm = sandbox.confirm;
         sandbox.window.triggerToast = sandbox.triggerToast;
         sandbox.window.addEventListener = sandbox.addEventListener;
+        sandbox.window.crypto = webCryptoImpl;
+        sandbox.window.btoa = sandbox.btoa;
+        sandbox.window.atob = sandbox.atob;
+        sandbox.window.location = sandbox.location;
 
         return {
           sandbox,
@@ -3798,6 +3823,9 @@ async function runSecurityTestSuite() {
           elements,
           getOrCreateEl,
           toasts,
+          consoleLogs,
+          windowListeners,
+          dispatchWindowEvent: (evt: string) => (windowListeners[evt] || []).forEach(fn => fn()),
           setFetch: (fn: any) => { sandbox.fetch = fn; sandbox.window.fetch = fn; },
           setConfirm: (val: boolean) => { nextConfirmResult = val; },
           getConfirmCalls: () => confirmCalls,
@@ -4994,7 +5022,8 @@ async function runSecurityTestSuite() {
       const mirrorPairs: Array<[string, string]> = [
         ['index.html', 'public/index.html'],
         ['src/scripts/auth-manager.js', 'public/scripts/auth-manager.js'],
-        ['src/scripts/cloud-sync.js', 'public/scripts/cloud-sync.js']
+        ['src/scripts/cloud-sync.js', 'public/scripts/cloud-sync.js'],
+        ['src/scripts/github-sync.js', 'public/scripts/github-sync.js']
       ];
       const mirrorMismatches = mirrorPairs.filter(([a, b]) => {
         const aBuf = fs.readFileSync(path.resolve(process.cwd(), a));
@@ -5005,6 +5034,544 @@ async function runSecurityTestSuite() {
         mirrorMismatches.length === 0,
         'SyncParity 16.4: index.html and modified src/scripts/* files match public/ mirrors byte-for-byte',
         mirrorMismatches.map(([a, b]) => `${a} !== ${b}`).join(', ')
+      );
+
+      // =========================================================================
+      // 17. Phase 1.1.2.4: GitHub Sync Credential Security & Web Crypto Snapshot Encryption
+      // =========================================================================
+      console.log('\n--- Test Category 17: GitHub Sync Volatile PAT & Web Crypto AES-256-GCM Snapshot Encryption ---');
+      const ghSyncCode = fs.readFileSync(path.resolve(process.cwd(), 'src/scripts/github-sync.js'), 'utf-8');
+
+      // 17.1 PAT persistence, legacy scrubbing, non-exposure & session reload lifecycle
+      const legacyPatSecret = 'ghp_LEGACY_EXPOSED_TOKEN_DO_NOT_LEAK_9988';
+      const sessionPatSecret = 'ghp_SESSION_ONLY_TOKEN_SECRET_445566';
+      const legacyInitDom = createMockDomEnv({
+        forecaster_github_sync_config: JSON.stringify({
+          token: legacyPatSecret,
+          pat: 'ghp_duplicate_legacy_secret',
+          mode: 'repo',
+          gistId: 'gist_nonsecret_77',
+          repo: 'alice/ledger-vault',
+          owner: 'alice',
+          branch: 'production',
+          filePath: 'finances/ledger.json',
+          lastSync: '2026-11-10T00:00:00.000Z',
+          autoSync: true
+        })
+      });
+      let networkCalledOnInit = false;
+      legacyInitDom.setFetch(async () => {
+        networkCalledOnInit = true;
+        throw new Error('Unexpected fetch during init');
+      });
+      vm.runInNewContext(ghSyncCode, legacyInitDom.sandbox);
+
+      const scrubbedStoredRaw = legacyInitDom.storage.get('forecaster_github_sync_config') || '{}';
+      const scrubbedStoredObj = JSON.parse(scrubbedStoredRaw);
+      const initConfigResp = legacyInitDom.sandbox.window.ForecasterGitHubSync.getConfig();
+      const exportedGhSettings = legacyInitDom.sandbox.window.ForecasterGitHubSync.exportSettings();
+      const allInitLogs = JSON.stringify(legacyInitDom.consoleLogs);
+
+      assert(
+        !scrubbedStoredRaw.includes(legacyPatSecret) &&
+        !scrubbedStoredRaw.includes('ghp_duplicate_legacy_secret') &&
+        !Object.prototype.hasOwnProperty.call(scrubbedStoredObj, 'token') &&
+        !Object.prototype.hasOwnProperty.call(scrubbedStoredObj, 'pat') &&
+        scrubbedStoredObj.mode === 'repo' &&
+        scrubbedStoredObj.gistId === 'gist_nonsecret_77' &&
+        scrubbedStoredObj.repo === 'alice/ledger-vault' &&
+        scrubbedStoredObj.owner === 'alice' &&
+        scrubbedStoredObj.branch === 'production' &&
+        scrubbedStoredObj.filePath === 'finances/ledger.json' &&
+        scrubbedStoredObj.autoSync === true &&
+        legacyInitDom.sandbox.window.ForecasterGitHubSync.hasSessionToken() === false &&
+        !Object.prototype.hasOwnProperty.call(initConfigResp, 'token') &&
+        !JSON.stringify(exportedGhSettings).includes(legacyPatSecret) &&
+        !allInitLogs.includes(legacyPatSecret) &&
+        !networkCalledOnInit,
+        'GitHubPAT 17.1a: Initialization scrubs legacy PATs while preserving all non-secret settings without logging, exporting, loading into volatile memory, or transmitting them'
+      );
+
+      // Saving GitHub settings with a PAT keeps PAT only in volatile memory, clears input, never saves to localStorage, and never returns token
+      const ghFormEl = legacyInitDom.getOrCreateEl('github-sync-form', 'form');
+      const ghTokenEl = legacyInitDom.getOrCreateEl('gh-sync-token', 'input');
+      const ghModeEl = legacyInitDom.getOrCreateEl('gh-sync-mode', 'select');
+      const ghGistEl = legacyInitDom.getOrCreateEl('gh-sync-gist-id', 'input');
+      const ghRepoEl = legacyInitDom.getOrCreateEl('gh-sync-repo', 'input');
+      const ghBranchEl = legacyInitDom.getOrCreateEl('gh-sync-branch', 'input');
+      const ghAutoEl = legacyInitDom.getOrCreateEl('gh-sync-autosync', 'input');
+      const ghClearBtnEl = legacyInitDom.getOrCreateEl('gh-clear-credentials-btn', 'button');
+      const ghBadgeEl = legacyInitDom.getOrCreateEl('gh-sync-status-badge', 'span');
+      const ghTokenStatusEl = legacyInitDom.getOrCreateEl('gh-sync-token-status', 'span');
+      const ghPassEl = legacyInitDom.getOrCreateEl('gh-sync-passphrase', 'input');
+      const ghPassConfirmEl = legacyInitDom.getOrCreateEl('gh-sync-passphrase-confirm', 'input');
+      const ghBannerEl = legacyInitDom.getOrCreateEl('gh-sync-snapshot-banner', 'div');
+      const ghPushBtnEl = legacyInitDom.getOrCreateEl('gh-push-btn', 'button');
+      const ghPullBtnEl = legacyInitDom.getOrCreateEl('gh-pull-btn', 'button');
+      legacyInitDom.getOrCreateEl('gh-sync-gist-wrap', 'div');
+      legacyInitDom.getOrCreateEl('gh-sync-repo-wrap', 'div');
+
+      legacyInitDom.dispatchWindowEvent('DOMContentLoaded');
+      ghModeEl.value = 'repo';
+      ghRepoEl.value = 'bob/clean-vault';
+      ghBranchEl.value = 'main';
+      ghAutoEl.checked = true;
+      ghTokenEl.value = sessionPatSecret;
+      ghFormEl.dispatchEvent('submit');
+
+      const afterFormSaveRaw = legacyInitDom.storage.get('forecaster_github_sync_config') || '{}';
+      const afterFormSaveObj = JSON.parse(afterFormSaveRaw);
+      const savedApiResp = legacyInitDom.sandbox.window.ForecasterGitHubSync.saveConfig({ mode: 'repo', token: sessionPatSecret });
+      const exportedAfterSave = JSON.stringify(legacyInitDom.sandbox.window.ForecasterGitHubSync.exportSettings());
+
+      assert(
+        !afterFormSaveRaw.includes(sessionPatSecret) &&
+        !Object.prototype.hasOwnProperty.call(afterFormSaveObj, 'token') &&
+        afterFormSaveObj.repo === 'bob/clean-vault' &&
+        afterFormSaveObj.owner === 'bob' &&
+        !Object.prototype.hasOwnProperty.call(savedApiResp, 'token') &&
+        !exportedAfterSave.includes(sessionPatSecret) &&
+        legacyInitDom.sandbox.window.ForecasterGitHubSync.hasSessionToken() === true &&
+        ghTokenEl.value === '' &&
+        ghTokenStatusEl.textContent.toLowerCase().includes('volatile memory'),
+        'GitHubPAT 17.1b: Saving settings keeps PAT in volatile memory only, clears input, omits token from localStorage/config/export, and updates owner cleanly'
+      );
+
+      // Clear credentials button wipes volatile PAT and DOM inputs
+      ghTokenEl.value = 'ghp_temp_typed';
+      ghPassEl.value = 'TempPass#2026';
+      ghPassConfirmEl.value = 'TempPass#2026';
+      ghClearBtnEl.click();
+      assert(
+        legacyInitDom.sandbox.window.ForecasterGitHubSync.hasSessionToken() === false &&
+        ghTokenEl.value === '' &&
+        ghPassEl.value === '' &&
+        ghPassConfirmEl.value === '' &&
+        ghBadgeEl.textContent.toLowerCase().includes('disconnected'),
+        'GitHubPAT 17.1c: Clear credentials button wipes volatile PAT and DOM sensitive inputs cleanly'
+      );
+
+      // Simulating page reload (new VM sandbox with persisted localStorage) requires PAT re-entry
+      const reloadDom = createMockDomEnv({
+        forecaster_github_sync_config: legacyInitDom.storage.get('forecaster_github_sync_config') || '{}'
+      });
+      vm.runInNewContext(ghSyncCode, reloadDom.sandbox);
+      assert(
+        reloadDom.sandbox.window.ForecasterGitHubSync.hasSessionToken() === false &&
+        reloadDom.sandbox.window.ForecasterGitHubSync.getConfig().repo === 'bob/clean-vault',
+        'GitHubPAT 17.1d: Simulated page reload loses volatile PAT while preserving non-secret settings'
+      );
+
+      // Logout clears volatile GitHub credentials via auth-manager lifecycle
+      const logoutDom = createMockDomEnv({
+        forecaster_auth_token: 'tok_logout_gh',
+        forecaster_auth_user: JSON.stringify({ id: 'usr_1', name: 'Owner', email: 'o@test.local', role: 'owner' })
+      });
+      logoutDom.setFetch(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }));
+      vm.runInNewContext(ghSyncCode, logoutDom.sandbox);
+      vm.runInNewContext(authScriptCode, logoutDom.sandbox);
+      logoutDom.sandbox.window.ForecasterGitHubSync.setSessionToken(sessionPatSecret);
+      const tokenElLogout = logoutDom.getOrCreateEl('gh-sync-token', 'input');
+      const passElLogout = logoutDom.getOrCreateEl('gh-sync-passphrase', 'input');
+      tokenElLogout.value = 'ghp_unsent';
+      passElLogout.value = 'SecretPass#99';
+      await logoutDom.sandbox.window.ForecasterAuth.logout();
+      assert(
+        logoutDom.sandbox.window.ForecasterGitHubSync.hasSessionToken() === false &&
+        tokenElLogout.value === '' &&
+        passElLogout.value === '',
+        'GitHubPAT 17.1e: Logging out clears volatile GitHub PAT and passphrase inputs'
+      );
+
+      // 17.2 Genuine Web Crypto AES-256-GCM + PBKDF2-SHA256 encryption, metadata, salt/IV uniqueness & tamper resistance
+      const strongPass = 'VaultMaster#2026!Strong';
+      const wrongPass = 'WrongPassphrase#2026!';
+      const cryptoApi = legacyInitDom.sandbox.window.ForecasterGitHubSync.crypto;
+      const sampleUnicodePayload = {
+        transactions: [
+          {
+            id: 'tx_ar_1',
+            date: '2026-11-22',
+            description: 'مصروفات صيدلية النيل — دفعة إيجار ٥٠٠٠ ج.م 🚀💰',
+            category: 'الإيجار / Rent',
+            type: 'expense',
+            amount: 5000,
+            tags: ['عربي', '🏠', { nested: [1, 2, { ok: true }] }]
+          },
+          {
+            id: 'tx_large_1',
+            date: '2026-11-22',
+            description: 'Large memo: ' + 'LedgerLine-🚗-بيانات-'.repeat(2500), // ~55KB payload chunk test
+            category: 'Operations',
+            type: 'income',
+            amount: 12345.67
+          }
+        ],
+        accounts: [{ id: 'acc_1', label: 'بنك مصر 💳', initialBalance: 98000 }],
+        accountTransfers: [{ id: 'trf_1', fromId: 'acc_1', toId: 'acc_1', amount: 150 }],
+        budgetLimits: { income: 50000, expense: 20000, categories: { nestedArr: [10, 20, { note: 'ملاحظة' }] } },
+        stockData: [{ id: 'stk_1', name: 'دواء باراسيتامول 💊', qty: 40 }],
+        pharmacyData: [{ id: 'phm_1', name: 'Amoxicillin', batches: [{ lot: 'B1', exp: '2027-05' }] }],
+        pro_vehicles: [{ id: 'veh_1', plate: 'أ ب ج ١٢٣' }],
+        pro_vehicle_fuel: [{ id: 'fuel_1', liters: 45 }],
+        pro_vehicle_maintenance: [{ id: 'mnt_1', cost: 1200 }],
+        pro_rental_contracts_v1: [{ id: 'cnt_1', tenant: 'شركة النور' }],
+        pro_rental_properties_v1: [{ id: 'prop_1', unit: 'Villa 12' }],
+        version: 'ForecasterPro-v1.06.12-github-sync',
+        exportedAt: '2026-11-22T02:30:00.000Z'
+      };
+
+      const env1 = await cryptoApi.encryptSnapshotPayload(sampleUnicodePayload, strongPass);
+      const env2 = await cryptoApi.encryptSnapshotPayload(sampleUnicodePayload, strongPass);
+      const env1Str = JSON.stringify(env1);
+
+      assert(
+        env1.encrypted === true &&
+        env1.format === 'forecaster-pro-encrypted-snapshot' &&
+        env1.version === 1 &&
+        env1.alg === 'AES-256-GCM' &&
+        env1.kdf === 'PBKDF2-SHA256' &&
+        env1.iterations === 210000 &&
+        typeof env1.salt === 'string' &&
+        typeof env1.iv === 'string' &&
+        typeof env1.ciphertext === 'string' &&
+        env1.salt !== env2.salt &&
+        env1.iv !== env2.iv &&
+        env1.ciphertext !== env2.ciphertext &&
+        !env1Str.includes('98000') &&
+        !env1Str.includes('12345.67') &&
+        !env1Str.includes('Amoxicillin') &&
+        !env1Str.includes('مصروفات'),
+        'Crypto 17.2a: Envelope metadata matches AES-256-GCM/PBKDF2-210k spec, hides all plaintext financial data, and generates fresh random salt & IV per encryption'
+      );
+
+      const decryptedRoundTrip = await cryptoApi.decryptSnapshotEnvelope(env1, strongPass);
+      assert(
+        decryptedRoundTrip.transactions[0].description === sampleUnicodePayload.transactions[0].description &&
+        decryptedRoundTrip.transactions[0].tags[2].nested[2].ok === true &&
+        decryptedRoundTrip.transactions[1].description.length === sampleUnicodePayload.transactions[1].description.length &&
+        decryptedRoundTrip.accounts[0].label === 'بنك مصر 💳' &&
+        decryptedRoundTrip.budgetLimits.categories.nestedArr[2].note === 'ملاحظة',
+        'Crypto 17.2b: Decryption round-trip preserves Arabic, English, Emoji, large (~55KB) payloads, and nested JSON arrays/objects losslessly'
+      );
+
+      // Wrong passphrase rejection
+      let wrongPassRejected = false;
+      try {
+        await cryptoApi.decryptSnapshotEnvelope(env1, wrongPass);
+      } catch (e) {
+        wrongPassRejected = true;
+      }
+
+      // Tampered ciphertext authentication failure
+      const tamperedCipherEnv = JSON.parse(JSON.stringify(env1));
+      const cBytes = cryptoApi.base64ToBytes(tamperedCipherEnv.ciphertext);
+      cBytes[0] ^= 0xff;
+      tamperedCipherEnv.ciphertext = cryptoApi.bytesToBase64(cBytes);
+      let tamperedCipherRejected = false;
+      try {
+        await cryptoApi.decryptSnapshotEnvelope(tamperedCipherEnv, strongPass);
+      } catch (e) {
+        tamperedCipherRejected = true;
+      }
+
+      // Tampered IV, salt, and invalid envelope parameters rejected
+      const tamperedIvEnv = JSON.parse(JSON.stringify(env1));
+      const ivB = cryptoApi.base64ToBytes(tamperedIvEnv.iv);
+      ivB[0] ^= 0x01;
+      tamperedIvEnv.iv = cryptoApi.bytesToBase64(ivB);
+      let tamperedIvRejected = false;
+      try { await cryptoApi.decryptSnapshotEnvelope(tamperedIvEnv, strongPass); } catch { tamperedIvRejected = true; }
+
+      const tamperedSaltEnv = JSON.parse(JSON.stringify(env1));
+      const sB = cryptoApi.base64ToBytes(tamperedSaltEnv.salt);
+      sB[0] ^= 0x01;
+      tamperedSaltEnv.salt = cryptoApi.bytesToBase64(sB);
+      let tamperedSaltRejected = false;
+      try { await cryptoApi.decryptSnapshotEnvelope(tamperedSaltEnv, strongPass); } catch { tamperedSaltRejected = true; }
+
+      const weakIterEnv = Object.assign({}, env1, { iterations: 1000 });
+      const badAlgEnv = Object.assign({}, env1, { alg: 'AES-CBC' });
+      const badVerEnv = Object.assign({}, env1, { version: 99 });
+      let invalidParamsRejectedCount = 0;
+      for (const badEnv of [weakIterEnv, badAlgEnv, badVerEnv]) {
+        try {
+          await cryptoApi.decryptSnapshotEnvelope(badEnv, strongPass);
+        } catch {
+          invalidParamsRejectedCount++;
+        }
+      }
+
+      assert(
+        wrongPassRejected &&
+        tamperedCipherRejected &&
+        tamperedIvRejected &&
+        tamperedSaltRejected &&
+        invalidParamsRejectedCount === 3,
+        'Crypto 17.2c: Wrong passphrase, tampered ciphertext/IV/salt, and invalid envelope parameters (low iterations, wrong alg/version) all fail authentication/validation cleanly'
+      );
+
+      // Base64 newline/whitespace tolerance & invalid base64 rejection
+      const utf8Source = 'تقرير مالي 2026 🚀 Line1\nLine2';
+      const b64Clean = cryptoApi.utf8ToBase64(utf8Source);
+      const b64WithNewlines = `  ${b64Clean.slice(0, 10)}\n  ${b64Clean.slice(10, 22)}\r\n${b64Clean.slice(22)} \n`;
+      const decodedMultiline = cryptoApi.base64ToUtf8(b64WithNewlines);
+      let invalidB64RejectedCount = 0;
+      for (const badB64 of ['', '   ', '!!!invalid-chars!!!', 'abcde', 'ab=cd']) {
+        try {
+          cryptoApi.base64ToBytes(badB64);
+        } catch {
+          invalidB64RejectedCount++;
+        }
+      }
+      assert(
+        decodedMultiline === utf8Source && invalidB64RejectedCount === 5,
+        'Payload 17.2d: Base64 handles GitHub API newlines/whitespace cleanly for Unicode/Arabic/Emoji while rejecting invalid base64 inputs'
+      );
+
+      // 17.3 End-to-End Gist & Repo UI Workflow, No Plaintext Fallback, Profile Exclusion & Legacy Snapshot Compatibility
+      const ghFlowDom = createMockDomEnv({
+        pro_transactions: JSON.stringify(sampleUnicodePayload.transactions),
+        pro_accounts: JSON.stringify(sampleUnicodePayload.accounts),
+        pro_budget_limits: JSON.stringify(sampleUnicodePayload.budgetLimits),
+        pro_stock: JSON.stringify(sampleUnicodePayload.stockData),
+        forecaster_profile_user: JSON.stringify({
+          fullName: 'Secret Profile Owner',
+          email: 'private-pii@example.com',
+          phone: '+201000000000'
+        })
+      });
+      const flowForm = ghFlowDom.getOrCreateEl('github-sync-form', 'form');
+      const flowToken = ghFlowDom.getOrCreateEl('gh-sync-token', 'input');
+      const flowPass = ghFlowDom.getOrCreateEl('gh-sync-passphrase', 'input');
+      const flowPassConfirm = ghFlowDom.getOrCreateEl('gh-sync-passphrase-confirm', 'input');
+      const flowMode = ghFlowDom.getOrCreateEl('gh-sync-mode', 'select');
+      const flowGistId = ghFlowDom.getOrCreateEl('gh-sync-gist-id', 'input');
+      const flowRepo = ghFlowDom.getOrCreateEl('gh-sync-repo', 'input');
+      const flowBranch = ghFlowDom.getOrCreateEl('gh-sync-branch', 'input');
+      const flowBanner = ghFlowDom.getOrCreateEl('gh-sync-snapshot-banner', 'div');
+      ghFlowDom.getOrCreateEl('gh-sync-gist-wrap', 'div');
+      ghFlowDom.getOrCreateEl('gh-sync-repo-wrap', 'div');
+
+      const remoteGists = new Map<string, string>();
+      const remoteRepoFiles = new Map<string, { contentB64: string; sha: string }>();
+      let ghUploadCalls = 0;
+
+      ghFlowDom.setFetch(async (url: string, opts?: any) => {
+        const u = String(url);
+        const method = String(opts?.method || 'GET').toUpperCase();
+        if (u === 'https://api.github.com/gists' && method === 'POST') {
+          ghUploadCalls++;
+          const bodyObj = JSON.parse(opts.body);
+          const content = bodyObj.files['forecaster-data.json'].content;
+          remoteGists.set('gist_created_1', content);
+          return { ok: true, status: 201, json: async () => ({ id: 'gist_created_1' }) };
+        }
+        if (u.startsWith('https://api.github.com/gists/') && method === 'GET') {
+          const gid = decodeURIComponent(u.split('/gists/')[1]);
+          const content = remoteGists.get(gid);
+          if (!content) return { ok: false, status: 404, json: async () => ({ message: 'Not Found' }) };
+          return { ok: true, status: 200, json: async () => ({ id: gid, files: { 'forecaster-data.json': { content } } }) };
+        }
+        if (u.startsWith('https://api.github.com/repos/org/ledger/contents/forecaster-data.json')) {
+          if (method === 'GET') {
+            const existing = remoteRepoFiles.get('org/ledger');
+            if (!existing) return { ok: false, status: 404, json: async () => ({ message: 'Not Found' }) };
+            // Inject real GitHub line breaks every 60 chars to test multiline repo base64 decoding
+            const wrapped = existing.contentB64.replace(/(.{60})/g, '$1\n');
+            return { ok: true, status: 200, json: async () => ({ encoding: 'base64', sha: existing.sha, content: wrapped }) };
+          }
+          if (method === 'PUT') {
+            ghUploadCalls++;
+            const bodyObj = JSON.parse(opts.body);
+            remoteRepoFiles.set('org/ledger', { contentB64: bodyObj.content, sha: 'sha_repo_1' });
+            return { ok: true, status: 200, json: async () => ({ content: { sha: 'sha_repo_1' } }) };
+          }
+        }
+        return { ok: false, status: 404, json: async () => ({ message: 'Unexpected URL' }) };
+      });
+
+      vm.runInNewContext(ghSyncCode, ghFlowDom.sandbox);
+      ghFlowDom.dispatchWindowEvent('DOMContentLoaded');
+
+      // Profile PII must be excluded from getPayload()
+      const generatedPayload = ghFlowDom.sandbox.window.ForecasterGitHubSync.getPayload();
+      const payloadStr = JSON.stringify(generatedPayload);
+      assert(
+        !Object.prototype.hasOwnProperty.call(generatedPayload, 'forecaster_profile_user') &&
+        !payloadStr.includes('private-pii@example.com') &&
+        !payloadStr.includes('Secret Profile Owner'),
+        'Payload 17.3a: getPayload() excludes forecaster_profile_user and personal PII'
+      );
+
+      // Encryption failure (weak passphrase / confirm mismatch / missing crypto) NEVER falls back to plaintext upload
+      flowMode.value = 'gist';
+      flowToken.value = sessionPatSecret;
+      flowPass.value = 'weak';
+      flowPassConfirm.value = 'weak';
+      const weakPushOk = await ghFlowDom.sandbox.window.ForecasterGitHubSync.pushToGitHub();
+
+      flowPass.value = strongPass;
+      flowPassConfirm.value = 'MismatchedPass#2026!';
+      const mismatchPushOk = await ghFlowDom.sandbox.window.ForecasterGitHubSync.pushToGitHub();
+
+      // Unavailable Web Crypto simulation must abort without calling fetch
+      const savedCrypto = ghFlowDom.sandbox.crypto;
+      ghFlowDom.sandbox.crypto = undefined;
+      ghFlowDom.sandbox.window.crypto = undefined;
+      flowPass.value = strongPass;
+      flowPassConfirm.value = strongPass;
+      const noCryptoPushOk = await ghFlowDom.sandbox.window.ForecasterGitHubSync.pushToGitHub();
+      ghFlowDom.sandbox.crypto = savedCrypto;
+      ghFlowDom.sandbox.window.crypto = savedCrypto;
+
+      assert(
+        weakPushOk === false &&
+        mismatchPushOk === false &&
+        noCryptoPushOk === false &&
+        ghUploadCalls === 0 &&
+        flowPass.value === '' &&
+        flowPassConfirm.value === '',
+        'Crypto 17.3b: Invalid/mismatched passphrase or missing Web Crypto aborts push with zero GitHub uploads (no plaintext fallback) and clears passphrase inputs'
+      );
+
+      // Successful encrypted push to Gist -> wipe local workspace -> pull & decrypt -> verify lossless restore & no secrets logged/stored
+      flowPass.value = strongPass;
+      flowPassConfirm.value = strongPass;
+      const gistPushOk = await ghFlowDom.sandbox.window.ForecasterGitHubSync.pushToGitHub();
+      const pushedGistRaw = remoteGists.get('gist_created_1') || '';
+      const pushedGistEnv = JSON.parse(pushedGistRaw);
+
+      assert(
+        gistPushOk === true &&
+        pushedGistEnv.encrypted === true &&
+        pushedGistEnv.format === 'forecaster-pro-encrypted-snapshot' &&
+        !pushedGistRaw.includes('مصروفات') &&
+        !pushedGistRaw.includes(strongPass) &&
+        !pushedGistRaw.includes(sessionPatSecret) &&
+        flowPass.value === '' &&
+        flowPassConfirm.value === '' &&
+        flowToken.value === '' &&
+        ghFlowDom.storage.get('forecaster_github_sync_config')?.includes('gist_created_1') === true &&
+        !ghFlowDom.storage.get('forecaster_github_sync_config')?.includes(sessionPatSecret),
+        'Workflow 17.3c: Gist encrypted push uploads only versioned AES-256-GCM envelope, saves gistId, keeps PAT out of localStorage, and clears DOM inputs'
+      );
+
+      // Wipe local data and verify wrong passphrase on Gist pull fails cleanly with zero plaintext fallback and leaves local data untouched
+      ghFlowDom.storage.set('pro_transactions', JSON.stringify([{ id: 'tx_pre_pull_safe', amount: 111, type: 'expense', date: '2026-11-22' }]));
+      flowGistId.value = 'gist_created_1';
+      flowPass.value = wrongPass;
+      const wrongPullOk = await ghFlowDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({ skipReload: true });
+      const txnsAfterWrongPull = JSON.parse(ghFlowDom.storage.get('pro_transactions') || '[]');
+      assert(
+        wrongPullOk === false &&
+        txnsAfterWrongPull.length === 1 &&
+        txnsAfterWrongPull[0].id === 'tx_pre_pull_safe' &&
+        flowPass.value === '' &&
+        flowBanner.textContent.toLowerCase().includes('failed'),
+        'Workflow 17.3d: Wrong passphrase on encrypted pull fails cleanly without modifying local workspace or falling back to plaintext'
+      );
+
+      // Authorized Gist pull with correct passphrase restores Unicode + nested data cleanly
+      flowPass.value = strongPass;
+      const rightGistPullOk = await ghFlowDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({ skipReload: true });
+      const restoredGistTxns = JSON.parse(ghFlowDom.storage.get('pro_transactions') || '[]');
+      assert(
+        rightGistPullOk === true &&
+        restoredGistTxns.length === 2 &&
+        restoredGistTxns[0].description === sampleUnicodePayload.transactions[0].description &&
+        flowPass.value === '' &&
+        flowBanner.textContent.includes('Encrypted snapshot decrypted & verified'),
+        'Workflow 17.3e: Encrypted Gist pull decrypts and restores full Arabic/Emoji/large workspace cleanly'
+      );
+
+      // Repository mode push & multiline base64 encrypted pull round-trip
+      flowMode.value = 'repo';
+      flowRepo.value = 'org/ledger';
+      flowBranch.value = 'main';
+      flowPass.value = strongPass;
+      flowPassConfirm.value = strongPass;
+      const repoPushOk = await ghFlowDom.sandbox.window.ForecasterGitHubSync.pushToGitHub();
+      ghFlowDom.storage.set('pro_transactions', '[]');
+      flowPass.value = strongPass;
+      const repoPullOk = await ghFlowDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({ skipReload: true });
+      const restoredRepoTxns = JSON.parse(ghFlowDom.storage.get('pro_transactions') || '[]');
+      assert(
+        repoPushOk === true &&
+        repoPullOk === true &&
+        remoteRepoFiles.has('org/ledger') &&
+        restoredRepoTxns.length === 2 &&
+        restoredRepoTxns[1].amount === 12345.67,
+        'Workflow 17.3f: Repository push & multiline base64 encrypted pull round-trip succeeds cleanly'
+      );
+
+      // Legacy plaintext snapshot compatibility: warns clearly, requires confirmation, preserves remote unmodified
+      const legacyPlaintextGistSnapshot = JSON.stringify({
+        transactions: [{ id: 'tx_legacy_1', date: '2026-10-01', description: 'Legacy Snapshot Record', type: 'expense', amount: 450 }],
+        accounts: [{ id: 'acc_legacy_1', label: 'Legacy Cash', initialBalance: 2000 }],
+        forecaster_profile_user: { fullName: 'Legacy PII Must Be Ignored', email: 'legacy-pii@example.com' },
+        version: 'ForecasterPro-v1.05-legacy'
+      });
+      remoteGists.set('gist_legacy_1', legacyPlaintextGistSnapshot);
+      flowMode.value = 'gist';
+      flowGistId.value = 'gist_legacy_1';
+      ghFlowDom.storage.set('pro_transactions', JSON.stringify([{ id: 'tx_current_keep', amount: 99, type: 'income', date: '2026-11-22' }]));
+      ghFlowDom.storage.set('forecaster_profile_user', JSON.stringify({ fullName: 'Current Profile Preserved' }));
+
+      // 1) Declining legacy confirmation preserves local & remote unchanged
+      ghFlowDom.setConfirm(false);
+      ghFlowDom.resetConfirmCalls();
+      const legacyDeclinedOk = await ghFlowDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({ skipReload: true });
+      const txnsAfterLegacyDecline = JSON.parse(ghFlowDom.storage.get('pro_transactions') || '[]');
+      assert(
+        legacyDeclinedOk === false &&
+        ghFlowDom.getConfirmCalls() === 1 &&
+        flowBanner.textContent.includes('Legacy Unencrypted Snapshot') &&
+        txnsAfterLegacyDecline[0].id === 'tx_current_keep' &&
+        remoteGists.get('gist_legacy_1') === legacyPlaintextGistSnapshot,
+        'LegacyCompat 17.3g: Declining unencrypted legacy snapshot confirmation aborts import, warns cleanly, and leaves local & remote untouched'
+      );
+
+      // 2) Confirming legacy import restores validated legacy data while ignoring profile PII and NOT auto-modifying remote snapshot
+      ghFlowDom.setConfirm(true);
+      const legacyAcceptedOk = await ghFlowDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({ skipReload: true });
+      const txnsAfterLegacyAccept = JSON.parse(ghFlowDom.storage.get('pro_transactions') || '[]');
+      const profileAfterLegacyAccept = JSON.parse(ghFlowDom.storage.get('forecaster_profile_user') || '{}');
+      assert(
+        legacyAcceptedOk === true &&
+        txnsAfterLegacyAccept.length === 1 &&
+        txnsAfterLegacyAccept[0].id === 'tx_legacy_1' &&
+        profileAfterLegacyAccept.fullName === 'Current Profile Preserved' &&
+        remoteGists.get('gist_legacy_1') === legacyPlaintextGistSnapshot,
+        'LegacyCompat 17.3h: Confirmed legacy plaintext import restores datasets safely, strips profile PII, and leaves remote snapshot untouched'
+      );
+
+      // Logs collected during entire workflow must NEVER contain PAT or passphrase
+      const fullWorkflowLogs = JSON.stringify(ghFlowDom.consoleLogs);
+      assert(
+        !fullWorkflowLogs.includes(sessionPatSecret) &&
+        !fullWorkflowLogs.includes(strongPass) &&
+        !fullWorkflowLogs.includes(wrongPass),
+        'Privacy 17.3i: Console logs never contain PAT or encryption passphrases'
+      );
+
+      // 17.4 UI & HTML Honest Security Messaging check
+      const indexHtmlContent = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
+      const ghFormSectionIdx = indexHtmlContent.indexOf('gh-sync-security-notice');
+      const ghSectionSlice = indexHtmlContent.slice(Math.max(0, ghFormSectionIdx - 800), ghFormSectionIdx + 5500);
+      assert(
+        indexHtmlContent.includes('id="gh-sync-security-notice"') &&
+        indexHtmlContent.includes('id="gh-sync-snapshot-banner"') &&
+        indexHtmlContent.includes('id="gh-sync-passphrase"') &&
+        indexHtmlContent.includes('id="gh-sync-passphrase-confirm"') &&
+        indexHtmlContent.includes('id="gh-clear-credentials-btn"') &&
+        ghSectionSlice.includes('AES-256-GCM') &&
+        ghSectionSlice.includes('PBKDF2-SHA256') &&
+        ghSectionSlice.includes('Legacy plaintext snapshots') &&
+        ghSectionSlice.includes('cannot be recovered') &&
+        ghSectionSlice.includes('volatile memory') &&
+        ghSectionSlice.includes('private visibility alone do not encrypt contents'),
+        'UI 17.4: index.html includes truthful encryption vs legacy notice, passphrase inputs, session-only PAT indicator, and clear-token control'
       );
     } finally {
       await p1123Srv.stop(true);

@@ -4219,7 +4219,7 @@
                   <i class="fa-brands fa-github text-base"></i> GitHub Cloud Sync &amp; Repository Backup
                 </h4>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Encrypted push/pull snapshots to a private GitHub Gist or private GitHub repository.
+                  Push end-to-end encrypted snapshots (AES-256-GCM) to a private GitHub Gist or private repository, or restore compatible snapshots.
                 </p>
               </div>
               <div class="flex items-center gap-2 flex-wrap">
@@ -4228,26 +4228,62 @@
               </div>
             </div>
 
+            <!-- Honest End-to-End Encryption & Credential Security Disclosure -->
+            <div id="gh-sync-security-notice" class="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200/80 dark:border-amber-800/60 text-[11px] text-slate-700 dark:text-slate-300 space-y-1.5">
+              <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span>🔐</span> Snapshot Security &amp; Credential Notice
+              </div>
+              <ul class="list-disc pl-4 space-y-0.5 leading-relaxed">
+                <li><strong>Encrypted vs. Legacy snapshots:</strong> New pushes are end-to-end encrypted locally with your passphrase (AES-256-GCM + PBKDF2-SHA256) before upload. Legacy plaintext snapshots are <em>not</em> end-to-end encrypted and trigger a confirmation warning on pull.</li>
+                <li><strong>Remote storage &amp; privacy:</strong> GitHub stores the uploaded file — always use a <strong>private repository</strong> or <strong>secret Gist</strong> for private financial data (HTTPS transport and private visibility alone do not encrypt contents).</li>
+                <li><strong>No passphrase recovery:</strong> Forecaster Pro never saves or transmits your passphrase. If lost, encrypted snapshot contents cannot be recovered.</li>
+                <li><strong>Session-only PAT:</strong> Your GitHub Personal Access Token stays in volatile memory for this session only (never saved to browser storage) and grants access per its GitHub permissions — protect it and clear it or sign out when done.</li>
+              </ul>
+            </div>
+
+            <!-- Dynamic Snapshot Encryption / Legacy Warning Status Banner -->
+            <div id="gh-sync-snapshot-banner" class="hidden p-3 rounded-xl border text-xs font-semibold"></div>
+
             <form id="github-sync-form" class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3.5">
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label for="gh-sync-token" class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">GitHub Personal Access Token (PAT)</label>
-                  <input class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" type="password" required/>
-                  <p class="text-[10px] text-slate-400 mt-1">Token with <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">gist</code> or <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">repo</code> scope.</p>
+                  <div class="flex items-center justify-between gap-2 mb-1">
+                    <label for="gh-sync-token" class="block text-xs font-bold text-slate-600 dark:text-slate-400">GitHub Personal Access Token (PAT)</label>
+                    <span id="gh-sync-token-status" class="text-[10px] font-bold text-slate-500 dark:text-slate-400">Session-only (not saved)</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <input class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" type="password" autocomplete="off"/>
+                    <button type="button" id="gh-clear-credentials-btn" class="px-2.5 py-2.5 bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-600 hover:text-rose-600 dark:text-slate-300 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-700 rounded-xl text-[11px] font-bold transition shrink-0 cursor-pointer" title="Clear GitHub PAT from session memory">Clear</button>
+                  </div>
+                  <p class="text-[10px] text-slate-400 mt-1">Held in memory for this session only (cleared on reload/sign out). Requires <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">gist</code> or <code class="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">repo</code> scope.</p>
                 </div>
 
                 <div>
                   <label for="gh-sync-mode" class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Sync Target</label>
                   <select class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-mode" onchange="window.ForecasterGitHubSync.toggleModeFields(this.value)">
-                    <option value="gist">Private GitHub Gist (Easiest)</option>
+                    <option value="gist">Secret GitHub Gist (Easiest)</option>
                     <option value="repo">GitHub Repository (username/repo)</option>
                   </select>
                 </div>
               </div>
 
+              <!-- End-to-End Snapshot Encryption Passphrase Inputs -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700">
+                <div>
+                  <label for="gh-sync-passphrase" class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Encryption Passphrase (Push &amp; Decrypt Pull)</label>
+                  <input class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-passphrase" placeholder="Min 10 chars (upper, lower, number/symbol)" type="password" autocomplete="off"/>
+                  <p class="text-[10px] text-slate-400 mt-1">Used locally with PBKDF2-SHA256 (210,000 iterations). Never stored; cleared after sync.</p>
+                </div>
+                <div>
+                  <label for="gh-sync-passphrase-confirm" class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Confirm Passphrase (Required for Push)</label>
+                  <input class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-passphrase-confirm" placeholder="Re-enter passphrase to verify before push" type="password" autocomplete="off"/>
+                  <p class="text-[10px] text-slate-400 mt-1">Prevents typo lockouts on encrypted pushes (not needed when pulling).</p>
+                </div>
+              </div>
+
               <div id="gh-sync-gist-wrap">
                 <label for="gh-sync-gist-id" class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Existing Gist ID (Optional)</label>
-                <input class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-gist-id" placeholder="Leave blank to auto-create a private Gist" type="text"/>
+                <input class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-white" id="gh-sync-gist-id" placeholder="Leave blank to auto-create a secret Gist" type="text"/>
               </div>
 
               <div class="hidden" id="gh-sync-repo-wrap">
@@ -4265,7 +4301,7 @@
 
               <div class="flex items-center gap-2">
                 <input type="checkbox" id="gh-sync-autosync" class="rounded border-slate-300 text-blue-600"/>
-                <label for="gh-sync-autosync" class="text-xs font-semibold text-slate-600 dark:text-slate-400">Save settings for automatic future backups</label>
+                <label for="gh-sync-autosync" class="text-xs font-semibold text-slate-600 dark:text-slate-400">Remember non-secret sync target preferences on this device (PAT &amp; passphrase are never saved)</label>
               </div>
 
               <div class="flex flex-wrap gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
@@ -4273,7 +4309,7 @@
                   <span>💾</span> Save GitHub Settings
                 </button>
                 <button type="button" id="gh-push-btn" class="flex-1 min-w-[140px] py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer" onclick="window.ForecasterGitHubSync.pushToGitHub()">
-                  <span>☁️</span> Push to GitHub
+                  <span>🔒</span> Encrypt &amp; Push to GitHub
                 </button>
                 <button type="button" id="gh-pull-btn" class="flex-1 min-w-[140px] py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer" onclick="window.ForecasterGitHubSync.pullFromGitHub()">
                   <span>⬇️</span> Pull &amp; Restore

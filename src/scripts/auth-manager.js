@@ -737,6 +737,12 @@
       if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
       if (typeof window.renderAllViews === 'function') window.renderAllViews();
 
+      if (window.ForecasterGitHubSync && typeof window.ForecasterGitHubSync.clearCredentials === 'function') {
+        try {
+          window.ForecasterGitHubSync.clearCredentials({ silent: true });
+        } catch (e) {}
+      }
+
       this.closeProfileDropdown();
       this.closeChangePasswordModal();
       this.closeSubUsersModal();
