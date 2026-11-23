@@ -20,6 +20,15 @@
   const MIN_CIPHERTEXT_BYTES = 16; // GCM tag size
   const MIN_PASSPHRASE_LENGTH = 10;
   const MAX_PASSPHRASE_LENGTH = 1024;
+  const GITHUB_PRE_RESTORE_RECOVERY_KEY = 'forecaster_github_pre_restore_recovery_v1';
+  const GITHUB_PRE_RESTORE_STAGING_KEY = 'forecaster_github_pre_restore_recovery_staging_v1';
+  const GITHUB_PRE_RESTORE_FORMAT = 'forecaster-pro-github-pre-restore-recovery';
+
+  const RESTORE_STATUS = Object.freeze({
+    RESTORE_SUCCESS: 'RESTORE_SUCCESS',
+    RESTORE_FAILED_ROLLED_BACK: 'RESTORE_FAILED_ROLLED_BACK',
+    RESTORE_FAILED_RECOVERY_REQUIRED: 'RESTORE_FAILED_RECOVERY_REQUIRED'
+  });
 
   const SECRET_CONFIG_KEYS = new Set([
     'token',
@@ -513,6 +522,45 @@
     return validateSnapshotPayload(parsedPayload);
   }
 
+  function assertValidJsonSerializableValue(value, pathLabel, seen) {
+    if (value === null) return;
+    const valType = typeof value;
+    if (valType === 'string' || valType === 'boolean') return;
+    if (valType === 'number') {
+      if (!Number.isFinite(value)) {
+        throw new Error(`Invalid snapshot data: non-finite number detected at "${pathLabel}".`);
+      }
+      return;
+    }
+    if (valType === 'undefined' || valType === 'function' || valType === 'symbol' || valType === 'bigint') {
+      throw new Error(`Invalid snapshot data: unsupported value type "${valType}" detected at "${pathLabel}".`);
+    }
+    if (valType === 'object') {
+      const tracker = seen || new Set();
+      if (tracker.has(value)) {
+        throw new Error(`Invalid snapshot data: circular reference detected at "${pathLabel}".`);
+      }
+      tracker.add(value);
+      if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+          if (!Object.prototype.hasOwnProperty.call(value, i)) {
+            throw new Error(`Invalid snapshot data: sparse array hole detected at "${pathLabel}[${i}]".`);
+          }
+          assertValidJsonSerializableValue(value[i], `${pathLabel}[${i}]`, tracker);
+        }
+      } else if (isPlainObject(value)) {
+        const keys = Object.keys(value);
+        for (let i = 0; i < keys.length; i++) {
+          const k = keys[i];
+          assertValidJsonSerializableValue(value[k], `${pathLabel}.${k}`, tracker);
+        }
+      } else {
+        throw new Error(`Invalid snapshot data: unsupported object instance at "${pathLabel}".`);
+      }
+      tracker.delete(value);
+    }
+  }
+
   function validateSnapshotPayload(payload) {
     if (!isPlainObject(payload)) {
       throw new Error('Invalid snapshot payload: expected JSON object.');
@@ -524,19 +572,23 @@
     let recognizedFields = 0;
     for (let i = 0; i < DATASET_ARRAY_MAP.length; i++) {
       const payloadKey = DATASET_ARRAY_MAP[i][0];
-      if (Object.prototype.hasOwnProperty.call(payload, payloadKey) && payload[payloadKey] !== undefined) {
+      if (Object.prototype.hasOwnProperty.call(payload, payloadKey)) {
         if (!Array.isArray(payload[payloadKey])) {
           throw new Error(`Invalid snapshot schema: "${payloadKey}" must be an array.`);
         }
+        assertValidJsonSerializableValue(payload[payloadKey], payloadKey);
         recognizedFields++;
       }
     }
 
-    if (Object.prototype.hasOwnProperty.call(payload, 'budgetLimits') && payload.budgetLimits !== undefined) {
-      if (payload.budgetLimits !== null && !isPlainObject(payload.budgetLimits)) {
+    if (Object.prototype.hasOwnProperty.call(payload, 'budgetLimits')) {
+      if (payload.budgetLimits === undefined || (payload.budgetLimits !== null && !isPlainObject(payload.budgetLimits))) {
         throw new Error('Invalid snapshot schema: "budgetLimits" must be an object or null.');
       }
-      recognizedFields++;
+      if (isPlainObject(payload.budgetLimits)) {
+        assertValidJsonSerializableValue(payload.budgetLimits, 'budgetLimits');
+        recognizedFields++;
+      }
     }
 
     if (recognizedFields === 0) {
@@ -559,6 +611,466 @@
     }
 
     return sanitized;
+  }
+
+  function checkLocalStorageAvailability() {
+    if (typeof localStorage === 'undefined' || !localStorage) {
+      throw new Error('Browser localStorage is unavailable.');
+    }
+    if (
+      typeof localStorage.getItem !== 'function' ||
+      typeof localStorage.setItem !== 'function' ||
+      typeof localStorage.removeItem !== 'function'
+    ) {
+      throw new Error('Browser localStorage API (getItem/setItem/removeItem) is unavailable or blocked.');
+    }
+    // Probe non-mutating read access to detect SecurityError/blocked storage before writes
+    try {
+      localStorage.getItem(GITHUB_CONFIG_KEY);
+    } catch (e) {
+      throw new Error('Browser localStorage read access is blocked.');
+    }
+  }
+
+  function isValidRecoveryArtifactRaw(rawStr) {
+    if (typeof rawStr !== 'string' || rawStr.length === 0) return false;
+    try {
+      const parsed = JSON.parse(rawStr);
+      if (
+        !isPlainObject(parsed) ||
+        parsed.format !== GITHUB_PRE_RESTORE_FORMAT ||
+        parsed.version !== 1 ||
+        typeof parsed.createdAt !== 'string' ||
+        !Array.isArray(parsed.originals)
+      ) {
+        return false;
+      }
+      for (let i = 0; i < parsed.originals.length; i++) {
+        const entry = parsed.originals[i];
+        if (
+          !isPlainObject(entry) ||
+          typeof entry.storageKey !== 'string' ||
+          typeof entry.existed !== 'boolean'
+        ) {
+          return false;
+        }
+        if (entry.existed && typeof entry.rawValue !== 'string') {
+          return false;
+        }
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function verifyRecoveryJsonMatches(rawStr, expectedJson, expectedKeysCount) {
+    if (typeof rawStr !== 'string' || rawStr !== expectedJson) return false;
+    if (!isValidRecoveryArtifactRaw(rawStr)) return false;
+    try {
+      const parsed = JSON.parse(rawStr);
+      return Array.isArray(parsed.originals) && parsed.originals.length === expectedKeysCount;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function createStagedPreRestoreRecovery(originals, targetId) {
+    let priorActiveRaw = null;
+    try {
+      priorActiveRaw = localStorage.getItem(GITHUB_PRE_RESTORE_RECOVERY_KEY);
+    } catch (e) {
+      throw new Error('Unable to read existing pre-restore recovery state from localStorage.');
+    }
+    const hadValidPriorActive = isValidRecoveryArtifactRaw(priorActiveRaw);
+
+    const record = {
+      format: GITHUB_PRE_RESTORE_FORMAT,
+      version: 1,
+      createdAt: new Date().toISOString(),
+      targetId: (typeof targetId === 'string' && targetId.trim()) ? targetId.trim() : null,
+      affectedKeys: originals.map((o) => o.storageKey),
+      originals: originals.map((o) => ({
+        storageKey: o.storageKey,
+        existed: o.existed,
+        rawValue: o.existed ? o.rawValue : null
+      }))
+    };
+
+    let recoveryJson;
+    try {
+      recoveryJson = JSON.stringify(record);
+    } catch (e) {
+      throw new Error('Failed to serialize pre-restore recovery snapshot.');
+    }
+    if (typeof recoveryJson !== 'string' || recoveryJson.length === 0) {
+      throw new Error('Pre-restore recovery serialization produced empty output.');
+    }
+
+    // Step 1: Write to staging key first so prior active recovery key is not destroyed on failure
+    try {
+      localStorage.setItem(GITHUB_PRE_RESTORE_STAGING_KEY, recoveryJson);
+    } catch (e) {
+      throw new Error('Unable to stage pre-restore recovery snapshot in localStorage (storage quota or permission error).');
+    }
+
+    let stagedRead = null;
+    try {
+      stagedRead = localStorage.getItem(GITHUB_PRE_RESTORE_STAGING_KEY);
+    } catch (e) {
+      stagedRead = null;
+    }
+    if (!verifyRecoveryJsonMatches(stagedRead, recoveryJson, originals.length)) {
+      if (hadValidPriorActive) {
+        try { localStorage.removeItem(GITHUB_PRE_RESTORE_STAGING_KEY); } catch (_) {}
+      }
+      throw new Error('Pre-restore recovery staging verification failed; existing workspace preserved.');
+    }
+
+    // Step 2: Promote staged recovery copy to active recovery key
+    try {
+      localStorage.setItem(GITHUB_PRE_RESTORE_RECOVERY_KEY, recoveryJson);
+    } catch (e) {
+      // Keep staged copy intact if active promotion threw; prior active copy also remains preserved if QuotaExceededError left it untouched
+      throw new Error('Unable to promote pre-restore recovery snapshot to active storage (storage quota or permission error).');
+    }
+
+    let promotedRead = null;
+    try {
+      promotedRead = localStorage.getItem(GITHUB_PRE_RESTORE_RECOVERY_KEY);
+    } catch (e) {
+      promotedRead = null;
+    }
+    if (!verifyRecoveryJsonMatches(promotedRead, recoveryJson, originals.length)) {
+      // Restore prior active copy if promotion corrupted it, and preserve staged copy
+      if (hadValidPriorActive) {
+        try {
+          localStorage.setItem(GITHUB_PRE_RESTORE_RECOVERY_KEY, priorActiveRaw);
+        } catch (_) {}
+      }
+      throw new Error('Active pre-restore recovery verification failed after promotion; existing workspace preserved.');
+    }
+
+    // Step 3: Remove staging key only after verifying promoted active key is intact
+    try {
+      localStorage.removeItem(GITHUB_PRE_RESTORE_STAGING_KEY);
+    } catch (_) {
+      // Non-fatal: active recovery key is already promoted and verified
+    }
+
+    return {
+      ok: true,
+      recoveryKey: GITHUB_PRE_RESTORE_RECOVERY_KEY,
+      affectedKeyCount: originals.length
+    };
+  }
+
+  function prepareStagedRestoreTargets(validatedSnapshot, options) {
+    const opts = isPlainObject(options) ? options : {};
+    const overrideMap = isPlainObject(opts._overrideStagedSerialized) ? opts._overrideStagedSerialized : null;
+    const stagedTargets = [];
+
+    for (let i = 0; i < DATASET_ARRAY_MAP.length; i++) {
+      const [payloadKey, storageKey, windowKey] = DATASET_ARRAY_MAP[i];
+      if (Object.prototype.hasOwnProperty.call(validatedSnapshot, payloadKey)) {
+        const val = validatedSnapshot[payloadKey];
+        if (!Array.isArray(val)) {
+          throw new Error(`Invalid staged dataset "${payloadKey}": expected array.`);
+        }
+        assertValidJsonSerializableValue(val, payloadKey);
+        const serialized = (overrideMap && Object.prototype.hasOwnProperty.call(overrideMap, storageKey))
+          ? overrideMap[storageKey]
+          : JSON.stringify(val);
+
+        if (typeof serialized !== 'string' || serialized.length === 0) {
+          throw new Error(`Serialization failed for dataset "${storageKey}": empty or non-string output.`);
+        }
+        let reparsed;
+        try {
+          reparsed = JSON.parse(serialized);
+        } catch (e) {
+          throw new Error(`Staged JSON verification failed for dataset "${storageKey}".`);
+        }
+        if (!Array.isArray(reparsed)) {
+          throw new Error(`Staged type verification failed for dataset "${storageKey}": expected JSON array.`);
+        }
+        stagedTargets.push({
+          payloadKey,
+          storageKey,
+          windowKey,
+          expectedType: 'array',
+          value: reparsed,
+          serialized
+        });
+      }
+    }
+
+    if (isPlainObject(validatedSnapshot.budgetLimits)) {
+      assertValidJsonSerializableValue(validatedSnapshot.budgetLimits, 'budgetLimits');
+      const serializedBudget = (overrideMap && Object.prototype.hasOwnProperty.call(overrideMap, 'pro_budget_limits'))
+        ? overrideMap.pro_budget_limits
+        : JSON.stringify(validatedSnapshot.budgetLimits);
+
+      if (typeof serializedBudget !== 'string' || serializedBudget.length === 0) {
+        throw new Error('Serialization failed for dataset "pro_budget_limits": empty or non-string output.');
+      }
+      let reparsedBudget;
+      try {
+        reparsedBudget = JSON.parse(serializedBudget);
+      } catch (e) {
+        throw new Error('Staged JSON verification failed for dataset "pro_budget_limits".');
+      }
+      if (!isPlainObject(reparsedBudget)) {
+        throw new Error('Staged type verification failed for dataset "pro_budget_limits": expected JSON object.');
+      }
+      stagedTargets.push({
+        payloadKey: 'budgetLimits',
+        storageKey: 'pro_budget_limits',
+        windowKey: 'budgetLimits',
+        expectedType: 'object',
+        value: reparsedBudget,
+        serialized: serializedBudget
+      });
+    }
+
+    if (stagedTargets.length === 0) {
+      throw new Error('No restorable datasets found in staged restore batch.');
+    }
+
+    return stagedTargets;
+  }
+
+  function applySnapshotAtomic(snapshotObj, options) {
+    const opts = isPlainObject(options) ? options : {};
+    let originals = [];
+    let stagedTargets = [];
+
+    // -----------------------------------------------------------------------
+    // PHASE A: PREPARATION (Zero dataset mutations allowed in this phase)
+    // -----------------------------------------------------------------------
+    try {
+      checkLocalStorageAvailability();
+      const validatedSnapshot = validateSnapshotPayload(snapshotObj);
+      stagedTargets = prepareStagedRestoreTargets(validatedSnapshot, opts);
+
+      // Capture exact per-key original states before touching any dataset or recovery artifact
+      originals = stagedTargets.map((target) => {
+        const storageKey = target.storageKey;
+        const rawValue = localStorage.getItem(storageKey);
+        const existed = rawValue !== null;
+        const winAvailable = typeof window !== 'undefined' && !!window;
+        const windowKey = target.windowKey;
+        const windowExisted = !!(winAvailable && windowKey && Object.prototype.hasOwnProperty.call(window, windowKey));
+        const windowValue = (winAvailable && windowKey) ? window[windowKey] : undefined;
+
+        return {
+          storageKey,
+          windowKey,
+          existed,
+          wasEmpty: rawValue === '',
+          rawValue,
+          windowExisted,
+          windowValue
+        };
+      });
+
+      // Stage & verify non-secret pre-restore recovery snapshot safely before any write
+      createStagedPreRestoreRecovery(originals, opts.targetId);
+    } catch (prepErr) {
+      const safePrepMsg = prepErr && prepErr.message ? String(prepErr.message) : 'Restore preparation failed.';
+      const prepOutcome = {
+        ok: false,
+        status: RESTORE_STATUS.RESTORE_FAILED_ROLLED_BACK,
+        datasetsTouched: false,
+        rolledBack: true,
+        rolledBackKeys: [],
+        rollbackFailures: [],
+        recoveryArtifactPreserved: true,
+        message: `${safePrepMsg} Local workspace data was not modified.`
+      };
+      if (typeof window !== 'undefined' && window.ForecasterGitHubSync) {
+        window.ForecasterGitHubSync._lastRestoreOutcome = prepOutcome;
+      }
+      return prepOutcome;
+    }
+
+    // -----------------------------------------------------------------------
+    // PHASE B: COMMIT + IMMEDIATE READ-BACK VERIFICATION
+    // -----------------------------------------------------------------------
+    const touchedTargets = [];
+    let commitFailure = null;
+
+    for (let i = 0; i < stagedTargets.length; i++) {
+      const target = stagedTargets[i];
+      const orig = originals[i];
+      // Record target as touched before write attempt so Phase C verifies/restores it on failure
+      touchedTargets.push({ target, orig });
+
+      try {
+        localStorage.setItem(target.storageKey, target.serialized);
+
+        const readBack = localStorage.getItem(target.storageKey);
+        if (typeof readBack !== 'string' || readBack !== target.serialized) {
+          throw new Error(`Read-back verification mismatch for "${target.storageKey}".`);
+        }
+        const parsedBack = JSON.parse(readBack);
+        const validType = target.expectedType === 'array' ? Array.isArray(parsedBack) : isPlainObject(parsedBack);
+        if (!validType) {
+          throw new Error(`Read-back type check failed for "${target.storageKey}".`);
+        }
+      } catch (writeErr) {
+        commitFailure = {
+          storageKey: target.storageKey,
+          message: writeErr && writeErr.message ? String(writeErr.message) : 'Storage write or verification failed.'
+        };
+        break;
+      }
+    }
+
+    if (!commitFailure) {
+      // Update in-memory window references ONLY after all keys succeeded write + read-back verification
+      if (typeof window !== 'undefined' && window) {
+        for (let i = 0; i < stagedTargets.length; i++) {
+          const target = stagedTargets[i];
+          if (target.windowKey) {
+            window[target.windowKey] = target.value;
+          }
+        }
+      }
+
+      const successOutcome = {
+        ok: true,
+        status: RESTORE_STATUS.RESTORE_SUCCESS,
+        restoredKeys: stagedTargets.map((t) => t.storageKey),
+        verificationPassed: true,
+        recoveryArtifactPreserved: true,
+        rollbackFailures: [],
+        message: `Restored and read-back verified ${stagedTargets.length} dataset collections cleanly.`
+      };
+      if (typeof window !== 'undefined' && window.ForecasterGitHubSync) {
+        window.ForecasterGitHubSync._lastRestoreOutcome = successOutcome;
+      }
+      return successOutcome;
+    }
+
+    // -----------------------------------------------------------------------
+    // PHASE C: RECOVERY / ROLLBACK + VERIFICATION
+    // -----------------------------------------------------------------------
+    const rollbackFailures = [];
+    const rolledBackKeys = [];
+    const seenRollbackKeys = new Set();
+
+    // Reverse order restores space first (removing/shrinking later keys before restoring earlier ones)
+    for (let i = touchedTargets.length - 1; i >= 0; i--) {
+      const { orig } = touchedTargets[i];
+      seenRollbackKeys.add(orig.storageKey);
+
+      try {
+        if (!orig.existed) {
+          localStorage.removeItem(orig.storageKey);
+          const verifiedAfterRemove = localStorage.getItem(orig.storageKey);
+          if (verifiedAfterRemove !== null) {
+            throw new Error('Absent key could not be verified as removed.');
+          }
+        } else {
+          const currentVal = localStorage.getItem(orig.storageKey);
+          if (currentVal !== orig.rawValue) {
+            localStorage.setItem(orig.storageKey, orig.rawValue);
+          }
+          const verifiedAfterRestore = localStorage.getItem(orig.storageKey);
+          if (verifiedAfterRestore !== orig.rawValue) {
+            throw new Error('Restored value failed read-back equality check.');
+          }
+        }
+        rolledBackKeys.push(orig.storageKey);
+      } catch (rbErr) {
+        rollbackFailures.push({
+          storageKey: orig.storageKey,
+          reason: rbErr && rbErr.message ? String(rbErr.message) : 'Rollback write or verification failed.'
+        });
+      }
+    }
+
+    // Defensive check across any remaining untouched affected keys
+    for (let i = 0; i < originals.length; i++) {
+      const orig = originals[i];
+      if (seenRollbackKeys.has(orig.storageKey)) continue;
+      try {
+        const curVal = localStorage.getItem(orig.storageKey);
+        const matchesOrig = !orig.existed ? curVal === null : curVal === orig.rawValue;
+        if (!matchesOrig) {
+          if (!orig.existed) {
+            localStorage.removeItem(orig.storageKey);
+            if (localStorage.getItem(orig.storageKey) !== null) {
+              throw new Error('Untouched absent key deviated and removal failed verification.');
+            }
+          } else {
+            localStorage.setItem(orig.storageKey, orig.rawValue);
+            if (localStorage.getItem(orig.storageKey) !== orig.rawValue) {
+              throw new Error('Untouched key deviated and restore failed verification.');
+            }
+          }
+        }
+        rolledBackKeys.push(orig.storageKey);
+      } catch (verifyErr) {
+        rollbackFailures.push({
+          storageKey: orig.storageKey,
+          reason: verifyErr && verifyErr.message ? String(verifyErr.message) : 'Post-failure state verification failed.'
+        });
+      }
+    }
+
+    // Restore original in-memory references cleanly
+    if (typeof window !== 'undefined' && window) {
+      for (let i = 0; i < originals.length; i++) {
+        const orig = originals[i];
+        if (!orig.windowKey) continue;
+        try {
+          if (orig.windowExisted) {
+            window[orig.windowKey] = orig.windowValue;
+          } else {
+            delete window[orig.windowKey];
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (rollbackFailures.length === 0) {
+      const rolledBackOutcome = {
+        ok: false,
+        status: RESTORE_STATUS.RESTORE_FAILED_ROLLED_BACK,
+        failedKey: commitFailure.storageKey,
+        datasetsTouched: true,
+        rolledBack: true,
+        rolledBackKeys,
+        rollbackFailures: [],
+        recoveryArtifactPreserved: true,
+        message: `Restore failed on "${commitFailure.storageKey}" (${commitFailure.message}). All affected local storage keys were rolled back and verified intact.`
+      };
+      if (typeof window !== 'undefined' && window.ForecasterGitHubSync) {
+        window.ForecasterGitHubSync._lastRestoreOutcome = rolledBackOutcome;
+      }
+      return rolledBackOutcome;
+    }
+
+    const failedKeyNames = rollbackFailures.map((f) => f.storageKey).join(', ');
+    const recoveryRequiredOutcome = {
+      ok: false,
+      status: RESTORE_STATUS.RESTORE_FAILED_RECOVERY_REQUIRED,
+      failedKey: commitFailure.storageKey,
+      datasetsTouched: true,
+      rolledBack: false,
+      rolledBackKeys,
+      rollbackFailures,
+      recoveryArtifactPreserved: true,
+      message:
+        `CRITICAL RECOVERY REQUIRED: Restore failed on "${commitFailure.storageKey}" and rollback verification failed for [${failedKeyNames}]. ` +
+        `Do NOT continue normal data operations until workspace recovery is completed using your preserved pre-restore recovery snapshot (${GITHUB_PRE_RESTORE_RECOVERY_KEY}).`
+    };
+    if (typeof window !== 'undefined' && window.ForecasterGitHubSync) {
+      window.ForecasterGitHubSync._lastRestoreOutcome = recoveryRequiredOutcome;
+    }
+    return recoveryRequiredOutcome;
   }
 
   function validateGitHubTarget(cfg) {
@@ -609,8 +1121,14 @@
     ENVELOPE_VERSION: ENVELOPE_VERSION,
     PBKDF2_ITERATIONS: DEFAULT_PBKDF2_ITERATIONS,
     MIN_PASSPHRASE_LENGTH: MIN_PASSPHRASE_LENGTH,
+    RESTORE_STATUS: RESTORE_STATUS,
+    RECOVERY_STORAGE_KEYS: Object.freeze({
+      ACTIVE: GITHUB_PRE_RESTORE_RECOVERY_KEY,
+      STAGING: GITHUB_PRE_RESTORE_STAGING_KEY
+    }),
     _lastError: null,
     _lastSnapshotStatus: null,
+    _lastRestoreOutcome: null,
 
     // Pure helpers exposed for verification and interoperability
     crypto: {
@@ -626,6 +1144,20 @@
       validateEncryptedEnvelope,
       decryptSnapshotEnvelope,
       validateSnapshotPayload
+    },
+
+    applySnapshotAtomic: function(snapshotObj, options) {
+      return applySnapshotAtomic(snapshotObj, options);
+    },
+
+    getPreRestoreRecoverySnapshot: function() {
+      try {
+        const raw = localStorage.getItem(GITHUB_PRE_RESTORE_RECOVERY_KEY);
+        if (!isValidRecoveryArtifactRaw(raw)) return null;
+        return JSON.parse(raw);
+      } catch (e) {
+        return null;
+      }
     },
 
     scrubLegacyStoredCredentials: function() {
@@ -1012,6 +1544,7 @@
 
       this._lastError = null;
       this._lastSnapshotStatus = null;
+      this._lastRestoreOutcome = null;
       const pullBtn = document.getElementById('gh-pull-btn');
       if (pullBtn) {
         pullBtn.disabled = true;
@@ -1088,7 +1621,7 @@
 
           // Strict decryption — NEVER fall back to plaintext if decryption fails
           validatedSnapshot = await decryptSnapshotEnvelope(remoteObj, passphrase);
-          setSnapshotBanner('encrypted', '🔒 Encrypted snapshot decrypted & verified (AES-256-GCM).');
+          setSnapshotBanner('encrypted', '🔒 Encrypted snapshot decrypted & verified (AES-256-GCM) — preparing atomic local restore...');
         } else {
           isEncryptedPull = false;
           this._lastSnapshotStatus = 'legacy-plaintext';
@@ -1108,22 +1641,44 @@
           }
         }
 
-        // Apply validated datasets cleanly (without modifying remote snapshot or importing profile PII)
-        for (let i = 0; i < DATASET_ARRAY_MAP.length; i++) {
-          const [payloadKey, storageKey, windowKey] = DATASET_ARRAY_MAP[i];
-          if (Array.isArray(validatedSnapshot[payloadKey])) {
-            localStorage.setItem(storageKey, JSON.stringify(validatedSnapshot[payloadKey]));
-            if (windowKey) {
-              window[windowKey] = validatedSnapshot[payloadKey];
-            }
+        // Apply validated datasets via 3-phase atomic-equivalent restore (Prepare -> Commit+Verify -> Rollback+Verify)
+        const targetIdentifier = cfg.mode === 'repo' ? `repo:${cfg.repo}` : `gist:${cfg.gistId}`;
+        const restoreOutcome = applySnapshotAtomic(validatedSnapshot, {
+          targetId: targetIdentifier,
+          _overrideStagedSerialized: opts._overrideStagedSerialized
+        });
+        this._lastRestoreOutcome = restoreOutcome;
+
+        if (!restoreOutcome || !restoreOutcome.ok || restoreOutcome.status !== RESTORE_STATUS.RESTORE_SUCCESS) {
+          const failureMsg = (restoreOutcome && restoreOutcome.message)
+            ? restoreOutcome.message
+            : 'Snapshot restore failed and was rolled back.';
+          this._lastError = failureMsg;
+          console.error('[GitHub Pull Error]', failureMsg);
+
+          const bannerMsg = (restoreOutcome && restoreOutcome.status === RESTORE_STATUS.RESTORE_FAILED_RECOVERY_REQUIRED)
+            ? failureMsg
+            : `Pull Failed: ${failureMsg}`;
+          setSnapshotBanner('error', bannerMsg);
+          if (typeof window.triggerToast === 'function') {
+            window.triggerToast(
+              (restoreOutcome && restoreOutcome.status === RESTORE_STATUS.RESTORE_FAILED_RECOVERY_REQUIRED)
+                ? failureMsg
+                : `Pull Failed: ${failureMsg}`,
+              'error'
+            );
           }
-        }
-        if (validatedSnapshot.budgetLimits) {
-          localStorage.setItem('pro_budget_limits', JSON.stringify(validatedSnapshot.budgetLimits));
-          window.budgetLimits = validatedSnapshot.budgetLimits;
+          return false;
         }
 
+        // Only update sync metadata, success banner/toast, and reload AFTER full Phase B read-back verification succeeds
         this.saveConfig({ lastSync: new Date().toISOString() });
+        setSnapshotBanner(
+          isEncryptedPull ? 'encrypted' : 'legacy',
+          isEncryptedPull
+            ? '🔒 Encrypted snapshot decrypted & verified (AES-256-GCM). All target datasets restored and read-back verified.'
+            : '⚠️ Legacy unencrypted snapshot restored and read-back verified. Consider pushing an encrypted snapshot.'
+        );
         if (typeof window.triggerToast === 'function') {
           window.triggerToast(
             isEncryptedPull

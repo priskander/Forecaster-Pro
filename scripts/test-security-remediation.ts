@@ -5573,6 +5573,403 @@ async function runSecurityTestSuite() {
         ghSectionSlice.includes('private visibility alone do not encrypt contents'),
         'UI 17.4: index.html includes truthful encryption vs legacy notice, passphrase inputs, session-only PAT indicator, and clear-token control'
       );
+
+      // 17.5 Phase 1.1.2.4 Final Correction: Atomic Snapshot Restore, Read-Back Verification & Rollback Protection
+      console.log('\n--- Test Category 17.5: GitHub Snapshot Restore Atomicity & Rollback Protection ---');
+
+      // Helper to build a wired mock DOM for atomic restore tests
+      const createAtomicTestEnv = (
+        initialStorage: Record<string, string>,
+        opts: { remoteContent?: string; storageHooks?: (mock: any) => void } = {}
+      ) => {
+        const dom = createMockDomEnv(initialStorage);
+        dom.getOrCreateEl('github-sync-form', 'form');
+        dom.getOrCreateEl('gh-sync-token', 'input');
+        dom.getOrCreateEl('gh-sync-passphrase', 'input');
+        dom.getOrCreateEl('gh-sync-passphrase-confirm', 'input');
+        dom.getOrCreateEl('gh-sync-mode', 'select').value = 'gist';
+        dom.getOrCreateEl('gh-sync-gist-id', 'input').value = 'gist_atomic_1';
+        dom.getOrCreateEl('gh-sync-repo', 'input');
+        dom.getOrCreateEl('gh-sync-branch', 'input');
+        dom.getOrCreateEl('gh-sync-snapshot-banner', 'div');
+        dom.getOrCreateEl('gh-sync-gist-wrap', 'div');
+        dom.getOrCreateEl('gh-sync-repo-wrap', 'div');
+
+        if (opts.storageHooks) {
+          opts.storageHooks(dom.sandbox.localStorage);
+        }
+
+        if (opts.remoteContent !== undefined) {
+          dom.setFetch(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              id: 'gist_atomic_1',
+              files: { 'forecaster-data.json': { content: opts.remoteContent } }
+            })
+          }));
+        }
+
+        vm.runInNewContext(ghSyncCode, dom.sandbox);
+        dom.dispatchWindowEvent('DOMContentLoaded');
+        dom.sandbox.window.ForecasterGitHubSync.setSessionToken(sessionPatSecret);
+        return dom;
+      };
+
+      const atomicEncryptedRemote = JSON.stringify(
+        await cryptoApi.encryptSnapshotPayload(sampleUnicodePayload, strongPass)
+      );
+
+      // 17.5a Full successful atomic restore (RESTORE_SUCCESS) across all 11 datasets, recovery artifact non-secret, reload suppressed cleanly
+      const origLastSync = '2026-10-15T12:00:00.000Z';
+      const successAtomicDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          forecaster_profile_user: JSON.stringify({ fullName: 'Atomic Profile PII', email: 'pii-keep@example.com' }),
+          pro_transactions: JSON.stringify([{ id: 'tx_before', amount: 10 }])
+        },
+        { remoteContent: atomicEncryptedRemote }
+      );
+      const atomicOkRes = await successAtomicDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      const atomicOutcomeA = successAtomicDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome;
+      const recoverySnapshotA = successAtomicDom.sandbox.window.ForecasterGitHubSync.getPreRestoreRecoverySnapshot();
+      const recoveryRawA = successAtomicDom.storage.get('forecaster_github_pre_restore_recovery_v1') || '';
+      assert(
+        atomicOkRes === true &&
+        atomicOutcomeA?.status === 'RESTORE_SUCCESS' &&
+        atomicOutcomeA?.verificationPassed === true &&
+        Array.isArray(atomicOutcomeA?.restoredKeys) &&
+        atomicOutcomeA.restoredKeys.length === 11 &&
+        !successAtomicDom.storage.has('forecaster_github_pre_restore_recovery_staging_v1') &&
+        !!recoverySnapshotA &&
+        recoverySnapshotA.originals?.length === 11 &&
+        !recoveryRawA.includes(sessionPatSecret) &&
+        !recoveryRawA.includes(strongPass) &&
+        !recoveryRawA.includes('forecaster_profile_user') &&
+        !recoveryRawA.includes('pii-keep@example.com') &&
+        JSON.parse(successAtomicDom.storage.get('forecaster_github_sync_config') || '{}').lastSync !== origLastSync &&
+        JSON.parse(successAtomicDom.storage.get('pro_transactions') || '[]')[0]?.description === sampleUnicodePayload.transactions[0].description &&
+        successAtomicDom.sandbox.window.budgetLimits?.categories?.nestedArr?.[2]?.note === 'ملاحظة',
+        'AtomicGitHub 17.5a: Successful atomic restore verifies all 11 datasets, creates non-secret recovery snapshot, cleans staging, and updates metadata only after commit'
+      );
+
+      // 17.5b Commit failure midway (QuotaExceededError on 3rd key pro_accounts) stops remaining writes and cleanly rolls back all 4 key-state edge cases
+      const edgeOriginals = {
+        jsonTx: JSON.stringify([{ id: 'tx_orig_keep', amount: 750, description: 'بيانات محفوظة' }]),
+        emptyAccounts: '',
+        nonJsonPharmacy: 'LEGACY_RAW_NON_JSON_STRING_keep_exact',
+        jsonBudget: JSON.stringify({ income: 30000, expense: 12000 })
+      };
+      const commitWritesLog: string[] = [];
+      let midFailTrigger = true;
+      const midFailDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          forecaster_profile_user: JSON.stringify({ fullName: 'Profile Must Stay Untouched' }),
+          pro_transactions: edgeOriginals.jsonTx,
+          // pro_stock DELIBERATELY ABSENT (null)
+          pro_accounts: edgeOriginals.emptyAccounts,
+          pro_pharmacy: edgeOriginals.nonJsonPharmacy,
+          pro_budget_limits: edgeOriginals.jsonBudget
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            ls.setItem = (k: string, v: string) => {
+              commitWritesLog.push(k);
+              if (midFailTrigger && k === 'pro_account_transfers') {
+                throw new Error('QuotaExceededError: disk quota exceeded on pro_account_transfers');
+              }
+              return origSet(k, v);
+            };
+          }
+        }
+      );
+      const sentinelWindowTx = [{ id: 'win_orig_ref' }];
+      midFailDom.sandbox.window.transactions = sentinelWindowTx;
+      midFailTrigger = true;
+      midFailDom.toasts.length = 0;
+
+      const midFailOk = await midFailDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      const midOutcome = midFailDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome;
+      const midLogsStr = JSON.stringify(midFailDom.consoleLogs);
+      const midBanner = midFailDom.getOrCreateEl('gh-sync-snapshot-banner', 'div');
+
+      assert(
+        midFailOk === false &&
+        midOutcome?.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+        midOutcome?.rolledBack === true &&
+        midOutcome?.failedKey === 'pro_account_transfers' &&
+        !commitWritesLog.includes('pro_vehicles') &&
+        !commitWritesLog.includes('pro_budget_limits') &&
+        midFailDom.storage.get('pro_transactions') === edgeOriginals.jsonTx &&
+        !midFailDom.storage.has('pro_stock') &&
+        midFailDom.sandbox.localStorage.getItem('pro_stock') === null &&
+        midFailDom.storage.get('pro_accounts') === '' &&
+        midFailDom.storage.get('pro_pharmacy') === edgeOriginals.nonJsonPharmacy &&
+        midFailDom.storage.get('pro_budget_limits') === edgeOriginals.jsonBudget &&
+        midFailDom.sandbox.window.transactions === sentinelWindowTx &&
+        JSON.parse(midFailDom.storage.get('forecaster_github_sync_config') || '{}').lastSync === origLastSync &&
+        midFailDom.storage.has('forecaster_github_pre_restore_recovery_v1') &&
+        !midFailDom.toasts.some(t => t.variant === 'success') &&
+        midFailDom.toasts.some(t => t.variant === 'error') &&
+        midBanner.textContent.toLowerCase().includes('failed') &&
+        !midLogsStr.includes('tx_orig_keep') &&
+        !midLogsStr.includes('بيانات محفوظة') &&
+        !midLogsStr.includes(edgeOriginals.nonJsonPharmacy) &&
+        !midLogsStr.includes(sessionPatSecret) &&
+        !midLogsStr.includes(strongPass),
+        'AtomicGitHub 17.5b: Mid-commit failure halts remaining keys, preserves recovery snapshot, avoids leaking values in logs, and rolls back absent(null)/empty("")/JSON/non-JSON keys verbatim'
+      );
+
+      // 17.5c Read-back verification mismatch during commit halts further writes and triggers clean rollback
+      let corruptStockReadOnce = false;
+      const readBackWrites: string[] = [];
+      const mismatchDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          pro_transactions: edgeOriginals.jsonTx,
+          // pro_stock absent
+          pro_accounts: JSON.stringify([{ id: 'acc_mismatch_orig' }])
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origGet = ls.getItem;
+            const origSet = ls.setItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'pro_stock') corruptStockReadOnce = true;
+              readBackWrites.push(k);
+              return origSet(k, v);
+            };
+            ls.getItem = (k: string) => {
+              if (k === 'pro_stock' && corruptStockReadOnce) {
+                corruptStockReadOnce = false; // inject corrupted read-back only once during Phase B verification
+                return JSON.stringify([{ id: 'CORRUPTED_STORAGE_READBACK' }]);
+              }
+              return origGet(k);
+            };
+          }
+        }
+      );
+      mismatchDom.toasts.length = 0;
+      const mismatchOk = await mismatchDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      const mismatchOutcome = mismatchDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome;
+      assert(
+        mismatchOk === false &&
+        mismatchOutcome?.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+        mismatchOutcome?.failedKey === 'pro_stock' &&
+        !readBackWrites.includes('pro_accounts') &&
+        mismatchDom.storage.get('pro_transactions') === edgeOriginals.jsonTx &&
+        !mismatchDom.storage.has('pro_stock') &&
+        JSON.parse(mismatchDom.storage.get('forecaster_github_sync_config') || '{}').lastSync === origLastSync &&
+        !mismatchDom.toasts.some(t => t.variant === 'success'),
+        'AtomicGitHub 17.5c: Read-back verification mismatch catches storage corruption before remaining commits and rolls back cleanly'
+      );
+
+      // 17.5d Rollback failure -> RESTORE_FAILED_RECOVERY_REQUIRED with explicit warning and intact recovery artifact
+      let txWrittenCount = 0;
+      const rbFailDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          pro_transactions: edgeOriginals.jsonTx,
+          // pro_stock absent -> written in Phase B, then removeItem blocked during Phase C
+          pro_accounts: edgeOriginals.emptyAccounts
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            const origRemove = ls.removeItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'pro_transactions') {
+                txWrittenCount++;
+                if (txWrittenCount >= 2) {
+                  throw new Error('SecurityError: storage locked during rollback write');
+                }
+              }
+              if (k === 'pro_accounts') {
+                throw new Error('QuotaExceededError: failure triggering rollback');
+              }
+              return origSet(k, v);
+            };
+            ls.removeItem = (k: string) => {
+              if (k === 'pro_stock') {
+                throw new Error('SecurityError: removeItem blocked during rollback');
+              }
+              return origRemove(k);
+            };
+          }
+        }
+      );
+      rbFailDom.toasts.length = 0;
+      const rbFailOk = await rbFailDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      const rbOutcome = rbFailDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome;
+      const rbBannerText = rbFailDom.getOrCreateEl('gh-sync-snapshot-banner', 'div').textContent;
+      const rbRecoverySnap = rbFailDom.sandbox.window.ForecasterGitHubSync.getPreRestoreRecoverySnapshot();
+      const rbLogsStr = JSON.stringify(rbFailDom.consoleLogs);
+
+      assert(
+        rbFailOk === false &&
+        rbOutcome?.status === 'RESTORE_FAILED_RECOVERY_REQUIRED' &&
+        rbOutcome?.rolledBack === false &&
+        Array.isArray(rbOutcome?.rollbackFailures) &&
+        rbOutcome.rollbackFailures.some((f: any) => f.storageKey === 'pro_transactions') &&
+        rbOutcome.rollbackFailures.some((f: any) => f.storageKey === 'pro_stock') &&
+        rbOutcome.message.includes('CRITICAL RECOVERY REQUIRED') &&
+        rbOutcome.message.includes('Do NOT continue normal data operations until workspace recovery is completed') &&
+        rbBannerText.includes('CRITICAL RECOVERY REQUIRED') &&
+        rbFailDom.toasts.some(t => t.variant === 'error' && t.msg.includes('CRITICAL RECOVERY REQUIRED')) &&
+        !rbFailDom.toasts.some(t => t.variant === 'success') &&
+        JSON.parse(rbFailDom.storage.get('forecaster_github_sync_config') || '{}').lastSync === origLastSync &&
+        !!rbRecoverySnap &&
+        rbRecoverySnap.originals.find((o: any) => o.storageKey === 'pro_transactions')?.rawValue === edgeOriginals.jsonTx &&
+        rbRecoverySnap.originals.find((o: any) => o.storageKey === 'pro_stock')?.existed === false &&
+        !rbLogsStr.includes('tx_orig_keep') &&
+        !rbLogsStr.includes(sessionPatSecret),
+        'AtomicGitHub 17.5d: Failed rollback reports RESTORE_FAILED_RECOVERY_REQUIRED, warns against normal operations, keeps recovery artifact intact, and leaks zero raw records/secrets'
+      );
+
+      // 17.5e Recovery preparation failures (staging quota error & active promotion quota error) preserve prior valid recovery snapshot and touch ZERO datasets
+      const priorRecoverySentinel = JSON.stringify({
+        format: 'forecaster-pro-github-pre-restore-recovery',
+        version: 1,
+        createdAt: '2026-11-20T00:00:00.000Z',
+        targetId: 'gist:prior_sentinel',
+        affectedKeys: ['pro_transactions'],
+        originals: [{ storageKey: 'pro_transactions', existed: true, rawValue: '[{"id":"tx_prior_sentinel"}]' }]
+      });
+
+      for (const failRecoveryKey of [
+        'forecaster_github_pre_restore_recovery_staging_v1',
+        'forecaster_github_pre_restore_recovery_v1'
+      ] as const) {
+        const datasetWritesDuringPrepFail: string[] = [];
+        const prepQuotaDom = createAtomicTestEnv(
+          {
+            forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+            forecaster_github_pre_restore_recovery_v1: priorRecoverySentinel,
+            pro_transactions: edgeOriginals.jsonTx
+          },
+          {
+            remoteContent: atomicEncryptedRemote,
+            storageHooks: (ls) => {
+              const origSet = ls.setItem;
+              ls.setItem = (k: string, v: string) => {
+                if (k === failRecoveryKey) {
+                  throw new Error(`QuotaExceededError on ${failRecoveryKey}`);
+                }
+                if (k.startsWith('pro_')) {
+                  datasetWritesDuringPrepFail.push(k);
+                }
+                return origSet(k, v);
+              };
+            }
+          }
+        );
+
+        const prepOk = await prepQuotaDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+          passphrase: strongPass,
+          skipReload: true
+        });
+        const prepOutcome = prepQuotaDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome;
+        assert(
+          prepOk === false &&
+          prepOutcome?.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+          prepOutcome?.datasetsTouched === false &&
+          datasetWritesDuringPrepFail.length === 0 &&
+          prepQuotaDom.storage.get('pro_transactions') === edgeOriginals.jsonTx &&
+          prepQuotaDom.storage.get('forecaster_github_pre_restore_recovery_v1') === priorRecoverySentinel,
+          `AtomicGitHub 17.5e (${failRecoveryKey}): Recovery prep quota failure aborts cleanly, preserves prior valid recovery artifact, and performs zero dataset writes`
+        );
+      }
+
+      // 17.5f Schema, NaN, undefined, malformed JSON & corrupt stage rejection BEFORE any dataset write
+      const validationWritesLog: string[] = [];
+      const valDom = createAtomicTestEnv(
+        { pro_transactions: edgeOriginals.jsonTx },
+        {
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k.startsWith('pro_')) validationWritesLog.push(k);
+              return origSet(k, v);
+            };
+          }
+        }
+      );
+      const badPayloads: Array<[string, any, Record<string, any>?]> = [
+        ['empty object', {}],
+        ['budgetLimits null only', { budgetLimits: null }],
+        ['wrong collection type', { transactions: { notAnArray: true } }],
+        ['explicit undefined field', { transactions: undefined }],
+        ['NaN financial value', { transactions: [{ id: 'bad_nan', amount: NaN }] }],
+        ['Infinity financial value', { transactions: [{ id: 'bad_inf', amount: Infinity }] }],
+        ['malformed staged JSON override', { transactions: [{ id: 'ok' }] }, { _overrideStagedSerialized: { pro_transactions: '{broken-json' } }]
+      ];
+      let rejectedBadCount = 0;
+      for (const [, badSnap, extraOpts] of badPayloads) {
+        const res = valDom.sandbox.window.ForecasterGitHubSync.applySnapshotAtomic(badSnap, extraOpts);
+        if (res.ok === false && res.status === 'RESTORE_FAILED_ROLLED_BACK' && res.datasetsTouched === false) {
+          rejectedBadCount++;
+        }
+      }
+
+      // Remote malformed JSON via pullFromGitHub also leaves local data untouched
+      const malformedRemoteDom = createAtomicTestEnv(
+        { pro_transactions: edgeOriginals.jsonTx },
+        { remoteContent: '{malformed-remote-json' }
+      );
+      const malformedPullOk = await malformedRemoteDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+
+      assert(
+        rejectedBadCount === badPayloads.length &&
+        validationWritesLog.length === 0 &&
+        valDom.storage.get('pro_transactions') === edgeOriginals.jsonTx &&
+        malformedPullOk === false &&
+        malformedRemoteDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+        'AtomicGitHub 17.5f: Invalid schemas, missing/wrong-typed datasets, NaN/Infinity, corrupted stages, and malformed remote JSON are all rejected before any local write'
+      );
+
+      // 17.5g Blocked localStorage handling + confirmed legacy snapshot atomic restore
+      const blockedStorageDom = createAtomicTestEnv({ pro_transactions: edgeOriginals.jsonTx });
+      blockedStorageDom.sandbox.localStorage.getItem = () => {
+        throw new Error('SecurityError: localStorage access denied');
+      };
+      const blockedOutcome = blockedStorageDom.sandbox.window.ForecasterGitHubSync.applySnapshotAtomic({
+        transactions: [{ id: 'tx_blocked_target' }]
+      });
+      assert(
+        blockedOutcome.ok === false &&
+        blockedOutcome.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+        blockedOutcome.datasetsTouched === false &&
+        blockedStorageDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+        'AtomicGitHub 17.5g: Blocked/unavailable localStorage is caught cleanly in Phase A without partial writes or unhandled exceptions'
+      );
+
+      // 17.5h Verified mirror parity between src/scripts/github-sync.js and public/scripts/github-sync.js
+      const ghSrcBuf = fs.readFileSync(path.resolve(process.cwd(), 'src/scripts/github-sync.js'));
+      const ghPubBuf = fs.readFileSync(path.resolve(process.cwd(), 'public/scripts/github-sync.js'));
+      assert(
+        ghSrcBuf.equals(ghPubBuf),
+        'SyncParity 17.5h: src/scripts/github-sync.js matches public/scripts/github-sync.js byte-for-byte after atomic restore update'
+      );
     } finally {
       await p1123Srv.stop(true);
     }
