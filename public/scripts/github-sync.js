@@ -675,13 +675,66 @@
     }
   }
 
-  function createStagedPreRestoreRecovery(originals, targetId) {
-    let priorActiveRaw = null;
+  function createRecoveryError(message, recoveryRequired, failedKey) {
+    const err = new Error(message);
+    err.recoveryRequired = !!recoveryRequired;
+    if (failedKey) err.failedRecoveryKey = failedKey;
+    return err;
+  }
+
+  function safeReadStorageKey(key) {
     try {
-      priorActiveRaw = localStorage.getItem(GITHUB_PRE_RESTORE_RECOVERY_KEY);
+      return { ok: true, value: localStorage.getItem(key), error: null };
     } catch (e) {
-      throw new Error('Unable to read existing pre-restore recovery state from localStorage.');
+      return { ok: false, value: null, error: e };
     }
+  }
+
+  function restoreRecoveryKeyToOriginal(key, existed, originalRaw) {
+    const readCheck = safeReadStorageKey(key);
+    if (readCheck.ok) {
+      if (!existed && readCheck.value === null) {
+        return { ok: true, error: null };
+      }
+      if (existed && readCheck.value === originalRaw) {
+        return { ok: true, error: null };
+      }
+    }
+
+    try {
+      if (!existed) {
+        localStorage.removeItem(key);
+      } else {
+        localStorage.setItem(key, originalRaw);
+      }
+    } catch (e) {
+      return { ok: false, error: e && e.message ? String(e.message) : 'Storage operation threw during recovery restoration.' };
+    }
+
+    const verifyCheck = safeReadStorageKey(key);
+    if (!verifyCheck.ok) {
+      return { ok: false, error: 'Read-back verification threw after recovery restoration.' };
+    }
+    if (!existed && verifyCheck.value !== null) {
+      return { ok: false, error: 'Absent recovery key could not be verified as removed.' };
+    }
+    if (existed && verifyCheck.value !== originalRaw) {
+      return { ok: false, error: 'Restored recovery key failed read-back equality check.' };
+    }
+    return { ok: true, error: null };
+  }
+
+  function createStagedPreRestoreRecovery(originals, targetId) {
+    const priorActiveCheck = safeReadStorageKey(GITHUB_PRE_RESTORE_RECOVERY_KEY);
+    const priorStagingCheck = safeReadStorageKey(GITHUB_PRE_RESTORE_STAGING_KEY);
+    if (!priorActiveCheck.ok || !priorStagingCheck.ok) {
+      throw createRecoveryError('Unable to read existing pre-restore recovery state from localStorage.', false);
+    }
+
+    const priorActiveRaw = priorActiveCheck.value;
+    const priorStagingRaw = priorStagingCheck.value;
+    const priorActiveExisted = priorActiveRaw !== null;
+    const priorStagingExisted = priorStagingRaw !== null;
     const hadValidPriorActive = isValidRecoveryArtifactRaw(priorActiveRaw);
 
     const record = {
@@ -701,61 +754,120 @@
     try {
       recoveryJson = JSON.stringify(record);
     } catch (e) {
-      throw new Error('Failed to serialize pre-restore recovery snapshot.');
+      throw createRecoveryError('Failed to serialize pre-restore recovery snapshot.', false);
     }
     if (typeof recoveryJson !== 'string' || recoveryJson.length === 0) {
-      throw new Error('Pre-restore recovery serialization produced empty output.');
+      throw createRecoveryError('Pre-restore recovery serialization produced empty output.', false);
     }
 
     // Step 1: Write to staging key first so prior active recovery key is not destroyed on failure
+    let stagingWriteErr = null;
     try {
       localStorage.setItem(GITHUB_PRE_RESTORE_STAGING_KEY, recoveryJson);
     } catch (e) {
-      throw new Error('Unable to stage pre-restore recovery snapshot in localStorage (storage quota or permission error).');
+      stagingWriteErr = e;
     }
 
-    let stagedRead = null;
-    try {
-      stagedRead = localStorage.getItem(GITHUB_PRE_RESTORE_STAGING_KEY);
-    } catch (e) {
-      stagedRead = null;
-    }
-    if (!verifyRecoveryJsonMatches(stagedRead, recoveryJson, originals.length)) {
-      if (hadValidPriorActive) {
-        try { localStorage.removeItem(GITHUB_PRE_RESTORE_STAGING_KEY); } catch (_) {}
+    const stagedReadCheck = !stagingWriteErr ? safeReadStorageKey(GITHUB_PRE_RESTORE_STAGING_KEY) : { ok: false, value: null };
+    const stagingVerified = !stagingWriteErr &&
+      stagedReadCheck.ok &&
+      verifyRecoveryJsonMatches(stagedReadCheck.value, recoveryJson, originals.length);
+
+    if (!stagingVerified) {
+      const curStagingCheck = safeReadStorageKey(GITHUB_PRE_RESTORE_STAGING_KEY);
+      const curActiveCheck = safeReadStorageKey(GITHUB_PRE_RESTORE_RECOVERY_KEY);
+      const activeStillValid = curActiveCheck.ok && isValidRecoveryArtifactRaw(curActiveCheck.value);
+      const stagingAlreadyValid = curStagingCheck.ok && isValidRecoveryArtifactRaw(curStagingCheck.value);
+
+      // Only preserve unexpected valid staging content if active lacks any valid recovery copy and staging had not originally existed
+      const shouldPreserveExistingOnStaging = !priorStagingExisted && !activeStillValid && stagingAlreadyValid;
+      if (!shouldPreserveExistingOnStaging) {
+        const rbStaging = restoreRecoveryKeyToOriginal(
+          GITHUB_PRE_RESTORE_STAGING_KEY,
+          priorStagingExisted,
+          priorStagingRaw
+        );
+        if (!rbStaging.ok) {
+          throw createRecoveryError(
+            `CRITICAL RECOVERY REQUIRED: Pre-restore staging failed and original staging state could not be verified (${rbStaging.error}). Existing usable recovery artifacts have been preserved.`,
+            true,
+            GITHUB_PRE_RESTORE_STAGING_KEY
+          );
+        }
       }
-      throw new Error('Pre-restore recovery staging verification failed; existing workspace preserved.');
+
+      throw createRecoveryError(
+        stagingWriteErr
+          ? 'Unable to stage pre-restore recovery snapshot in localStorage (storage quota or permission error).'
+          : 'Pre-restore recovery staging verification failed; existing recovery and workspace state preserved.',
+        false
+      );
     }
 
     // Step 2: Promote staged recovery copy to active recovery key
+    let activeWriteErr = null;
     try {
       localStorage.setItem(GITHUB_PRE_RESTORE_RECOVERY_KEY, recoveryJson);
     } catch (e) {
-      // Keep staged copy intact if active promotion threw; prior active copy also remains preserved if QuotaExceededError left it untouched
-      throw new Error('Unable to promote pre-restore recovery snapshot to active storage (storage quota or permission error).');
+      activeWriteErr = e;
     }
 
-    let promotedRead = null;
-    try {
-      promotedRead = localStorage.getItem(GITHUB_PRE_RESTORE_RECOVERY_KEY);
-    } catch (e) {
-      promotedRead = null;
-    }
-    if (!verifyRecoveryJsonMatches(promotedRead, recoveryJson, originals.length)) {
-      // Restore prior active copy if promotion corrupted it, and preserve staged copy
-      if (hadValidPriorActive) {
-        try {
-          localStorage.setItem(GITHUB_PRE_RESTORE_RECOVERY_KEY, priorActiveRaw);
-        } catch (_) {}
+    const promotedReadCheck = !activeWriteErr ? safeReadStorageKey(GITHUB_PRE_RESTORE_RECOVERY_KEY) : { ok: false, value: null };
+    const activeVerified = !activeWriteErr &&
+      promotedReadCheck.ok &&
+      verifyRecoveryJsonMatches(promotedReadCheck.value, recoveryJson, originals.length);
+
+    if (!activeVerified) {
+      const rbActive = restoreRecoveryKeyToOriginal(
+        GITHUB_PRE_RESTORE_RECOVERY_KEY,
+        priorActiveExisted,
+        priorActiveRaw
+      );
+
+      const postRestoreActiveCheck = safeReadStorageKey(GITHUB_PRE_RESTORE_RECOVERY_KEY);
+      const activeHasValidRecovery = postRestoreActiveCheck.ok && isValidRecoveryArtifactRaw(postRestoreActiveCheck.value);
+
+      const curStagingNow = safeReadStorageKey(GITHUB_PRE_RESTORE_STAGING_KEY);
+      const stagingHasNewVerifiedCopy = curStagingNow.ok &&
+        verifyRecoveryJsonMatches(curStagingNow.value, recoveryJson, originals.length);
+
+      let rbStaging = { ok: true, error: null };
+      if (!activeHasValidRecovery && stagingHasNewVerifiedCopy) {
+        // Preserve the verified new staging recovery artifact when restoring previous staging state would leave zero usable recovery copies
+      } else if (activeHasValidRecovery || hadValidPriorActive) {
+        rbStaging = restoreRecoveryKeyToOriginal(
+          GITHUB_PRE_RESTORE_STAGING_KEY,
+          priorStagingExisted,
+          priorStagingRaw
+        );
       }
-      throw new Error('Active pre-restore recovery verification failed after promotion; existing workspace preserved.');
+
+      if (!rbActive.ok || !rbStaging.ok) {
+        const failedKey = !rbActive.ok ? GITHUB_PRE_RESTORE_RECOVERY_KEY : GITHUB_PRE_RESTORE_STAGING_KEY;
+        const reason = !rbActive.ok ? rbActive.error : rbStaging.error;
+        throw createRecoveryError(
+          `CRITICAL RECOVERY REQUIRED: Active recovery promotion failed and recovery-key restoration could not be verified for "${failedKey}" (${reason}). Usable recovery artifacts have been preserved.`,
+          true,
+          failedKey
+        );
+      }
+
+      throw createRecoveryError(
+        activeWriteErr
+          ? 'Unable to promote pre-restore recovery snapshot to active storage (storage quota or permission error).'
+          : 'Active pre-restore recovery verification failed after promotion; existing workspace preserved.',
+        false
+      );
     }
 
-    // Step 3: Remove staging key only after verifying promoted active key is intact
-    try {
-      localStorage.removeItem(GITHUB_PRE_RESTORE_STAGING_KEY);
-    } catch (_) {
-      // Non-fatal: active recovery key is already promoted and verified
+    // Step 3: Remove staging key only after establishing verified active copy exists
+    const finalActiveCheck = safeReadStorageKey(GITHUB_PRE_RESTORE_RECOVERY_KEY);
+    if (finalActiveCheck.ok && verifyRecoveryJsonMatches(finalActiveCheck.value, recoveryJson, originals.length)) {
+      try {
+        localStorage.removeItem(GITHUB_PRE_RESTORE_STAGING_KEY);
+      } catch (_) {
+        // Non-fatal: active recovery key is already promoted and verified
+      }
     }
 
     return {
@@ -878,15 +990,22 @@
       createStagedPreRestoreRecovery(originals, opts.targetId);
     } catch (prepErr) {
       const safePrepMsg = prepErr && prepErr.message ? String(prepErr.message) : 'Restore preparation failed.';
+      const isRecoveryRequired = !!(prepErr && prepErr.recoveryRequired === true);
       const prepOutcome = {
         ok: false,
-        status: RESTORE_STATUS.RESTORE_FAILED_ROLLED_BACK,
+        status: isRecoveryRequired
+          ? RESTORE_STATUS.RESTORE_FAILED_RECOVERY_REQUIRED
+          : RESTORE_STATUS.RESTORE_FAILED_ROLLED_BACK,
         datasetsTouched: false,
-        rolledBack: true,
+        rolledBack: !isRecoveryRequired,
         rolledBackKeys: [],
-        rollbackFailures: [],
+        rollbackFailures: isRecoveryRequired
+          ? [{ storageKey: prepErr.failedRecoveryKey || GITHUB_PRE_RESTORE_RECOVERY_KEY, reason: safePrepMsg }]
+          : [],
         recoveryArtifactPreserved: true,
-        message: `${safePrepMsg} Local workspace data was not modified.`
+        message: isRecoveryRequired
+          ? safePrepMsg
+          : `${safePrepMsg} Local workspace data was not modified.`
       };
       if (typeof window !== 'undefined' && window.ForecasterGitHubSync) {
         window.ForecasterGitHubSync._lastRestoreOutcome = prepOutcome;
@@ -928,16 +1047,28 @@
     }
 
     if (!commitFailure) {
-      // Update in-memory window references ONLY after all keys succeeded write + read-back verification
-      if (typeof window !== 'undefined' && window) {
-        for (let i = 0; i < stagedTargets.length; i++) {
-          const target = stagedTargets[i];
-          if (target.windowKey) {
-            window[target.windowKey] = target.value;
+      try {
+        // Update in-memory window references ONLY after all keys succeeded write + read-back verification
+        if (typeof window !== 'undefined' && window) {
+          for (let i = 0; i < stagedTargets.length; i++) {
+            const target = stagedTargets[i];
+            if (target.windowKey) {
+              window[target.windowKey] = target.value;
+            }
           }
         }
+      } catch (inMemErr) {
+        commitFailure = {
+          storageKey: 'in-memory',
+          inMemoryFailure: true,
+          message: inMemErr && inMemErr.message
+            ? `In-memory reference update failed: ${String(inMemErr.message)}`
+            : 'In-memory reference update failed.'
+        };
       }
+    }
 
+    if (!commitFailure) {
       const successOutcome = {
         ok: true,
         status: RESTORE_STATUS.RESTORE_SUCCESS,
@@ -1020,18 +1151,35 @@
       }
     }
 
-    // Restore original in-memory references cleanly
+    // Restore and verify original in-memory references
     if (typeof window !== 'undefined' && window) {
       for (let i = 0; i < originals.length; i++) {
         const orig = originals[i];
         if (!orig.windowKey) continue;
         try {
           if (orig.windowExisted) {
-            window[orig.windowKey] = orig.windowValue;
+            if (window[orig.windowKey] !== orig.windowValue) {
+              window[orig.windowKey] = orig.windowValue;
+            }
+            if (window[orig.windowKey] !== orig.windowValue) {
+              throw new Error('Restored in-memory reference failed equality check.');
+            }
           } else {
-            delete window[orig.windowKey];
+            if (Object.prototype.hasOwnProperty.call(window, orig.windowKey)) {
+              delete window[orig.windowKey];
+            }
+            if (Object.prototype.hasOwnProperty.call(window, orig.windowKey)) {
+              throw new Error('Absent in-memory reference could not be verified as removed.');
+            }
           }
-        } catch (_) {}
+        } catch (inMemRbErr) {
+          rollbackFailures.push({
+            storageKey: `window.${orig.windowKey}`,
+            reason: inMemRbErr && inMemRbErr.message
+              ? String(inMemRbErr.message)
+              : 'In-memory reference rollback failed.'
+          });
+        }
       }
     }
 

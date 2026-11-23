@@ -5963,6 +5963,401 @@ async function runSecurityTestSuite() {
         'AtomicGitHub 17.5g: Blocked/unavailable localStorage is caught cleanly in Phase A without partial writes or unhandled exceptions'
       );
 
+      // 17.5i Issue A: Pre-existing staging recovery artifact preservation across staging write/verify/promotion failures
+      const validPriorStagingSentinel = JSON.stringify({
+        format: 'forecaster-pro-github-pre-restore-recovery',
+        version: 1,
+        createdAt: '2026-11-19T12:00:00.000Z',
+        targetId: 'gist:prior_staging_sentinel',
+        affectedKeys: ['pro_transactions'],
+        originals: [{ storageKey: 'pro_transactions', existed: true, rawValue: '[{"id":"tx_staging_sentinel"}]' }]
+      });
+
+      // A1: Valid prior staging artifact remains byte-for-byte unchanged on staging write failure
+      const stgWriteFailDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          forecaster_github_pre_restore_recovery_v1: priorRecoverySentinel,
+          forecaster_github_pre_restore_recovery_staging_v1: validPriorStagingSentinel,
+          pro_transactions: edgeOriginals.jsonTx
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_staging_v1') {
+                throw new Error('QuotaExceededError on staging overwrite');
+              }
+              return origSet(k, v);
+            };
+          }
+        }
+      );
+      const stgWriteFailOk = await stgWriteFailDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      assert(
+        stgWriteFailOk === false &&
+        stgWriteFailDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+        stgWriteFailDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.datasetsTouched === false &&
+        stgWriteFailDom.storage.get('forecaster_github_pre_restore_recovery_staging_v1') === validPriorStagingSentinel &&
+        stgWriteFailDom.storage.get('forecaster_github_pre_restore_recovery_v1') === priorRecoverySentinel &&
+        stgWriteFailDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+        'AtomicGitHub 17.5i-A1: Prior valid staging artifact remains byte-for-byte intact when staging write fails'
+      );
+
+      // A2: Staging write followed by read-back mismatch restores exact prior staging state (both valid JSON and raw legacy/malformed strings verbatim)
+      for (const priorStagingCase of [
+        ['valid_prior_staging', validPriorStagingSentinel],
+        ['malformed_legacy_staging', 'MALFORMED_LEGACY_STAGING_RAW_TEXT\nkeep_exact']
+      ] as const) {
+        let injectBadStagingRead = false;
+        const stgVerifyFailDom = createAtomicTestEnv(
+          {
+            forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+            forecaster_github_pre_restore_recovery_v1: priorRecoverySentinel,
+            forecaster_github_pre_restore_recovery_staging_v1: priorStagingCase[1],
+            pro_transactions: edgeOriginals.jsonTx
+          },
+          {
+            remoteContent: atomicEncryptedRemote,
+            storageHooks: (ls) => {
+              const origSet = ls.setItem;
+              const origGet = ls.getItem;
+              let writes = 0;
+              ls.setItem = (k: string, v: string) => {
+                if (k === 'forecaster_github_pre_restore_recovery_staging_v1') {
+                  writes++;
+                  if (writes === 1) injectBadStagingRead = true;
+                }
+                return origSet(k, v);
+              };
+              ls.getItem = (k: string) => {
+                if (k === 'forecaster_github_pre_restore_recovery_staging_v1' && injectBadStagingRead) {
+                  injectBadStagingRead = false;
+                  return '{"corrupted":"staging-readback"}';
+                }
+                return origGet(k);
+              };
+            }
+          }
+        );
+        const stgVerifyFailOk = await stgVerifyFailDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+          passphrase: strongPass,
+          skipReload: true
+        });
+        assert(
+          stgVerifyFailOk === false &&
+          stgVerifyFailDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+          stgVerifyFailDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.datasetsTouched === false &&
+          stgVerifyFailDom.storage.get('forecaster_github_pre_restore_recovery_staging_v1') === priorStagingCase[1] &&
+          stgVerifyFailDom.storage.get('forecaster_github_pre_restore_recovery_v1') === priorRecoverySentinel &&
+          stgVerifyFailDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+          `AtomicGitHub 17.5i-A2 (${priorStagingCase[0]}): Staging read-back mismatch restores prior staging state verbatim without normalizing`
+        );
+      }
+
+      // A3: Staging restoration failure itself returns RESTORE_FAILED_RECOVERY_REQUIRED
+      let injectBadStagingOnceA3 = false;
+      let stagingSetCountA3 = 0;
+      const stgRestoreFailDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          forecaster_github_pre_restore_recovery_v1: priorRecoverySentinel,
+          forecaster_github_pre_restore_recovery_staging_v1: validPriorStagingSentinel,
+          pro_transactions: edgeOriginals.jsonTx
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            const origGet = ls.getItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_staging_v1') {
+                stagingSetCountA3++;
+                if (stagingSetCountA3 === 1) {
+                  injectBadStagingOnceA3 = true;
+                  return origSet(k, v);
+                }
+                throw new Error('SecurityError: unable to restore prior staging artifact');
+              }
+              return origSet(k, v);
+            };
+            ls.getItem = (k: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_staging_v1' && injectBadStagingOnceA3) {
+                injectBadStagingOnceA3 = false;
+                return '{"corrupted":"staging-readback-fail"}';
+              }
+              return origGet(k);
+            };
+          }
+        }
+      );
+      const stgRestoreFailOk = await stgRestoreFailDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      assert(
+        stgRestoreFailOk === false &&
+        stgRestoreFailDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.status === 'RESTORE_FAILED_RECOVERY_REQUIRED' &&
+        stgRestoreFailDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.datasetsTouched === false &&
+        stgRestoreFailDom.storage.get('forecaster_github_pre_restore_recovery_v1') === priorRecoverySentinel &&
+        stgRestoreFailDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+        'AtomicGitHub 17.5i-A3: Failure to restore staging state after failed staging check returns RESTORE_FAILED_RECOVERY_REQUIRED'
+      );
+
+      // A4: Active promotion failure handling (absent staging + valid active -> staging remains absent; absent staging + absent active -> verified staging retained!)
+      let corruptActiveReadOnce = false;
+      const promoAbsentStgValidActDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          forecaster_github_pre_restore_recovery_v1: priorRecoverySentinel,
+          // staging key deliberately ABSENT
+          pro_transactions: edgeOriginals.jsonTx
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            const origGet = ls.getItem;
+            let activeSets = 0;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_v1') {
+                activeSets++;
+                if (activeSets === 1) corruptActiveReadOnce = true;
+              }
+              return origSet(k, v);
+            };
+            ls.getItem = (k: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_v1' && corruptActiveReadOnce) {
+                corruptActiveReadOnce = false;
+                return '{"corrupted":"active-readback"}';
+              }
+              return origGet(k);
+            };
+          }
+        }
+      );
+      const promoAbsentOk = await promoAbsentStgValidActDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      assert(
+        promoAbsentOk === false &&
+        promoAbsentStgValidActDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+        promoAbsentStgValidActDom.storage.get('forecaster_github_pre_restore_recovery_v1') === priorRecoverySentinel &&
+        !promoAbsentStgValidActDom.storage.has('forecaster_github_pre_restore_recovery_staging_v1') &&
+        promoAbsentStgValidActDom.sandbox.localStorage.getItem('forecaster_github_pre_restore_recovery_staging_v1') === null &&
+        promoAbsentStgValidActDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+        'AtomicGitHub 17.5i-A4a: Active promotion failure restores valid active copy and keeps previously absent staging key absent'
+      );
+
+      // A4b: When NO prior active recovery artifact exists and promotion fails, retain the new verified staging copy (never destroy the only usable recovery path!)
+      const promoOnlyCopyDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          // BOTH active and staging keys absent initially
+          pro_transactions: edgeOriginals.jsonTx
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_v1') {
+                throw new Error('QuotaExceededError on active promotion with no prior active copy');
+              }
+              return origSet(k, v);
+            };
+          }
+        }
+      );
+      const promoOnlyOk = await promoOnlyCopyDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      const retainedStagingRaw = promoOnlyCopyDom.storage.get('forecaster_github_pre_restore_recovery_staging_v1') || '';
+      const retainedStagingParsed = retainedStagingRaw ? JSON.parse(retainedStagingRaw) : null;
+      assert(
+        promoOnlyOk === false &&
+        promoOnlyCopyDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+        !promoOnlyCopyDom.storage.has('forecaster_github_pre_restore_recovery_v1') &&
+        retainedStagingParsed?.format === 'forecaster-pro-github-pre-restore-recovery' &&
+        Array.isArray(retainedStagingParsed?.originals) &&
+        retainedStagingParsed.originals.length === 11 &&
+        promoOnlyCopyDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+        'AtomicGitHub 17.5i-A4b: Preserves new verified staging copy when active promotion fails and no valid active copy exists'
+      );
+
+      // A4c: When both valid active and valid staging exist and active promotion fails, both are restored/preserved accurately
+      const promoBothValidDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          forecaster_github_pre_restore_recovery_v1: priorRecoverySentinel,
+          forecaster_github_pre_restore_recovery_staging_v1: validPriorStagingSentinel,
+          pro_transactions: edgeOriginals.jsonTx
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_v1') {
+                throw new Error('QuotaExceededError on active promotion');
+              }
+              return origSet(k, v);
+            };
+          }
+        }
+      );
+      const promoBothOk = await promoBothValidDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      assert(
+        promoBothOk === false &&
+        promoBothValidDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+        promoBothValidDom.storage.get('forecaster_github_pre_restore_recovery_v1') === priorRecoverySentinel &&
+        promoBothValidDom.storage.get('forecaster_github_pre_restore_recovery_staging_v1') === validPriorStagingSentinel &&
+        promoBothValidDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+        'AtomicGitHub 17.5i-A4c: Restores both prior valid active and staging artifacts when active promotion fails'
+      );
+
+      // 17.5j Issue B: In-memory reference update exception safety & rollback verification
+      // B1: Throwing setter on window.accounts triggers full localStorage rollback + restores earlier window.* refs -> RESTORE_FAILED_ROLLED_BACK
+      const inMemRollbackDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          pro_transactions: edgeOriginals.jsonTx,
+          // pro_stock ABSENT
+          pro_accounts: edgeOriginals.emptyAccounts,
+          pro_pharmacy: edgeOriginals.nonJsonPharmacy
+        },
+        { remoteContent: atomicEncryptedRemote }
+      );
+      const origWinTxRef = [{ id: 'win_tx_orig_b1' }];
+      const origWinPharmRef = [{ id: 'win_pharm_orig_b1' }];
+      const origWinAccountsRef = [{ id: 'win_acc_orig_b1' }];
+      inMemRollbackDom.sandbox.window.transactions = origWinTxRef;
+      inMemRollbackDom.sandbox.window.pharmacyData = origWinPharmRef;
+      delete inMemRollbackDom.sandbox.window.stockData;
+      Object.defineProperty(inMemRollbackDom.sandbox.window, 'accounts', {
+        configurable: true,
+        enumerable: true,
+        get() { return origWinAccountsRef; },
+        set() { throw new Error('Simulated in-memory accounts setter error'); }
+      });
+      inMemRollbackDom.toasts.length = 0;
+
+      const inMemOkB1 = await inMemRollbackDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      const inMemOutcomeB1 = inMemRollbackDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome;
+      assert(
+        inMemOkB1 === false &&
+        inMemOutcomeB1?.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+        inMemOutcomeB1?.rolledBack === true &&
+        inMemRollbackDom.storage.get('pro_transactions') === edgeOriginals.jsonTx &&
+        !inMemRollbackDom.storage.has('pro_stock') &&
+        inMemRollbackDom.sandbox.localStorage.getItem('pro_stock') === null &&
+        inMemRollbackDom.storage.get('pro_accounts') === '' &&
+        inMemRollbackDom.storage.get('pro_pharmacy') === edgeOriginals.nonJsonPharmacy &&
+        inMemRollbackDom.sandbox.window.transactions === origWinTxRef &&
+        inMemRollbackDom.sandbox.window.pharmacyData === origWinPharmRef &&
+        inMemRollbackDom.sandbox.window.accounts === origWinAccountsRef &&
+        !Object.prototype.hasOwnProperty.call(inMemRollbackDom.sandbox.window, 'stockData') &&
+        JSON.parse(inMemRollbackDom.storage.get('forecaster_github_sync_config') || '{}').lastSync === origLastSync &&
+        inMemRollbackDom.storage.has('forecaster_github_pre_restore_recovery_v1') &&
+        !inMemRollbackDom.toasts.some(t => t.variant === 'success') &&
+        inMemRollbackDom.toasts.some(t => t.variant === 'error'),
+        'AtomicGitHub 17.5j-B1: In-memory window.* setter exception after storage commit triggers full storage & memory rollback (RESTORE_FAILED_ROLLED_BACK)'
+      );
+
+      // B2: In-memory update failure + storage rollback failure -> RESTORE_FAILED_RECOVERY_REQUIRED
+      const inMemPlusStorageFailDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          pro_transactions: edgeOriginals.jsonTx
+          // pro_stock ABSENT -> written during Phase B, removeItem fails during Phase C triggered by window.accounts throw
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origRemove = ls.removeItem;
+            ls.removeItem = (k: string) => {
+              if (k === 'pro_stock') {
+                throw new Error('SecurityError: removeItem blocked during post-in-memory rollback');
+              }
+              return origRemove(k);
+            };
+          }
+        }
+      );
+      Object.defineProperty(inMemPlusStorageFailDom.sandbox.window, 'accounts', {
+        configurable: true,
+        enumerable: true,
+        get() { return origWinAccountsRef; },
+        set() { throw new Error('Simulated in-memory setter failure'); }
+      });
+      const inMemStorageRbFailOk = await inMemPlusStorageFailDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      const inMemOutcomeB2 = inMemPlusStorageFailDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome;
+      assert(
+        inMemStorageRbFailOk === false &&
+        inMemOutcomeB2?.status === 'RESTORE_FAILED_RECOVERY_REQUIRED' &&
+        inMemOutcomeB2?.rollbackFailures?.some((f: any) => f.storageKey === 'pro_stock') &&
+        inMemPlusStorageFailDom.storage.has('forecaster_github_pre_restore_recovery_v1') &&
+        inMemPlusStorageFailDom.getOrCreateEl('gh-sync-snapshot-banner', 'div').textContent.includes('CRITICAL RECOVERY REQUIRED'),
+        'AtomicGitHub 17.5j-B2: In-memory failure followed by storage rollback failure reports RESTORE_FAILED_RECOVERY_REQUIRED and keeps recovery snapshot intact'
+      );
+
+      // B3: In-memory update failure + in-memory rollback failure -> RESTORE_FAILED_RECOVERY_REQUIRED
+      const inMemDoubleFailDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          pro_transactions: edgeOriginals.jsonTx
+        },
+        { remoteContent: atomicEncryptedRemote }
+      );
+      let winTxCurrentVal: any = origWinTxRef;
+      let winTxWriteCount = 0;
+      Object.defineProperty(inMemDoubleFailDom.sandbox.window, 'transactions', {
+        configurable: true,
+        enumerable: true,
+        get() { return winTxCurrentVal; },
+        set(nextVal: any) {
+          winTxWriteCount++;
+          if (winTxWriteCount >= 2) {
+            throw new Error('Simulated in-memory rollback setter failure');
+          }
+          winTxCurrentVal = nextVal;
+        }
+      });
+      Object.defineProperty(inMemDoubleFailDom.sandbox.window, 'accounts', {
+        configurable: true,
+        enumerable: true,
+        get() { return origWinAccountsRef; },
+        set() { throw new Error('Simulated in-memory accounts failure'); }
+      });
+      const inMemDoubleOk = await inMemDoubleFailDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      const inMemOutcomeB3 = inMemDoubleFailDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome;
+      assert(
+        inMemDoubleOk === false &&
+        inMemOutcomeB3?.status === 'RESTORE_FAILED_RECOVERY_REQUIRED' &&
+        inMemOutcomeB3?.rollbackFailures?.some((f: any) => f.storageKey === 'window.transactions') &&
+        inMemDoubleFailDom.storage.get('pro_transactions') === edgeOriginals.jsonTx &&
+        inMemDoubleFailDom.storage.has('forecaster_github_pre_restore_recovery_v1'),
+        'AtomicGitHub 17.5j-B3: Failure to restore in-memory window.* reference during Phase C reports RESTORE_FAILED_RECOVERY_REQUIRED'
+      );
+
       // 17.5h Verified mirror parity between src/scripts/github-sync.js and public/scripts/github-sync.js
       const ghSrcBuf = fs.readFileSync(path.resolve(process.cwd(), 'src/scripts/github-sync.js'));
       const ghPubBuf = fs.readFileSync(path.resolve(process.cwd(), 'public/scripts/github-sync.js'));
