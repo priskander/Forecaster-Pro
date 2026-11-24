@@ -5698,6 +5698,14 @@
           envelopeModules.rentals.contracts.length +
           envelopeModules.rentals.notifications.length;
 
+        let localChecksum = '';
+        if (typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined') {
+          const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(envelopeModules)));
+          localChecksum = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        } else {
+          throw new Error('Cryptographic SHA-256 signing is unavailable in this browser context; cannot generate a verified v2.0.0 backup offline.');
+        }
+
         backupData = {
           format: 'forecaster-pro-backup',
           schemaVersion: '2.0.0',
@@ -5707,6 +5715,7 @@
           ownerEmail: (JSON.parse(localStorage.getItem('forecaster_auth_user') || 'null')?.email || ''),
           ownerUserId: (JSON.parse(localStorage.getItem('forecaster_auth_user') || 'null')?.id || ''),
           moduleFilter: filter,
+          checksum: localChecksum,
           summary: {
             transactionsCount: envelopeModules.financial.transactions.length,
             accountsCount: envelopeModules.financial.accounts.length,
@@ -5777,6 +5786,11 @@
     if (modal) modal.classList.add('hidden');
     window._pendingBackupData = null;
     window._pendingValidationReport = null;
+    const confirmBtn = document.getElementById('bk-confirm-restore-btn');
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
     const fileInput = document.getElementById('import-json-file');
     if (fileInput) fileInput.value = '';
   };
@@ -5793,6 +5807,14 @@
     const reader = new FileReader();
 
     reader.onload = async function(e) {
+      window._pendingBackupData = null;
+      window._pendingValidationReport = null;
+      const confirmBtn = document.getElementById('bk-confirm-restore-btn');
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
+
       try {
         const text = e.target.result;
         let data = null;
@@ -5802,48 +5824,37 @@
           throw new Error('File content is not valid JSON.');
         }
 
-        if (!data || typeof data !== 'object') {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
           throw new Error('Invalid JSON structure: Backup file must contain a JSON object.');
         }
 
-        window._pendingBackupData = data;
+        // Fail-closed server pre-flight validation is mandatory
+        if (!window.ForecasterCloudSync || typeof window.ForecasterCloudSync.validateBackup !== 'function') {
+          throw new Error('Server backup validation service is unavailable. Cannot verify backup integrity.');
+        }
 
-        // Perform server or client-side pre-flight validation
         let report = null;
-        if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.validateBackup === 'function') {
-          try {
-            report = await window.ForecasterCloudSync.validateBackup(data);
-          } catch (valErr) {
-            console.warn('[Backup Validation] Cloud validation notice:', valErr);
-          }
+        try {
+          report = await window.ForecasterCloudSync.validateBackup(data);
+        } catch (valErr) {
+          throw new Error('Server backup integrity validation unavailable or rejected request: ' + (valErr?.message || 'Unknown error'));
         }
 
-        if (!report) {
-          // Client-side fallback validator
-          report = {
-            ok: true,
-            valid: true,
-            detectedVersion: data.schemaVersion || (data.version && String(data.version).includes('1.') ? '1.0.0' : '2.0.0'),
-            sourceOrganization: data.organizationId || data.vaultId || 'default',
-            targetOrganization: (window.ForecasterCloudSync?.getVaultId?.() || 'shared-main-vault'),
-            ownershipMatch: (data.organizationId || data.vaultId) === (window.ForecasterCloudSync?.getVaultId?.() || 'shared-main-vault'),
-            totalRecords: 0,
-            validRecordCount: 0,
-            invalidRecordCount: 0,
-            existingDuplicateCount: 0,
-            newRecordCount: 0,
-            moduleSummary: {},
-            errors: [],
-            incompatibilities: []
-          };
+        if (!report || typeof report !== 'object' || report.ok === false) {
+          throw new Error((report && report.error) ? report.error : 'Backup validation returned an empty or invalid response.');
         }
 
+        const isAuthorizedToRestore = report.valid === true && report.restoreAllowed !== false;
         window._pendingValidationReport = report;
+        window._pendingBackupData = isAuthorizedToRestore ? data : null;
 
-        // Populate Modal UI
         const modal = document.getElementById('backup-restore-review-modal');
         if (!modal) {
-          // Fallback direct non-destructive restore
+          if (!isAuthorizedToRestore) {
+            const firstErr = (report.errors && report.errors[0]?.reason) || 'Backup failed integrity or schema validation.';
+            throw new Error(firstErr);
+          }
+          // Headless fallback only after passing server validation
           await window.ForecasterCloudSync.restoreBackup(data, 'merge', ['all']);
           if (typeof window.triggerToast === 'function') {
             window.triggerToast('Backup restored successfully!', 'success');
@@ -5859,7 +5870,7 @@
         if (metaTot) metaTot.textContent = report.totalRecords || 0;
 
         const metaVal = document.getElementById('bk-meta-valid');
-        if (metaVal) metaVal.textContent = report.validRecordCount || report.totalRecords || 0;
+        if (metaVal) metaVal.textContent = report.validRecordCount || 0;
 
         const metaDup = document.getElementById('bk-meta-duplicates');
         if (metaDup) metaDup.textContent = report.existingDuplicateCount || 0;
@@ -5884,7 +5895,7 @@
         const warnList = document.getElementById('bk-warnings-list');
         if (warnContainer && warnList) {
           warnList.innerHTML = '';
-          const msgs = [...(report.incompatibilities || []), ...(report.errors || []).map(e => `${e.module}[${e.id}]: ${e.reason}`)];
+          const msgs = [...(report.incompatibilities || []), ...(report.errors || []).map(err => `${err.module}[${err.id}]: ${err.reason}`)];
           if (msgs.length > 0) {
             msgs.slice(0, 5).forEach(m => {
               const li = document.createElement('li');
@@ -5925,20 +5936,6 @@
               }
             });
 
-            // If flat legacy count
-            if (modTotal === 0) {
-              if (mCfg.key === 'financial') {
-                modTotal = (data.transactions || []).length + (data.accounts || []).length;
-              } else if (mCfg.key === 'inventory') {
-                modTotal = (data.stockData || []).length + (data.pharmacyData || []).length;
-              } else if (mCfg.key === 'fleet') {
-                modTotal = (data.vehicles || data.pro_vehicles || []).length + (data.fuels || data.pro_vehicle_fuel || []).length + (data.maint || data.pro_vehicle_maintenance || []).length;
-              } else if (mCfg.key === 'rentals') {
-                modTotal = (data.rentalProperties || data.pro_rental_properties_v1 || []).length + (data.rentalContracts || data.pro_rental_contracts_v1 || []).length;
-              }
-              modNew = modTotal;
-            }
-
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition';
             tr.innerHTML = `
@@ -5951,7 +5948,7 @@
               <td class="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-semibold">${modNew}</td>
               <td class="p-2.5 text-center">
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${modTotal > 0 ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300' : 'bg-slate-100 text-slate-400'}">
-                  ${modTotal > 0 ? 'Ready' : 'Empty'}
+                  ${modTotal > 0 ? (isAuthorizedToRestore ? 'Ready' : 'Blocked') : 'Empty'}
                 </span>
               </td>
             `;
@@ -5959,11 +5956,35 @@
           });
         }
 
-        // Open Modal
+        if (confirmBtn) {
+          confirmBtn.disabled = !isAuthorizedToRestore;
+          if (isAuthorizedToRestore) {
+            confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+          } else {
+            confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+          }
+        }
+
+        // Open Modal (with Confirm button strictly disabled whenever !isAuthorizedToRestore)
         modal.classList.remove('hidden');
+
+        if (!isAuthorizedToRestore) {
+          const errSummary = (report.errors && report.errors[0]?.reason) || 'Integrity or schema validation failed.';
+          if (typeof window.triggerToast === 'function') {
+            window.triggerToast('Backup integrity check failed — restoration blocked: ' + errSummary, 'error');
+          }
+        }
 
       } catch (err) {
         console.error('[Forecaster Backup Import Error]', err);
+        window._pendingBackupData = null;
+        window._pendingValidationReport = null;
+        if (confirmBtn) {
+          confirmBtn.disabled = true;
+          confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+        const modal = document.getElementById('backup-restore-review-modal');
+        if (modal) modal.classList.add('hidden');
         fileInput.value = '';
         if (typeof window.triggerToast === 'function') {
           window.triggerToast('Failed to validate backup file: ' + err.message, 'error');
@@ -5975,7 +5996,12 @@
   };
 
   window.confirmExecuteRestore = async function() {
-    if (!window._pendingBackupData) return;
+    if (!window._pendingBackupData || !window._pendingValidationReport || window._pendingValidationReport.valid !== true || window._pendingValidationReport.restoreAllowed === false) {
+      if (typeof window.triggerToast === 'function') {
+        window.triggerToast('Restoration blocked: backup has not passed integrity validation.', 'error');
+      }
+      return;
+    }
 
     const btn = document.getElementById('bk-confirm-restore-btn');
     if (btn) {

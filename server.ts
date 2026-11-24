@@ -3738,8 +3738,72 @@ async function startServer() {
    * 9. Notifications and user settings
    * ------------------------------------------------------------------------- */
 
+  function isPlainObject(val: any): val is Record<string, any> {
+    return val !== null && typeof val === 'object' && !Array.isArray(val);
+  }
+
+  function canonicalizeBackupValue(val: any): any {
+    if (val === null || val === undefined || typeof val !== 'object') {
+      return val;
+    }
+    if (Array.isArray(val)) {
+      return val.map(canonicalizeBackupValue);
+    }
+    const sorted: Record<string, any> = {};
+    for (const key of Object.keys(val).sort()) {
+      if (val[key] !== undefined) {
+        sorted[key] = canonicalizeBackupValue(val[key]);
+      }
+    }
+    return sorted;
+  }
+
+  function stableBackupDeepEqual(a: any, b: any): boolean {
+    return JSON.stringify(canonicalizeBackupValue(a)) === JSON.stringify(canonicalizeBackupValue(b));
+  }
+
+  function computeBackupModulesChecksum(modulesPayload: any): string {
+    return crypto.createHash('sha256').update(JSON.stringify(modulesPayload)).digest('hex');
+  }
+
+  function constantTimeHexEqual(expectedHex: string, suppliedHex: string): boolean {
+    const cleanExpected = String(expectedHex || '').trim().toLowerCase();
+    const cleanSupplied = String(suppliedHex || '').trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(cleanExpected) || !/^[a-f0-9]{64}$/.test(cleanSupplied)) {
+      return false;
+    }
+    const bufA = Buffer.from(cleanExpected, 'utf8');
+    const bufB = Buffer.from(cleanSupplied, 'utf8');
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  }
+
+  const LEGACY_BACKUP_FLAT_KEYS = [
+    'transactions', 'pro_transactions',
+    'accounts', 'pro_accounts',
+    'accountTransfers', 'pro_account_transfers',
+    'budgetLimits', 'pro_budget_limits',
+    'allocationsMode', 'pro_allocations_mode',
+    'allocationsMonth', 'pro_allocations_month',
+    'customCategories', 'pro_custom_categories',
+    'customSubcategories', 'pro_custom_subcategories',
+    'stockData', 'pro_stock',
+    'pharmacyData', 'pro_pharmacy',
+    'vehicles', 'pro_vehicles',
+    'fuels', 'pro_vehicle_fuel',
+    'maint', 'pro_vehicle_maintenance',
+    'rentalProperties', 'pro_rental_properties_v1',
+    'rentalContracts', 'pro_rental_contracts_v1',
+    'rentalNotifications', 'pro_rental_notifications_v1',
+    'rentalNotificationConfig', 'pro_rental_notification_config_v1',
+    'theme', 'pro_theme',
+    'userProfile', 'forecaster_profile_user',
+    'notificationConfig',
+    'autoSync'
+  ] as const;
+
   function validateRecord(moduleType: string, item: any): { valid: boolean; reason?: string } {
-    if (!item || typeof item !== 'object') {
+    if (!isPlainObject(item)) {
       return { valid: false, reason: 'Record must be a valid JSON object' };
     }
 
@@ -3756,61 +3820,78 @@ async function startServer() {
         return { valid: true };
 
       case 'accounts':
-        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid account ID' };
-        if (!item.label && !item.name) return { valid: false, reason: 'Account requires a label or name' };
-        if (!item.type) return { valid: false, reason: 'Account requires an account type' };
+        if (!item.id || typeof item.id !== 'string' || !item.id.trim()) return { valid: false, reason: 'Missing or invalid account ID' };
+        if ((!item.label || typeof item.label !== 'string' || !item.label.trim()) && (!item.name || typeof item.name !== 'string' || !item.name.trim())) {
+          return { valid: false, reason: 'Account requires a label or name' };
+        }
+        if (!item.type || typeof item.type !== 'string' || !item.type.trim()) return { valid: false, reason: 'Account requires an account type' };
+        if (item.initialBalance !== undefined && item.initialBalance !== null && (typeof item.initialBalance === 'boolean' || !Number.isFinite(Number(item.initialBalance)))) {
+          return { valid: false, reason: 'Account initialBalance must be a finite number' };
+        }
+        if (item.balance !== undefined && item.balance !== null && (typeof item.balance === 'boolean' || !Number.isFinite(Number(item.balance)))) {
+          return { valid: false, reason: 'Account balance must be a finite number' };
+        }
         return { valid: true };
 
       case 'transfers':
-        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid transfer ID' };
+        if (!item.id || typeof item.id !== 'string' || !item.id.trim()) return { valid: false, reason: 'Missing or invalid transfer ID' };
         if (!item.fromAccountId || !item.toAccountId) return { valid: false, reason: 'Transfer requires fromAccountId and toAccountId' };
-        if (item.amount === undefined || isNaN(Number(item.amount)) || Number(item.amount) < 0) {
-          return { valid: false, reason: 'Transfer amount must be non-negative' };
+        if (item.amount === undefined || item.amount === null || typeof item.amount === 'boolean' || !Number.isFinite(Number(item.amount)) || Number(item.amount) < 0) {
+          return { valid: false, reason: 'Transfer amount must be a finite non-negative number' };
         }
         return { valid: true };
 
       case 'stockData':
-        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid stock item ID' };
-        if (!item.name || typeof item.name !== 'string') return { valid: false, reason: 'Stock item requires a name' };
-        if (item.currentStock !== undefined && (isNaN(Number(item.currentStock)) || Number(item.currentStock) < 0)) {
-          return { valid: false, reason: 'Current stock must be non-negative' };
+        if (!item.id || typeof item.id !== 'string' || !item.id.trim()) return { valid: false, reason: 'Missing or invalid stock item ID' };
+        if (!item.name || typeof item.name !== 'string' || !item.name.trim()) return { valid: false, reason: 'Stock item requires a name' };
+        if (item.currentStock !== undefined && item.currentStock !== null && (typeof item.currentStock === 'boolean' || !Number.isFinite(Number(item.currentStock)) || Number(item.currentStock) < 0)) {
+          return { valid: false, reason: 'Current stock must be a finite non-negative number' };
         }
         return { valid: true };
 
       case 'pharmacyData':
-        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid medication ID' };
-        if (!item.name || typeof item.name !== 'string') return { valid: false, reason: 'Medication requires a name' };
-        if (item.currentStock !== undefined && (isNaN(Number(item.currentStock)) || Number(item.currentStock) < 0)) {
-          return { valid: false, reason: 'Medication stock must be non-negative' };
+        if (!item.id || typeof item.id !== 'string' || !item.id.trim()) return { valid: false, reason: 'Missing or invalid medication ID' };
+        if (!item.name || typeof item.name !== 'string' || !item.name.trim()) return { valid: false, reason: 'Medication requires a name' };
+        if (item.currentStock !== undefined && item.currentStock !== null && (typeof item.currentStock === 'boolean' || !Number.isFinite(Number(item.currentStock)) || Number(item.currentStock) < 0)) {
+          return { valid: false, reason: 'Medication stock must be a finite non-negative number' };
         }
         return { valid: true };
 
       case 'vehicles':
-        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid vehicle ID' };
+        if (!item.id || typeof item.id !== 'string' || !item.id.trim()) return { valid: false, reason: 'Missing or invalid vehicle ID' };
         if (!item.plate && !item.model && !item.name) return { valid: false, reason: 'Vehicle requires plate or model' };
         return { valid: true };
 
       case 'fuels':
-        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid fuel log ID' };
-        if (!item.vehicleId || typeof item.vehicleId !== 'string') return { valid: false, reason: 'Fuel log requires a target vehicleId' };
-        if (item.liters !== undefined && (isNaN(Number(item.liters)) || Number(item.liters) < 0)) {
-          return { valid: false, reason: 'Liters must be a non-negative number' };
+        if (!item.id || typeof item.id !== 'string' || !item.id.trim()) return { valid: false, reason: 'Missing or invalid fuel log ID' };
+        if (!item.vehicleId || typeof item.vehicleId !== 'string' || !item.vehicleId.trim()) return { valid: false, reason: 'Fuel log requires a target vehicleId' };
+        if (item.liters !== undefined && item.liters !== null && (typeof item.liters === 'boolean' || !Number.isFinite(Number(item.liters)) || Number(item.liters) < 0)) {
+          return { valid: false, reason: 'Liters must be a finite non-negative number' };
+        }
+        if (item.cost !== undefined && item.cost !== null && (typeof item.cost === 'boolean' || !Number.isFinite(Number(item.cost)) || Number(item.cost) < 0)) {
+          return { valid: false, reason: 'Fuel cost must be a finite non-negative number' };
         }
         return { valid: true };
 
       case 'maint':
-        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid maintenance record ID' };
-        if (!item.vehicleId || typeof item.vehicleId !== 'string') return { valid: false, reason: 'Maintenance record requires vehicleId' };
+        if (!item.id || typeof item.id !== 'string' || !item.id.trim()) return { valid: false, reason: 'Missing or invalid maintenance record ID' };
+        if (!item.vehicleId || typeof item.vehicleId !== 'string' || !item.vehicleId.trim()) return { valid: false, reason: 'Maintenance record requires vehicleId' };
+        if (item.cost !== undefined && item.cost !== null && (typeof item.cost === 'boolean' || !Number.isFinite(Number(item.cost)) || Number(item.cost) < 0)) {
+          return { valid: false, reason: 'Maintenance cost must be a finite non-negative number' };
+        }
         return { valid: true };
 
       case 'rentalProperties':
-        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid property ID' };
+        if (!item.id || typeof item.id !== 'string' || !item.id.trim()) return { valid: false, reason: 'Missing or invalid property ID' };
         if (!item.title && !item.name && !item.address) return { valid: false, reason: 'Property requires title or address' };
         return { valid: true };
 
       case 'rentalContracts':
-        if (!item.id || typeof item.id !== 'string') return { valid: false, reason: 'Missing or invalid contract ID' };
-        if (!item.propertyId || typeof item.propertyId !== 'string') return { valid: false, reason: 'Contract requires propertyId' };
+        if (!item.id || typeof item.id !== 'string' || !item.id.trim()) return { valid: false, reason: 'Missing or invalid contract ID' };
+        if (!item.propertyId || typeof item.propertyId !== 'string' || !item.propertyId.trim()) return { valid: false, reason: 'Contract requires propertyId' };
+        if (item.rentAmount !== undefined && item.rentAmount !== null && (typeof item.rentAmount === 'boolean' || !Number.isFinite(Number(item.rentAmount)) || Number(item.rentAmount) < 0)) {
+          return { valid: false, reason: 'Contract rentAmount must be a finite non-negative number' };
+        }
         return { valid: true };
 
       case 'rentalNotifications':
@@ -3822,60 +3903,143 @@ async function startServer() {
     }
   }
 
+  function classifyBackupEnvelope(raw: any): {
+    isGenuineLegacyV1: boolean;
+    detectedVersion: string;
+  } {
+    const hasFormat = 'format' in raw && raw.format !== undefined && raw.format !== null;
+    const hasSchemaVersion = 'schemaVersion' in raw && raw.schemaVersion !== undefined && raw.schemaVersion !== null;
+    const hasVersion = 'version' in raw && raw.version !== undefined && raw.version !== null;
+    const hasModules = 'modules' in raw && raw.modules !== undefined && raw.modules !== null;
+    const hasChecksum = 'checksum' in raw && raw.checksum !== undefined && raw.checksum !== null;
+    const hasSummary = 'summary' in raw && raw.summary !== undefined && raw.summary !== null;
+    const hasLegacyFlatKey = LEGACY_BACKUP_FLAT_KEYS.some(k => raw[k] !== undefined);
+
+    const versionStr = hasVersion ? String(raw.version).trim() : '';
+    const schemaVersionStr = hasSchemaVersion ? String(raw.schemaVersion).trim() : '';
+    const versionIsV1 = !hasVersion || /^1(\.\d+)*$/.test(versionStr);
+    const schemaIsV1 = !hasSchemaVersion || schemaVersionStr === '1.0.0';
+
+    // Explicit legacy policy:
+    // ONLY payloads without v2 envelope markers (format, modules, checksum, summary)
+    // and without non-v1 schema/version tags, containing recognized flat legacy keys,
+    // are treated as genuine legacy v1.0.0 unchecksummed backups.
+    const isGenuineLegacyV1 =
+      !hasFormat &&
+      !hasModules &&
+      !hasChecksum &&
+      !hasSummary &&
+      schemaIsV1 &&
+      versionIsV1 &&
+      hasLegacyFlatKey;
+
+    let detectedVersion = 'unknown';
+    if (hasSchemaVersion) {
+      detectedVersion = schemaVersionStr || 'invalid';
+    } else if (isGenuineLegacyV1) {
+      detectedVersion = hasVersion ? versionStr : '1.0.0';
+    } else if (hasVersion) {
+      detectedVersion = versionStr || 'invalid';
+    } else if (hasFormat || hasModules || hasChecksum || hasSummary) {
+      detectedVersion = '2.0.0-incomplete';
+    }
+
+    return { isGenuineLegacyV1, detectedVersion };
+  }
+
   function normalizeBackupData(raw: any) {
-    if (!raw || typeof raw !== 'object') {
+    if (!isPlainObject(raw)) {
       throw new Error('Invalid backup payload: content must be a JSON object.');
     }
 
-    const isLegacy = !raw.schemaVersion && !raw.modules;
-    const detectedVersion = raw.schemaVersion || (isLegacy ? '1.0.0' : (raw.version ? String(raw.version) : '2.0.0'));
+    const { isGenuineLegacyV1, detectedVersion } = classifyBackupEnvelope(raw);
     const sourceOrg = raw.organizationId || raw.vaultId || raw.vault || 'default';
     const ownerEmail = raw.ownerEmail || (raw.forecaster_profile_user?.email) || '';
     const ownerUserId = raw.ownerUserId || '';
 
-    // If version 2 envelope, modules are nested under .modules
-    const m = raw.modules || {};
+    // If version 2 envelope, read strictly from raw.modules; only legacy v1 reads flat top-level keys
+    const m = isPlainObject(raw.modules) ? raw.modules : {};
 
-    const financial = {
-      transactions: Array.isArray(m.financial?.transactions) ? m.financial.transactions : (Array.isArray(raw.transactions) ? raw.transactions : (Array.isArray(raw.pro_transactions) ? raw.pro_transactions : [])),
-      accounts: Array.isArray(m.financial?.accounts) ? m.financial.accounts : (Array.isArray(raw.accounts) ? raw.accounts : (Array.isArray(raw.pro_accounts) ? raw.pro_accounts : [])),
-      transfers: Array.isArray(m.financial?.transfers) ? m.financial.transfers : (Array.isArray(raw.accountTransfers) ? raw.accountTransfers : (Array.isArray(raw.pro_account_transfers) ? raw.pro_account_transfers : []))
-    };
+    const financial = isGenuineLegacyV1
+      ? {
+          transactions: Array.isArray(raw.transactions) ? raw.transactions : (Array.isArray(raw.pro_transactions) ? raw.pro_transactions : []),
+          accounts: Array.isArray(raw.accounts) ? raw.accounts : (Array.isArray(raw.pro_accounts) ? raw.pro_accounts : []),
+          transfers: Array.isArray(raw.accountTransfers) ? raw.accountTransfers : (Array.isArray(raw.pro_account_transfers) ? raw.pro_account_transfers : [])
+        }
+      : {
+          transactions: Array.isArray(m.financial?.transactions) ? m.financial.transactions : [],
+          accounts: Array.isArray(m.financial?.accounts) ? m.financial.accounts : [],
+          transfers: Array.isArray(m.financial?.transfers) ? m.financial.transfers : []
+        };
 
-    const budgets = {
-      limits: m.budgets?.limits || raw.budgetLimits || raw.pro_budget_limits || null,
-      allocationsMode: m.budgets?.allocationsMode || raw.allocationsMode || raw.pro_allocations_mode || null,
-      allocationsMonth: m.budgets?.allocationsMonth || raw.allocationsMonth || raw.pro_allocations_month || null,
-      customCategories: Array.isArray(m.budgets?.customCategories) ? m.budgets.customCategories : (Array.isArray(raw.customCategories) ? raw.customCategories : (Array.isArray(raw.pro_custom_categories) ? raw.pro_custom_categories : [])),
-      customSubcategories: Array.isArray(m.budgets?.customSubcategories) ? m.budgets.customSubcategories : (Array.isArray(raw.customSubcategories) ? raw.customSubcategories : (Array.isArray(raw.pro_custom_subcategories) ? raw.pro_custom_subcategories : []))
-    };
+    const budgets = isGenuineLegacyV1
+      ? {
+          limits: raw.budgetLimits || raw.pro_budget_limits || null,
+          allocationsMode: raw.allocationsMode || raw.pro_allocations_mode || null,
+          allocationsMonth: raw.allocationsMonth || raw.pro_allocations_month || null,
+          customCategories: Array.isArray(raw.customCategories) ? raw.customCategories : (Array.isArray(raw.pro_custom_categories) ? raw.pro_custom_categories : []),
+          customSubcategories: Array.isArray(raw.customSubcategories) ? raw.customSubcategories : (Array.isArray(raw.pro_custom_subcategories) ? raw.pro_custom_subcategories : [])
+        }
+      : {
+          limits: m.budgets?.limits ?? null,
+          allocationsMode: m.budgets?.allocationsMode ?? null,
+          allocationsMonth: m.budgets?.allocationsMonth ?? null,
+          customCategories: Array.isArray(m.budgets?.customCategories) ? m.budgets.customCategories : [],
+          customSubcategories: Array.isArray(m.budgets?.customSubcategories) ? m.budgets.customSubcategories : []
+        };
 
-    const inventory = {
-      stockData: Array.isArray(m.inventory?.stockData) ? m.inventory.stockData : (Array.isArray(raw.stockData) ? raw.stockData : (Array.isArray(raw.pro_stock) ? raw.pro_stock : [])),
-      pharmacyData: Array.isArray(m.inventory?.pharmacyData) ? m.inventory.pharmacyData : (Array.isArray(raw.pharmacyData) ? raw.pharmacyData : (Array.isArray(raw.pro_pharmacy) ? raw.pro_pharmacy : []))
-    };
+    const inventory = isGenuineLegacyV1
+      ? {
+          stockData: Array.isArray(raw.stockData) ? raw.stockData : (Array.isArray(raw.pro_stock) ? raw.pro_stock : []),
+          pharmacyData: Array.isArray(raw.pharmacyData) ? raw.pharmacyData : (Array.isArray(raw.pro_pharmacy) ? raw.pro_pharmacy : [])
+        }
+      : {
+          stockData: Array.isArray(m.inventory?.stockData) ? m.inventory.stockData : [],
+          pharmacyData: Array.isArray(m.inventory?.pharmacyData) ? m.inventory.pharmacyData : []
+        };
 
-    const fleet = {
-      vehicles: Array.isArray(m.fleet?.vehicles) ? m.fleet.vehicles : (Array.isArray(raw.vehicles) ? raw.vehicles : (Array.isArray(raw.pro_vehicles) ? raw.pro_vehicles : [])),
-      fuels: Array.isArray(m.fleet?.fuels) ? m.fleet.fuels : (Array.isArray(raw.fuels) ? raw.fuels : (Array.isArray(raw.pro_vehicle_fuel) ? raw.pro_vehicle_fuel : [])),
-      maint: Array.isArray(m.fleet?.maint) ? m.fleet.maint : (Array.isArray(raw.maint) ? raw.maint : (Array.isArray(raw.pro_vehicle_maintenance) ? raw.pro_vehicle_maintenance : []))
-    };
+    const fleet = isGenuineLegacyV1
+      ? {
+          vehicles: Array.isArray(raw.vehicles) ? raw.vehicles : (Array.isArray(raw.pro_vehicles) ? raw.pro_vehicles : []),
+          fuels: Array.isArray(raw.fuels) ? raw.fuels : (Array.isArray(raw.pro_vehicle_fuel) ? raw.pro_vehicle_fuel : []),
+          maint: Array.isArray(raw.maint) ? raw.maint : (Array.isArray(raw.pro_vehicle_maintenance) ? raw.pro_vehicle_maintenance : [])
+        }
+      : {
+          vehicles: Array.isArray(m.fleet?.vehicles) ? m.fleet.vehicles : [],
+          fuels: Array.isArray(m.fleet?.fuels) ? m.fleet.fuels : [],
+          maint: Array.isArray(m.fleet?.maint) ? m.fleet.maint : []
+        };
 
-    const rentals = {
-      properties: Array.isArray(m.rentals?.properties) ? m.rentals.properties : (Array.isArray(raw.rentalProperties) ? raw.rentalProperties : (Array.isArray(raw.pro_rental_properties_v1) ? raw.pro_rental_properties_v1 : [])),
-      contracts: Array.isArray(m.rentals?.contracts) ? m.rentals.contracts : (Array.isArray(raw.rentalContracts) ? raw.rentalContracts : (Array.isArray(raw.pro_rental_contracts_v1) ? raw.pro_rental_contracts_v1 : [])),
-      notifications: Array.isArray(m.rentals?.notifications) ? m.rentals.notifications : (Array.isArray(raw.rentalNotifications) ? raw.rentalNotifications : (Array.isArray(raw.pro_rental_notifications_v1) ? raw.pro_rental_notifications_v1 : [])),
-      notificationConfig: m.rentals?.notificationConfig || raw.rentalNotificationConfig || raw.pro_rental_notification_config_v1 || null
-    };
+    const rentals = isGenuineLegacyV1
+      ? {
+          properties: Array.isArray(raw.rentalProperties) ? raw.rentalProperties : (Array.isArray(raw.pro_rental_properties_v1) ? raw.pro_rental_properties_v1 : []),
+          contracts: Array.isArray(raw.rentalContracts) ? raw.rentalContracts : (Array.isArray(raw.pro_rental_contracts_v1) ? raw.pro_rental_contracts_v1 : []),
+          notifications: Array.isArray(raw.rentalNotifications) ? raw.rentalNotifications : (Array.isArray(raw.pro_rental_notifications_v1) ? raw.pro_rental_notifications_v1 : []),
+          notificationConfig: raw.rentalNotificationConfig || raw.pro_rental_notification_config_v1 || null
+        }
+      : {
+          properties: Array.isArray(m.rentals?.properties) ? m.rentals.properties : [],
+          contracts: Array.isArray(m.rentals?.contracts) ? m.rentals.contracts : [],
+          notifications: Array.isArray(m.rentals?.notifications) ? m.rentals.notifications : [],
+          notificationConfig: m.rentals?.notificationConfig ?? null
+        };
 
-    const settings = {
-      theme: m.settings?.theme || raw.theme || raw.pro_theme || null,
-      userProfile: m.settings?.userProfile || raw.userProfile || raw.forecaster_profile_user || null,
-      notificationConfig: m.settings?.notificationConfig || raw.notificationConfig || null,
-      autoSync: m.settings?.autoSync !== undefined ? m.settings.autoSync : (raw.autoSync !== undefined ? raw.autoSync : null)
-    };
+    const settings = isGenuineLegacyV1
+      ? {
+          theme: raw.theme || raw.pro_theme || null,
+          userProfile: raw.userProfile || raw.forecaster_profile_user || null,
+          notificationConfig: raw.notificationConfig || null,
+          autoSync: raw.autoSync !== undefined ? raw.autoSync : null
+        }
+      : {
+          theme: m.settings?.theme ?? null,
+          userProfile: m.settings?.userProfile ?? null,
+          notificationConfig: m.settings?.notificationConfig ?? null,
+          autoSync: m.settings?.autoSync !== undefined ? m.settings.autoSync : null
+        };
 
     return {
+      isGenuineLegacyV1,
       detectedVersion,
       sourceOrg,
       ownerEmail,
@@ -3969,8 +4133,7 @@ async function startServer() {
       totalRecords
     };
 
-    const modulesJson = JSON.stringify(envelopeModules);
-    const checksum = crypto.createHash('sha256').update(modulesJson).digest('hex');
+    const checksum = computeBackupModulesChecksum(envelopeModules);
 
     const envelope: ForecasterBackupEnvelope = {
       format: 'forecaster-pro-backup',
@@ -4003,15 +4166,242 @@ async function startServer() {
     return envelope;
   }
 
-  function validateBackupPayload(rawPayload: any, targetVault: VaultData, user: UserRecord) {
+  function validateBackupPayload(rawPayload: any, targetVault: VaultData, _user: UserRecord) {
     const normalized = normalizeBackupData(rawPayload);
-    const { modules, detectedVersion, sourceOrg, ownerEmail } = normalized;
+    const { modules, detectedVersion, sourceOrg, ownerEmail, isGenuineLegacyV1 } = normalized;
 
-    const errors: Array<{ module: string; id: string; reason: string }> = [];
+    const integrityErrors: Array<{ module: string; id: string; reason: string; code: string }> = [];
+    const recordErrors: Array<{ module: string; id: string; reason: string }> = [];
     const incompatibilities: string[] = [];
 
-    if (detectedVersion !== '2.0.0') {
-      incompatibilities.push(`Legacy backup format (${detectedVersion}) detected. Normalized automatically to schema 2.0.0.`);
+    let checksumVerified = false;
+    let computedChecksum: string | null = null;
+    const suppliedChecksum = typeof rawPayload.checksum === 'string' ? rawPayload.checksum.trim() : null;
+
+    if (isGenuineLegacyV1) {
+      incompatibilities.push(`Legacy backup format (${detectedVersion}) detected. Normalized automatically to schema 2.0.0 under explicit unchecksummed legacy policy.`);
+
+      // Verify legacy collection container types (never silently ignore non-array/corrupt structures)
+      const legacyArrayPairs: Array<[string, string]> = [
+        ['transactions', 'pro_transactions'],
+        ['accounts', 'pro_accounts'],
+        ['accountTransfers', 'pro_account_transfers'],
+        ['customCategories', 'pro_custom_categories'],
+        ['customSubcategories', 'pro_custom_subcategories'],
+        ['stockData', 'pro_stock'],
+        ['pharmacyData', 'pro_pharmacy'],
+        ['vehicles', 'pro_vehicles'],
+        ['fuels', 'pro_vehicle_fuel'],
+        ['maint', 'pro_vehicle_maintenance'],
+        ['rentalProperties', 'pro_rental_properties_v1'],
+        ['rentalContracts', 'pro_rental_contracts_v1'],
+        ['rentalNotifications', 'pro_rental_notifications_v1']
+      ];
+
+      for (const [a, b] of legacyArrayPairs) {
+        if (rawPayload[a] !== undefined && !Array.isArray(rawPayload[a])) {
+          integrityErrors.push({ module: 'legacy', id: a, code: 'MALFORMED_COLLECTION', reason: `Legacy field "${a}" must be an array.` });
+        }
+        if (rawPayload[b] !== undefined && !Array.isArray(rawPayload[b])) {
+          integrityErrors.push({ module: 'legacy', id: b, code: 'MALFORMED_COLLECTION', reason: `Legacy field "${b}" must be an array.` });
+        }
+        if (rawPayload[a] !== undefined && rawPayload[b] !== undefined && !stableBackupDeepEqual(rawPayload[a], rawPayload[b])) {
+          integrityErrors.push({ module: 'consistency', id: `${a}/${b}`, code: 'ALIAS_MISMATCH', reason: `Legacy fields "${a}" and "${b}" contain conflicting data.` });
+        }
+      }
+    } else {
+      // Schema 2.0.0 / non-legacy envelope strict verification
+      const hasFormat = 'format' in rawPayload && rawPayload.format !== undefined && rawPayload.format !== null;
+      if (!hasFormat) {
+        integrityErrors.push({ module: 'envelope', id: 'format', code: 'MISSING_FORMAT', reason: 'Missing required backup envelope format ("forecaster-pro-backup").' });
+      } else if (rawPayload.format !== 'forecaster-pro-backup') {
+        integrityErrors.push({ module: 'envelope', id: 'format', code: 'UNSUPPORTED_FORMAT', reason: `Unsupported backup format "${String(rawPayload.format)}". Expected "forecaster-pro-backup".` });
+      }
+
+      const hasSchemaVersion = 'schemaVersion' in rawPayload && rawPayload.schemaVersion !== undefined && rawPayload.schemaVersion !== null;
+      if (!hasSchemaVersion) {
+        if (rawPayload.version !== undefined && rawPayload.version !== null && String(rawPayload.version) !== '2.0.0') {
+          integrityErrors.push({ module: 'envelope', id: 'schemaVersion', code: 'UNSUPPORTED_VERSION', reason: `Unsupported backup version "${String(rawPayload.version)}".` });
+        } else {
+          integrityErrors.push({ module: 'envelope', id: 'schemaVersion', code: 'MISSING_VERSION', reason: 'Missing required backup schemaVersion ("2.0.0").' });
+        }
+      } else if (rawPayload.schemaVersion !== '2.0.0') {
+        integrityErrors.push({ module: 'envelope', id: 'schemaVersion', code: 'UNSUPPORTED_VERSION', reason: `Unsupported backup schemaVersion "${String(rawPayload.schemaVersion)}". Expected "2.0.0".` });
+      }
+
+      if (!isPlainObject(rawPayload.modules)) {
+        integrityErrors.push({ module: 'envelope', id: 'modules', code: 'TRUNCATED_OR_MALFORMED_ENVELOPE', reason: 'Missing or malformed "modules" container in v2.0.0 backup envelope.' });
+      } else {
+        const m = rawPayload.modules;
+        const requiredSections = ['financial', 'budgets', 'inventory', 'fleet', 'rentals', 'settings'] as const;
+        for (const sec of requiredSections) {
+          if (!isPlainObject(m[sec])) {
+            integrityErrors.push({ module: `modules.${sec}`, id: sec, code: 'TRUNCATED_OR_MALFORMED_MODULE', reason: `Truncated or malformed module section "modules.${sec}".` });
+          }
+        }
+
+        const requiredArrays: Array<[string, string]> = [
+          ['financial', 'transactions'],
+          ['financial', 'accounts'],
+          ['financial', 'transfers'],
+          ['inventory', 'stockData'],
+          ['inventory', 'pharmacyData'],
+          ['fleet', 'vehicles'],
+          ['fleet', 'fuels'],
+          ['fleet', 'maint'],
+          ['rentals', 'properties'],
+          ['rentals', 'contracts'],
+          ['rentals', 'notifications']
+        ];
+        for (const [sec, field] of requiredArrays) {
+          if (isPlainObject(m[sec])) {
+            if (!(field in m[sec]) || !Array.isArray(m[sec][field])) {
+              integrityErrors.push({
+                module: `modules.${sec}`,
+                id: field,
+                code: 'TRUNCATED_OR_MALFORMED_COLLECTION',
+                reason: `Expected array for "modules.${sec}.${field}" in v2.0.0 backup envelope.`
+              });
+            }
+          }
+        }
+
+        if (isPlainObject(m.budgets)) {
+          if (m.budgets.customCategories !== undefined && !Array.isArray(m.budgets.customCategories)) {
+            integrityErrors.push({ module: 'modules.budgets', id: 'customCategories', code: 'MALFORMED_COLLECTION', reason: 'Expected array for "modules.budgets.customCategories".' });
+          }
+          if (m.budgets.customSubcategories !== undefined && !Array.isArray(m.budgets.customSubcategories)) {
+            integrityErrors.push({ module: 'modules.budgets', id: 'customSubcategories', code: 'MALFORMED_COLLECTION', reason: 'Expected array for "modules.budgets.customSubcategories".' });
+          }
+        }
+
+        // Verify SHA-256 checksum
+        if (!suppliedChecksum) {
+          integrityErrors.push({
+            module: 'envelope',
+            id: 'checksum',
+            code: 'MISSING_CHECKSUM',
+            reason: 'Missing required SHA-256 integrity checksum for schema 2.0.0 backup.'
+          });
+        } else if (!/^[a-f0-9]{64}$/i.test(suppliedChecksum)) {
+          integrityErrors.push({
+            module: 'envelope',
+            id: 'checksum',
+            code: 'INVALID_CHECKSUM_FORMAT',
+            reason: 'Malformed SHA-256 checksum format in backup envelope.'
+          });
+        } else {
+          computedChecksum = computeBackupModulesChecksum(rawPayload.modules);
+          if (constantTimeHexEqual(computedChecksum, suppliedChecksum)) {
+            checksumVerified = true;
+          } else {
+            integrityErrors.push({
+              module: 'envelope',
+              id: 'checksum',
+              code: 'CHECKSUM_MISMATCH',
+              reason: 'Backup integrity checksum verification failed: payload has been tampered with or corrupted.'
+            });
+          }
+        }
+
+        // Verify consistency between modules.* and any top-level backward-compatibility aliases
+        const aliasMappings: Array<{ section: string; field: string; aliases: string[] }> = [
+          { section: 'financial', field: 'transactions', aliases: ['transactions', 'pro_transactions'] },
+          { section: 'financial', field: 'accounts', aliases: ['accounts', 'pro_accounts'] },
+          { section: 'financial', field: 'transfers', aliases: ['accountTransfers', 'pro_account_transfers'] },
+          { section: 'budgets', field: 'limits', aliases: ['budgetLimits', 'pro_budget_limits'] },
+          { section: 'budgets', field: 'allocationsMode', aliases: ['allocationsMode', 'pro_allocations_mode'] },
+          { section: 'budgets', field: 'allocationsMonth', aliases: ['allocationsMonth', 'pro_allocations_month'] },
+          { section: 'budgets', field: 'customCategories', aliases: ['customCategories', 'pro_custom_categories'] },
+          { section: 'budgets', field: 'customSubcategories', aliases: ['customSubcategories', 'pro_custom_subcategories'] },
+          { section: 'inventory', field: 'stockData', aliases: ['stockData', 'pro_stock'] },
+          { section: 'inventory', field: 'pharmacyData', aliases: ['pharmacyData', 'pro_pharmacy'] },
+          { section: 'fleet', field: 'vehicles', aliases: ['vehicles', 'pro_vehicles'] },
+          { section: 'fleet', field: 'fuels', aliases: ['fuels', 'pro_vehicle_fuel'] },
+          { section: 'fleet', field: 'maint', aliases: ['maint', 'pro_vehicle_maintenance'] },
+          { section: 'rentals', field: 'properties', aliases: ['rentalProperties', 'pro_rental_properties_v1'] },
+          { section: 'rentals', field: 'contracts', aliases: ['rentalContracts', 'pro_rental_contracts_v1'] },
+          { section: 'rentals', field: 'notifications', aliases: ['rentalNotifications', 'pro_rental_notifications_v1'] },
+          { section: 'rentals', field: 'notificationConfig', aliases: ['rentalNotificationConfig', 'pro_rental_notification_config_v1'] },
+          { section: 'settings', field: 'theme', aliases: ['theme', 'pro_theme'] },
+          { section: 'settings', field: 'userProfile', aliases: ['userProfile', 'forecaster_profile_user'] },
+          { section: 'settings', field: 'notificationConfig', aliases: ['notificationConfig'] },
+          { section: 'settings', field: 'autoSync', aliases: ['autoSync'] }
+        ];
+
+        for (const mapping of aliasMappings) {
+          const secObj = m[mapping.section];
+          const hasModuleField = isPlainObject(secObj) && (mapping.field in secObj) && secObj[mapping.field] !== undefined;
+          for (const aliasKey of mapping.aliases) {
+            if (aliasKey in rawPayload && rawPayload[aliasKey] !== undefined) {
+              if (!hasModuleField) {
+                integrityErrors.push({
+                  module: 'consistency',
+                  id: aliasKey,
+                  code: 'INCONSISTENT_MODULE_DATA',
+                  reason: `Top-level alias "${aliasKey}" supplied without matching "modules.${mapping.section}.${mapping.field}".`
+                });
+              } else if (!stableBackupDeepEqual(secObj[mapping.field], rawPayload[aliasKey])) {
+                integrityErrors.push({
+                  module: 'consistency',
+                  id: aliasKey,
+                  code: 'ALIAS_MISMATCH',
+                  reason: `Inconsistent backup data: top-level "${aliasKey}" does not match "modules.${mapping.section}.${mapping.field}".`
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // Verify summary counters if summary block is provided
+      if (rawPayload.summary !== undefined) {
+        if (!isPlainObject(rawPayload.summary)) {
+          integrityErrors.push({ module: 'envelope', id: 'summary', code: 'MALFORMED_SUMMARY', reason: 'Backup summary must be a valid object.' });
+        } else {
+          const s = rawPayload.summary;
+          const customCatLen = Array.isArray(modules.budgets.customCategories) ? modules.budgets.customCategories.length : 0;
+          const computedEnvelopeTotal =
+            modules.financial.transactions.length +
+            modules.financial.accounts.length +
+            modules.financial.transfers.length +
+            customCatLen +
+            modules.inventory.stockData.length +
+            modules.inventory.pharmacyData.length +
+            modules.fleet.vehicles.length +
+            modules.fleet.fuels.length +
+            modules.fleet.maint.length +
+            modules.rentals.properties.length +
+            modules.rentals.contracts.length +
+            modules.rentals.notifications.length;
+
+          const countChecks: Array<[string, number]> = [
+            ['transactionsCount', modules.financial.transactions.length],
+            ['accountsCount', modules.financial.accounts.length],
+            ['transfersCount', modules.financial.transfers.length],
+            ['customCategoriesCount', customCatLen],
+            ['stockItemsCount', modules.inventory.stockData.length],
+            ['pharmacyItemsCount', modules.inventory.pharmacyData.length],
+            ['vehiclesCount', modules.fleet.vehicles.length],
+            ['fuelLogsCount', modules.fleet.fuels.length],
+            ['maintenanceLogsCount', modules.fleet.maint.length],
+            ['rentalPropertiesCount', modules.rentals.properties.length],
+            ['rentalContractsCount', modules.rentals.contracts.length],
+            ['rentalNotificationsCount', modules.rentals.notifications.length],
+            ['totalRecords', computedEnvelopeTotal]
+          ];
+          for (const [field, expectedCount] of countChecks) {
+            if (typeof s[field] === 'number' && s[field] !== expectedCount) {
+              integrityErrors.push({
+                module: 'envelope.summary',
+                id: field,
+                code: 'SUMMARY_COUNT_MISMATCH',
+                reason: `Truncated or inconsistent backup: summary.${field} (${s[field]}) does not match parsed count (${expectedCount}).`
+              });
+            }
+          }
+        }
+      }
     }
 
     const ownershipMatch = sourceOrg === targetVault.vaultId;
@@ -4022,18 +4412,19 @@ async function startServer() {
     const moduleSummary: Record<string, { total: number; valid: number; duplicates: number; newRecords: number; invalid: number }> = {};
 
     function auditCollection(moduleKey: string, subKey: string, incomingList: any[], existingList: any[]) {
+      const safeList = Array.isArray(incomingList) ? incomingList : [];
       const existingIds = new Set((existingList || []).filter((r: any) => r && r.id).map((r: any) => String(r.id)));
       let valid = 0;
       let duplicates = 0;
       let newRecords = 0;
       let invalid = 0;
 
-      incomingList.forEach((item, idx) => {
+      safeList.forEach((item, idx) => {
         const check = validateRecord(subKey, item);
         const recordId = item?.id ? String(item.id) : `idx_${idx}`;
         if (!check.valid) {
           invalid++;
-          errors.push({ module: `${moduleKey}.${subKey}`, id: recordId, reason: check.reason || 'Invalid structure' });
+          recordErrors.push({ module: `${moduleKey}.${subKey}`, id: recordId, reason: check.reason || 'Invalid structure' });
         } else {
           valid++;
           if (existingIds.has(recordId)) {
@@ -4045,7 +4436,7 @@ async function startServer() {
       });
 
       moduleSummary[`${moduleKey}.${subKey}`] = {
-        total: incomingList.length,
+        total: safeList.length,
         valid,
         duplicates,
         newRecords,
@@ -4079,12 +4470,33 @@ async function startServer() {
       newRecordCount += s.newRecords;
     });
 
-    const isValid = totalRecords > 0 ? (validRecordCount > 0) : true;
-    const hasWarnings = invalidRecordCount > 0 || incompatibilities.length > 0;
+    const errors = [...integrityErrors.map(e => ({ module: e.module, id: e.id, reason: e.reason, code: e.code })), ...recordErrors];
+    const hasIntegrityFailures = integrityErrors.length > 0;
+    const integrityStatus: 'verified' | 'legacy_exempt' | 'failed' = hasIntegrityFailures
+      ? 'failed'
+      : (isGenuineLegacyV1 ? 'legacy_exempt' : (checksumVerified ? 'verified' : 'failed'));
+
+    const classification: 'v2_checksum_verified' | 'legacy_v1_unchecksummed' | 'rejected' =
+      integrityStatus === 'verified' && invalidRecordCount === 0
+        ? 'v2_checksum_verified'
+        : (integrityStatus === 'legacy_exempt' && invalidRecordCount === 0
+          ? 'legacy_v1_unchecksummed'
+          : 'rejected');
+
+    // Fail closed: any integrity failure OR any invalid record invalidates the entire backup payload
+    const isValid = integrityStatus !== 'failed' && invalidRecordCount === 0;
+    const restoreAllowed = isValid && (integrityStatus === 'verified' || integrityStatus === 'legacy_exempt');
+    const hasWarnings = errors.length > 0 || invalidRecordCount > 0 || incompatibilities.length > 0;
 
     return {
       ok: true,
       valid: isValid,
+      restoreAllowed,
+      classification,
+      integrityStatus,
+      checksumVerified,
+      computedChecksum,
+      suppliedChecksum,
       hasWarnings,
       detectedVersion,
       sourceOrganization: sourceOrg,
@@ -4097,6 +4509,7 @@ async function startServer() {
       existingDuplicateCount,
       newRecordCount,
       moduleSummary,
+      integrityErrors,
       errors,
       incompatibilities,
       normalized
@@ -4110,8 +4523,10 @@ async function startServer() {
     options: { mode?: 'merge' | 'replace'; selectedModules?: string[] } = {}
   ) {
     const validation = validateBackupPayload(rawPayload, targetVault, user);
-    if (!validation.valid && validation.totalRecords > 0) {
-      throw new Error(`Backup validation failed: ${validation.errors.map(e => `${e.module}[${e.id}]: ${e.reason}`).join('; ')}`);
+    // Fail-closed enforcement: never discard invalid records or bypass integrity checks on restore
+    if (!validation.valid || !validation.restoreAllowed || validation.integrityStatus === 'failed' || validation.invalidRecordCount > 0 || validation.errors.length > 0) {
+      const detail = validation.errors.map(e => `${e.module}[${e.id}]: ${e.reason}`).join('; ') || 'Backup failed integrity or schema validation.';
+      throw new Error(`Backup validation failed: ${detail}`);
     }
 
     const mode = options.mode === 'replace' ? 'replace' : 'merge';
@@ -4132,7 +4547,15 @@ async function startServer() {
     ) {
       if (!shouldProcess(modName)) return;
 
-      const validIncoming = incomingList.filter(item => validateRecord(subKey, item).valid);
+      // Double-verify every record passes schema validation before mutating targetVault
+      for (let i = 0; i < incomingList.length; i++) {
+        const recCheck = validateRecord(subKey, incomingList[i]);
+        if (!recCheck.valid) {
+          throw new Error(`Backup record validation failed in ${subKey}[${incomingList[i]?.id || i}]: ${recCheck.reason}`);
+        }
+      }
+
+      const validIncoming = incomingList;
       const existingList = Array.isArray(targetVault[vaultKey]) ? (targetVault[vaultKey] as any[]) : [];
 
       if (mode === 'replace') {
@@ -4252,6 +4675,9 @@ async function startServer() {
         selectedModules: selected,
         sourceOrg: validation.sourceOrganization,
         detectedVersion: validation.detectedVersion,
+        classification: validation.classification,
+        integrityStatus: validation.integrityStatus,
+        checksumVerified: validation.checksumVerified,
         restoredSummary
       }
     });
@@ -4310,8 +4736,8 @@ async function startServer() {
         accountTransfers: []
       };
 
-      const rawPayload = req.body?.backupData || req.body;
-      if (!rawPayload || typeof rawPayload !== 'object') {
+      const rawPayload = req.body?.backupData !== undefined ? req.body.backupData : req.body;
+      if (!isPlainObject(rawPayload)) {
         return res.status(400).json({ ok: false, error: 'Invalid backup payload: Body must contain valid backupData object.' });
       }
 
@@ -4330,33 +4756,35 @@ async function startServer() {
       const user = requireVaultAccess(req, res, vaultId, 'restore');
       if (!user) return;
 
-      let vault = db.vaults[vaultId];
-      if (!vault) {
-        vault = {
-          vaultId,
-          updatedAt: new Date().toISOString(),
-          transactions: [],
-          accounts: [],
-          accountTransfers: []
-        };
-        db.vaults[vaultId] = vault;
-      }
-
-      const rawPayload = req.body?.backupData || req.body;
-      if (!rawPayload || typeof rawPayload !== 'object') {
+      const rawPayload = req.body?.backupData !== undefined ? req.body.backupData : req.body;
+      if (!isPlainObject(rawPayload)) {
         return res.status(400).json({ ok: false, error: 'Invalid backup payload: Body must contain valid backupData object.' });
       }
 
+      const existingVault = db.vaults[vaultId];
+      const targetVaultForValidation = existingVault || {
+        vaultId,
+        updatedAt: new Date().toISOString(),
+        transactions: [],
+        accounts: [],
+        accountTransfers: []
+      };
+
+      // Validate integrity BEFORE creating or modifying any vault entry in db.vaults
       const mode = req.body?.mode === 'replace' ? 'replace' : 'merge';
       const selectedModules = Array.isArray(req.body?.selectedModules) ? req.body.selectedModules : (req.body?.module ? [req.body.module] : ['all']);
 
-      const result = executeBackupRestore(rawPayload, vault, user, { mode, selectedModules });
+      const result = executeBackupRestore(rawPayload, targetVaultForValidation, user, { mode, selectedModules });
+      if (!existingVault) {
+        db.vaults[vaultId] = targetVaultForValidation;
+        saveDatabase(db);
+      }
 
       res.json({
         ok: true,
         message: `Backup restoration complete (${mode} mode).`,
         result,
-        vault
+        vault: targetVaultForValidation
       });
     } catch (err: any) {
       console.error('[Backup Restore Error]', err);

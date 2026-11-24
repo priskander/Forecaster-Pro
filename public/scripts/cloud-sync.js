@@ -947,7 +947,16 @@
         headers,
         body: JSON.stringify({ vaultId, backupData })
       });
-      return await res.json();
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        throw new Error(`Backup validation returned invalid response (HTTP ${res.status})`);
+      }
+      if (!res.ok) {
+        throw new Error((data && data.error) ? data.error : `Backup validation failed with HTTP ${res.status}`);
+      }
+      return data;
     },
 
     restoreBackup: async function(backupData, mode = 'merge', selectedModules = ['all']) {

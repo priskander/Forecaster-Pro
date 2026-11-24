@@ -4,7 +4,15 @@
  * Never touches or modifies real production users or production vaults.
  */
 
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import vm from 'vm';
 import { startIsolatedTestServer } from './test-harness';
+
+function computeModulesChecksum(modules: any): string {
+  return crypto.createHash('sha256').update(JSON.stringify(modules)).digest('hex');
+}
 
 let activeBaseUrl = '';
 
@@ -269,53 +277,56 @@ async function runTests() {
   // ============================================================================
   console.log('\n--- Test Category 4: Deduplication & Repeated Restoration ---');
 
-  // Sample backup for deduplication test
+  // Sample backup for deduplication test (valid checksummed v2.0.0)
+  const sampleBackupModules = {
+    financial: {
+      transactions: [
+        { id: 'tx_dedup_1', date: '2026-11-01', amount: 350, type: 'expense', category: 'Supplies', description: 'Dedup Item 1' },
+        { id: 'tx_dedup_2', date: '2026-11-02', amount: 900, type: 'income', category: 'Sales', description: 'Dedup Item 2' }
+      ],
+      accounts: [
+        { id: 'acc_dedup_1', type: 'bank', label: 'Dedup Bank' }
+      ],
+      transfers: []
+    },
+    inventory: {
+      stockData: [
+        { id: 'stk_dedup_1', name: 'Dedup Screws', currentStock: 50, unit: 'box' }
+      ],
+      pharmacyData: [
+        { id: 'med_dedup_1', name: 'Dedup Aspirin', currentStock: 20, unit: 'tablets' }
+      ]
+    },
+    fleet: {
+      vehicles: [
+        { id: 'veh_dedup_1', make: 'Ford', model: 'Focus', plate: 'DED-100' }
+      ],
+      fuels: [
+        { id: 'fuel_dedup_1', vehicleId: 'veh_dedup_1', liters: 42, cost: 65, date: '2026-11-02' }
+      ],
+      maint: [
+        { id: 'maint_dedup_1', vehicleId: 'veh_dedup_1', service: 'Brake Check', cost: 110, date: '2026-11-03' }
+      ]
+    },
+    rentals: {
+      properties: [
+        { id: 'prop_dedup_1', title: 'Dedup Studio Apt' }
+      ],
+      contracts: [
+        { id: 'cntr_dedup_1', propertyId: 'prop_dedup_1', tenantName: 'Test Tenant', rentAmount: 1100 }
+      ],
+      notifications: []
+    },
+    budgets: { limits: { Supplies: 400 } },
+    settings: { theme: 'light' }
+  };
+
   const sampleBackup = {
     format: 'forecaster-pro-backup',
     schemaVersion: '2.0.0',
     organizationId: testVaultId,
-    modules: {
-      financial: {
-        transactions: [
-          { id: 'tx_dedup_1', date: '2026-11-01', amount: 350, type: 'expense', category: 'Supplies', description: 'Dedup Item 1' },
-          { id: 'tx_dedup_2', date: '2026-11-02', amount: 900, type: 'income', category: 'Sales', description: 'Dedup Item 2' }
-        ],
-        accounts: [
-          { id: 'acc_dedup_1', type: 'bank', label: 'Dedup Bank' }
-        ],
-        transfers: []
-      },
-      inventory: {
-        stockData: [
-          { id: 'stk_dedup_1', name: 'Dedup Screws', currentStock: 50, unit: 'box' }
-        ],
-        pharmacyData: [
-          { id: 'med_dedup_1', name: 'Dedup Aspirin', currentStock: 20, unit: 'tablets' }
-        ]
-      },
-      fleet: {
-        vehicles: [
-          { id: 'veh_dedup_1', make: 'Ford', model: 'Focus', plate: 'DED-100' }
-        ],
-        fuels: [
-          { id: 'fuel_dedup_1', vehicleId: 'veh_dedup_1', liters: 42, cost: 65, date: '2026-11-02' }
-        ],
-        maint: [
-          { id: 'maint_dedup_1', vehicleId: 'veh_dedup_1', service: 'Brake Check', cost: 110, date: '2026-11-03' }
-        ]
-      },
-      rentals: {
-        properties: [
-          { id: 'prop_dedup_1', title: 'Dedup Studio Apt' }
-        ],
-        contracts: [
-          { id: 'cntr_dedup_1', propertyId: 'prop_dedup_1', tenantName: 'Test Tenant', rentAmount: 1100 }
-        ],
-        notifications: []
-      },
-      budgets: { limits: { Supplies: 400 } },
-      settings: { theme: 'light' }
-    }
+    checksum: computeModulesChecksum(sampleBackupModules),
+    modules: sampleBackupModules
   };
 
   // First restore into synthetic test vault
@@ -563,6 +574,355 @@ async function runTests() {
   assert(vaultWithLegacy?.transactions?.some((t: any) => t.id === 'tx_leg_1'), 'Legacy Compatibility', 'Legacy transaction restored');
   assert(vaultWithLegacy?.vehicles?.some((v: any) => v.id === 'veh_leg_1'), 'Legacy Compatibility', 'Legacy vehicle restored');
   assert(vaultWithLegacy?.rentalContracts?.some((c: any) => c.id === 'cntr_leg_1'), 'Legacy Compatibility', 'Legacy rental contract restored');
+
+  // ============================================================================
+  // Test Category 9: Phase 1.1.2.5.1 Backup Integrity & Fail-Closed Validation
+  // ============================================================================
+  console.log('\n--- Test Category 9: Phase 1.1.2.5.1 Backup Integrity & Fail-Closed Validation ---');
+
+  // Snapshot current vault state to verify no rejected restore mutates target vault
+  const preCat9Res = await request(`/api/cloud-sync/vault/${testVaultId}`, { headers: testHeaders });
+  const preCat9TxnCount = preCat9Res.body?.vault?.transactions?.length || 0;
+  const preCat9AccCount = preCat9Res.body?.vault?.accounts?.length || 0;
+
+  // Export clean baseline v2.0.0 backup envelope directly from server
+  const baseExportRes = await request(`/api/backup/export?vaultId=${testVaultId}&module=all`, {
+    method: 'GET',
+    headers: testHeaders
+  });
+  const baseEnvelope = baseExportRes.body?.backup;
+
+  // 9.1 Valid v2.0.0 backup passes checksum & integrity verification
+  const val91 = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: baseEnvelope })
+  });
+  assert(
+    val91.status === 200 && val91.body?.valid === true && val91.body?.checksumVerified === true && val91.body?.classification === 'v2_checksum_verified' && val91.body?.restoreAllowed === true,
+    'Integrity 9.1',
+    'Valid v2.0.0 backup passes SHA-256 verification and is classified as v2_checksum_verified'
+  );
+
+  // 9.2 Tampered transaction amount (without updating checksum) fails validate & restore independently
+  const tamperedTxnAmountPayload = JSON.parse(JSON.stringify(baseEnvelope));
+  tamperedTxnAmountPayload.modules.financial.transactions[0].amount = 9999999;
+  const val92 = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: tamperedTxnAmountPayload })
+  });
+  assert(
+    val92.status === 200 && val92.body?.valid === false && val92.body?.checksumVerified === false && val92.body?.restoreAllowed === false,
+    'Integrity 9.2a',
+    'Tampered transaction amount rejected by /api/backup/validate (checksumVerified=false)'
+  );
+  const res92 = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: tamperedTxnAmountPayload, mode: 'replace' })
+  });
+  assert(res92.status === 400 && res92.body?.ok === false, 'Integrity 9.2b', 'Tampered transaction amount rejected independently by /api/backup/restore (HTTP 400)');
+
+  // 9.3 Tampered account balance / initialBalance fails checksum & invalid balance type fails record check
+  const tamperedAccBalancePayload = JSON.parse(JSON.stringify(baseEnvelope));
+  if (tamperedAccBalancePayload.modules.financial.accounts.length > 0) {
+    tamperedAccBalancePayload.modules.financial.accounts[0].initialBalance = 88888888;
+  } else {
+    tamperedAccBalancePayload.modules.financial.accounts.push({ id: 'acc_tamper', type: 'bank', label: 'Tamper Bank', initialBalance: 88888888 });
+  }
+  const val93 = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: tamperedAccBalancePayload })
+  });
+  assert(
+    val93.status === 200 && val93.body?.valid === false && val93.body?.checksumVerified === false,
+    'Integrity 9.3a',
+    'Tampered account balance rejected by /api/backup/validate'
+  );
+  const res93 = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: tamperedAccBalancePayload, mode: 'replace' })
+  });
+  assert(res93.status === 400 && res93.body?.ok === false, 'Integrity 9.3b', 'Tampered account balance rejected by /api/backup/restore (HTTP 400)');
+
+  // 9.4 Missing v2.0.0 checksum rejected & NEVER silently classified as legacy v1.0.0
+  const missingChecksumPayload = JSON.parse(JSON.stringify(baseEnvelope));
+  delete missingChecksumPayload.checksum;
+  const val94 = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: missingChecksumPayload })
+  });
+  assert(
+    val94.status === 200 && val94.body?.valid === false && val94.body?.classification === 'rejected' && val94.body?.detectedVersion === '2.0.0',
+    'Integrity 9.4a',
+    'Missing v2.0.0 checksum rejected and NOT misclassified as legacy'
+  );
+  const res94 = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: missingChecksumPayload, mode: 'merge' })
+  });
+  assert(res94.status === 400 && res94.body?.ok === false, 'Integrity 9.4b', 'Missing v2.0.0 checksum rejected on /api/backup/restore (HTTP 400)');
+
+  // 9.5 Truncated backup (missing module section & summary count mismatch) rejected fail-closed
+  const truncatedPayload = JSON.parse(JSON.stringify(baseEnvelope));
+  delete truncatedPayload.modules.fleet;
+  truncatedPayload.checksum = computeModulesChecksum(truncatedPayload.modules);
+  const val95 = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: truncatedPayload })
+  });
+  assert(
+    val95.status === 200 && val95.body?.valid === false && val95.body?.errors?.some((e: any) => e.code?.includes('TRUNCATED')),
+    'Integrity 9.5a',
+    'Truncated backup missing required module section rejected'
+  );
+  const res95 = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: truncatedPayload, mode: 'merge' })
+  });
+  assert(res95.status === 400 && res95.body?.ok === false, 'Integrity 9.5b', 'Truncated backup rejected on /api/backup/restore (HTTP 400)');
+
+  // 9.6 Invalid envelope format rejected
+  const invalidFormatPayload = JSON.parse(JSON.stringify(baseEnvelope));
+  invalidFormatPayload.format = 'evil-custom-format';
+  const val96 = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: invalidFormatPayload })
+  });
+  assert(
+    val96.status === 200 && val96.body?.valid === false && val96.body?.errors?.some((e: any) => e.code === 'UNSUPPORTED_FORMAT'),
+    'Integrity 9.6a',
+    'Invalid envelope format flagged with UNSUPPORTED_FORMAT and valid=false'
+  );
+  const res96 = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: invalidFormatPayload, mode: 'merge' })
+  });
+  assert(res96.status === 400 && res96.body?.ok === false, 'Integrity 9.6b', 'Invalid envelope format rejected on /api/backup/restore (HTTP 400)');
+
+  // 9.7 Module vs top-level alias mismatch rejected even when modules checksum matches
+  const aliasMismatchPayload = JSON.parse(JSON.stringify(baseEnvelope));
+  aliasMismatchPayload.transactions = [
+    ...(aliasMismatchPayload.transactions || []),
+    { id: 'tx_injected_alias', date: '2026-11-20', amount: 12345, type: 'income', description: 'Injected alias only' }
+  ];
+  const val97 = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: aliasMismatchPayload })
+  });
+  assert(
+    val97.status === 200 && val97.body?.valid === false && val97.body?.errors?.some((e: any) => e.code === 'ALIAS_MISMATCH'),
+    'Integrity 9.7a',
+    'Module vs top-level alias mismatch detected even when modules checksum matches'
+  );
+  const res97 = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: aliasMismatchPayload, mode: 'merge' })
+  });
+  assert(res97.status === 400 && res97.body?.ok === false, 'Integrity 9.7b', 'Module/top-level alias mismatch rejected on /api/backup/restore (HTTP 400)');
+
+  // 9.8 Malformed record with freshly computed checksum is STILL rejected fail-closed (never silently discarded)
+  const malformedModules = JSON.parse(JSON.stringify(sampleBackupModules));
+  malformedModules.financial.transactions.push({ id: 'tx_malformed_fail_closed', date: '2026-11-21', amount: -42, type: 'expense', description: 'Bad negative' });
+  const malformedSignedPayload = {
+    format: 'forecaster-pro-backup',
+    schemaVersion: '2.0.0',
+    organizationId: testVaultId,
+    checksum: computeModulesChecksum(malformedModules),
+    modules: malformedModules
+  };
+  const val98 = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: malformedSignedPayload })
+  });
+  assert(
+    val98.status === 200 && val98.body?.valid === false && val98.body?.invalidRecordCount === 1,
+    'Integrity 9.8a',
+    'Single malformed record marks entire backup valid=false (no partial silent pass)'
+  );
+  const res98 = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: malformedSignedPayload, mode: 'replace' })
+  });
+  assert(res98.status === 400 && res98.body?.ok === false, 'Integrity 9.8b', 'Restore fails closed (HTTP 400) instead of silently discarding malformed record');
+
+  // 9.9 Unsupported version rejected
+  const unsupportedVerPayload = JSON.parse(JSON.stringify(baseEnvelope));
+  unsupportedVerPayload.schemaVersion = '3.5.0';
+  const val99 = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: unsupportedVerPayload })
+  });
+  assert(
+    val99.status === 200 && val99.body?.valid === false && val99.body?.errors?.some((e: any) => e.code === 'UNSUPPORTED_VERSION'),
+    'Integrity 9.9a',
+    'Unsupported schemaVersion rejected with UNSUPPORTED_VERSION'
+  );
+  const res99 = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: unsupportedVerPayload, mode: 'merge' })
+  });
+  assert(res99.status === 400 && res99.body?.ok === false, 'Integrity 9.9b', 'Unsupported version rejected on /api/backup/restore (HTTP 400)');
+
+  // 9.10 Valid legacy v1.0.0 compatibility preserved under explicit policy, while corrupt legacy is rejected
+  const val910Valid = await request('/api/backup/validate', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: legacyV1Backup })
+  });
+  assert(
+    val910Valid.status === 200 && val910Valid.body?.valid === true && val910Valid.body?.classification === 'legacy_v1_unchecksummed' && val910Valid.body?.integrityStatus === 'legacy_exempt',
+    'Integrity 9.10a',
+    'Genuine legacy v1.0.0 classified explicitly as legacy_v1_unchecksummed'
+  );
+  const corruptLegacyPayload = {
+    pro_transactions: [{ id: 'tx_leg_ok', amount: 50, type: 'expense', date: '2026-10-01' }],
+    transactions: [{ id: 'tx_leg_conflict', amount: 999, type: 'income', date: '2026-10-01' }]
+  };
+  const res910Corrupt = await request('/api/backup/restore', {
+    method: 'POST',
+    headers: testHeaders,
+    body: JSON.stringify({ vaultId: testVaultId, backupData: corruptLegacyPayload, mode: 'merge' })
+  });
+  assert(res910Corrupt.status === 400 && res910Corrupt.body?.ok === false, 'Integrity 9.10b', 'Conflicting legacy alias payload rejected fail-closed');
+
+  // 9.11 Verify target vault remained 100% untouched after all independent /api/backup/restore rejections
+  const postCat9Res = await request(`/api/cloud-sync/vault/${testVaultId}`, { headers: testHeaders });
+  assert(
+    postCat9Res.body?.vault?.transactions?.length === preCat9TxnCount && postCat9Res.body?.vault?.accounts?.length === preCat9AccCount,
+    'Integrity 9.11',
+    'Vault remained completely untouched across all failed restore attempts (fail-closed)'
+  );
+
+  // 9.12 Client fail-closed behavior: validation API unavailable does NOT authorize restore
+  const appCoreCode = fs.readFileSync(path.resolve(process.cwd(), 'src/scripts/app-core.js'), 'utf-8');
+  const confirmBtnState = { disabled: false, classes: new Set<string>(), innerHTML: '' };
+  const modalState = { classes: new Set<string>(['hidden']) };
+  const toastCalls: Array<{ msg: string; type: string }> = [];
+  let restoreCalls = 0;
+
+  const mockClassList = (set: Set<string>) => ({
+    add: (...c: string[]) => c.forEach(x => set.add(x)),
+    remove: (...c: string[]) => c.forEach(x => set.delete(x)),
+    contains: (c: string) => set.has(c)
+  });
+
+  const makeMockEl = (id: string) => {
+    if (id === 'bk-confirm-restore-btn') {
+      return {
+        get disabled() { return confirmBtnState.disabled; },
+        set disabled(v: boolean) { confirmBtnState.disabled = !!v; },
+        classList: mockClassList(confirmBtnState.classes),
+        innerHTML: ''
+      };
+    }
+    if (id === 'backup-restore-review-modal') {
+      return { classList: mockClassList(modalState.classes) };
+    }
+    return { textContent: '', innerHTML: '', value: '', className: '', appendChild: () => {}, classList: mockClassList(new Set()) };
+  };
+
+  const localStore = new Map<string, string>();
+  const sandbox: any = {
+    console,
+    JSON,
+    Array,
+    Object,
+    Number,
+    String,
+    Boolean,
+    Math,
+    Date,
+    Promise,
+    Error,
+    Uint8Array,
+    TextEncoder,
+    crypto,
+    setTimeout,
+    clearTimeout,
+    localStorage: {
+      getItem: (k: string) => localStore.get(k) ?? null,
+      setItem: (k: string, v: string) => localStore.set(k, String(v)),
+      removeItem: (k: string) => localStore.delete(k)
+    },
+    document: {
+      getElementById: makeMockEl,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: () => ({ textContent: '', innerHTML: '', className: '', appendChild: () => {} })
+    },
+    addEventListener: () => {},
+    triggerToast: (msg: string, type: string) => { toastCalls.push({ msg, type }); },
+    ForecasterCloudSync: {
+      getVaultId: () => testVaultId,
+      validateBackup: async () => { throw new Error('Simulated /api/backup/validate 503 Unavailable'); },
+      restoreBackup: async () => { restoreCalls++; return { ok: true }; }
+    },
+    FileReader: class MockFileReader {
+      onload: any = null;
+      readAsText(_file: any) {
+        if (this.onload) {
+          this.onload({ target: { result: JSON.stringify(baseEnvelope) } });
+        }
+      }
+    }
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.runInNewContext(appCoreCode, sandbox);
+  sandbox.triggerToast = (msg: string, type: string) => { toastCalls.push({ msg, type }); };
+
+  const mockFileInput = { files: [{ name: 'test-backup.json' }], value: 'test-backup.json' };
+  sandbox.importBackupJSON({ target: mockFileInput });
+  await new Promise(resolve => setTimeout(resolve, 40));
+
+  assert(
+    sandbox._pendingBackupData === null &&
+    sandbox._pendingValidationReport === null &&
+    confirmBtnState.disabled === true &&
+    modalState.classes.has('hidden') &&
+    restoreCalls === 0 &&
+    toastCalls.some(t => t.type === 'error'),
+    'Integrity 9.12a',
+    'Client importBackupJSON() fails closed when validation API is unavailable (no fallback valid=true)'
+  );
+
+  // Also test confirmExecuteRestore() refuses to run when validation failed / missing
+  await sandbox.confirmExecuteRestore();
+  assert(restoreCalls === 0, 'Integrity 9.12b', 'confirmExecuteRestore() blocks restoration without passed validation');
+
+  // And test when /api/backup/validate returns { ok: true, valid: false, restoreAllowed: false }
+  sandbox.ForecasterCloudSync.validateBackup = async () => ({
+    ok: true,
+    valid: false,
+    restoreAllowed: false,
+    errors: [{ module: 'envelope', id: 'checksum', reason: 'Checksum mismatch' }],
+    incompatibilities: [],
+    moduleSummary: {}
+  });
+  sandbox.importBackupJSON({ target: { files: [{ name: 'tampered.json' }], value: 'tampered.json' } });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  await sandbox.confirmExecuteRestore();
+  assert(
+    sandbox._pendingBackupData === null && confirmBtnState.disabled === true && restoreCalls === 0,
+    'Integrity 9.12c',
+    'Client blocks restore when server validation returns valid=false'
+  );
 
   // ============================================================================
   // Summary & Evaluation
