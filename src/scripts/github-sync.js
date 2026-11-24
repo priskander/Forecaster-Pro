@@ -735,7 +735,7 @@
     const priorStagingRaw = priorStagingCheck.value;
     const priorActiveExisted = priorActiveRaw !== null;
     const priorStagingExisted = priorStagingRaw !== null;
-    const hadValidPriorActive = isValidRecoveryArtifactRaw(priorActiveRaw);
+    const priorStagingIsValid = isValidRecoveryArtifactRaw(priorStagingRaw);
 
     const record = {
       format: GITHUB_PRE_RESTORE_FORMAT,
@@ -824,29 +824,43 @@
         priorActiveRaw
       );
 
+      // Base staging restoration ONLY on positively verified current active state, never historical prior flags
       const postRestoreActiveCheck = safeReadStorageKey(GITHUB_PRE_RESTORE_RECOVERY_KEY);
-      const activeHasValidRecovery = postRestoreActiveCheck.ok && isValidRecoveryArtifactRaw(postRestoreActiveCheck.value);
+      const activeCurrentlyVerified = rbActive.ok &&
+        postRestoreActiveCheck.ok &&
+        isValidRecoveryArtifactRaw(postRestoreActiveCheck.value);
 
       const curStagingNow = safeReadStorageKey(GITHUB_PRE_RESTORE_STAGING_KEY);
       const stagingHasNewVerifiedCopy = curStagingNow.ok &&
         verifyRecoveryJsonMatches(curStagingNow.value, recoveryJson, originals.length);
+      const stagingHasAnyValidCopy = curStagingNow.ok && isValidRecoveryArtifactRaw(curStagingNow.value);
 
       let rbStaging = { ok: true, error: null };
-      if (!activeHasValidRecovery && stagingHasNewVerifiedCopy) {
-        // Preserve the verified new staging recovery artifact when restoring previous staging state would leave zero usable recovery copies
-      } else if (activeHasValidRecovery || hadValidPriorActive) {
+      if (activeCurrentlyVerified) {
+        // Safe to restore prior staging state because another valid active recovery copy is positively verified on disk
         rbStaging = restoreRecoveryKeyToOriginal(
           GITHUB_PRE_RESTORE_STAGING_KEY,
           priorStagingExisted,
           priorStagingRaw
         );
+      } else if (stagingHasNewVerifiedCopy || stagingHasAnyValidCopy) {
+        // Active key is absent, malformed, or failed restoration/verification: preserve verified staging copy untouched
+        rbStaging = { ok: true, error: null };
+      } else if (priorStagingIsValid) {
+        rbStaging = restoreRecoveryKeyToOriginal(
+          GITHUB_PRE_RESTORE_STAGING_KEY,
+          true,
+          priorStagingRaw
+        );
+      } else {
+        rbStaging = { ok: false, error: 'Neither active nor staging recovery copy could be verified.' };
       }
 
       if (!rbActive.ok || !rbStaging.ok) {
         const failedKey = !rbActive.ok ? GITHUB_PRE_RESTORE_RECOVERY_KEY : GITHUB_PRE_RESTORE_STAGING_KEY;
         const reason = !rbActive.ok ? rbActive.error : rbStaging.error;
         throw createRecoveryError(
-          `CRITICAL RECOVERY REQUIRED: Active recovery promotion failed and recovery-key restoration could not be verified for "${failedKey}" (${reason}). Usable recovery artifacts have been preserved.`,
+          `CRITICAL RECOVERY REQUIRED: Active recovery promotion failed and recovery-key restoration could not be verified for "${failedKey}" (${reason}). Remaining usable recovery artifacts have been preserved.`,
           true,
           failedKey
         );

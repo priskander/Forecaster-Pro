@@ -6225,6 +6225,192 @@ async function runSecurityTestSuite() {
         'AtomicGitHub 17.5i-A4c: Restores both prior valid active and staging artifacts when active promotion fails'
       );
 
+      // A5: Verified staging artifact retained when original active restoration fails (absent prior staging, valid prior active)
+      let capturedNewStagedA5 = '';
+      let activeWriteCountA5 = 0;
+      let stagingRemoveCalledA5 = false;
+      const a5Dom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          forecaster_github_pre_restore_recovery_v1: priorRecoverySentinel,
+          // staging key deliberately ABSENT initially
+          pro_transactions: edgeOriginals.jsonTx
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            const origRemove = ls.removeItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_staging_v1') {
+                capturedNewStagedA5 = v;
+                return origSet(k, v);
+              }
+              if (k === 'forecaster_github_pre_restore_recovery_v1') {
+                activeWriteCountA5++;
+                if (activeWriteCountA5 === 1) {
+                  // Simulate active promotion writing corrupted bytes
+                  return origSet(k, '{"corrupted":"active-promo-failed"}');
+                }
+                // Simulate restoring original active key failing on write
+                throw new Error('SecurityError: unable to restore original active recovery artifact');
+              }
+              return origSet(k, v);
+            };
+            ls.removeItem = (k: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_staging_v1') {
+                stagingRemoveCalledA5 = true;
+              }
+              return origRemove(k);
+            };
+          }
+        }
+      );
+      const origWinTxRefA5 = [{ id: 'win_tx_orig_a5' }];
+      a5Dom.sandbox.window.transactions = origWinTxRefA5;
+
+      const a5Ok = await a5Dom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      const a5Outcome = a5Dom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome;
+      assert(
+        a5Ok === false &&
+        a5Outcome?.status === 'RESTORE_FAILED_RECOVERY_REQUIRED' &&
+        a5Outcome?.datasetsTouched === false &&
+        a5Outcome?.rolledBack === false &&
+        a5Outcome?.rollbackFailures?.some((f: any) => f.storageKey === 'forecaster_github_pre_restore_recovery_v1') &&
+        !stagingRemoveCalledA5 &&
+        capturedNewStagedA5.length > 0 &&
+        a5Dom.storage.has('forecaster_github_pre_restore_recovery_staging_v1') &&
+        a5Dom.storage.get('forecaster_github_pre_restore_recovery_staging_v1') === capturedNewStagedA5 &&
+        a5Dom.storage.get('pro_transactions') === edgeOriginals.jsonTx &&
+        a5Dom.sandbox.window.transactions === origWinTxRefA5,
+        'AtomicGitHub 17.5i-A5: Verified staging artifact is retained byte-for-byte unchanged when original active restoration fails (RESTORE_FAILED_RECOVERY_REQUIRED, datasetsTouched=false)'
+      );
+
+      // A5b: When prior active restoration fails and prior staging held a malformed legacy string, preserve the new verified staging artifact (do NOT overwrite with malformed string)
+      const malformedLegacyStagingStr = 'LEGACY_MALFORMED_STAGING_KEEP_ONLY_WHEN_ACTIVE_VERIFIED\nraw';
+      let capturedNewStagedA5b = '';
+      let activeWriteCountA5b = 0;
+      const a5bDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          forecaster_github_pre_restore_recovery_v1: priorRecoverySentinel,
+          forecaster_github_pre_restore_recovery_staging_v1: malformedLegacyStagingStr,
+          pro_transactions: edgeOriginals.jsonTx
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_staging_v1') {
+                capturedNewStagedA5b = v;
+                return origSet(k, v);
+              }
+              if (k === 'forecaster_github_pre_restore_recovery_v1') {
+                activeWriteCountA5b++;
+                if (activeWriteCountA5b === 1) {
+                  return origSet(k, '{"corrupted":"active-promo-failed"}');
+                }
+                throw new Error('SecurityError: active restore blocked');
+              }
+              return origSet(k, v);
+            };
+          }
+        }
+      );
+      const a5bOk = await a5bDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      assert(
+        a5bOk === false &&
+        a5bDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.status === 'RESTORE_FAILED_RECOVERY_REQUIRED' &&
+        a5bDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.datasetsTouched === false &&
+        capturedNewStagedA5b.length > 0 &&
+        a5bDom.storage.get('forecaster_github_pre_restore_recovery_staging_v1') === capturedNewStagedA5b &&
+        a5bDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+        'AtomicGitHub 17.5i-A5b: Unverified active state never overwrites new verified staging copy with malformed prior staging data'
+      );
+
+      // A5c: Currently verified active artifact permits exact verbatim restoration of malformed prior staging string on active promotion failure
+      const a5cDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          forecaster_github_pre_restore_recovery_v1: priorRecoverySentinel,
+          forecaster_github_pre_restore_recovery_staging_v1: malformedLegacyStagingStr,
+          pro_transactions: edgeOriginals.jsonTx
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_v1') {
+                throw new Error('QuotaExceededError: active promotion rejected leaving valid prior active intact');
+              }
+              return origSet(k, v);
+            };
+          }
+        }
+      );
+      const a5cOk = await a5cDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      assert(
+        a5cOk === false &&
+        a5cDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.status === 'RESTORE_FAILED_ROLLED_BACK' &&
+        a5cDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.datasetsTouched === false &&
+        a5cDom.storage.get('forecaster_github_pre_restore_recovery_v1') === priorRecoverySentinel &&
+        a5cDom.storage.get('forecaster_github_pre_restore_recovery_staging_v1') === malformedLegacyStagingStr &&
+        a5cDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+        'AtomicGitHub 17.5i-A5c: Currently verified active artifact safely authorizes exact byte-for-byte restoration of malformed legacy staging string'
+      );
+
+      // A5d: Verified active intact + restoring prior staging fails -> RESTORE_FAILED_RECOVERY_REQUIRED while keeping valid active copy intact
+      let stagingWriteCountA5d = 0;
+      const a5dDom = createAtomicTestEnv(
+        {
+          forecaster_github_sync_config: JSON.stringify({ mode: 'gist', gistId: 'gist_atomic_1', lastSync: origLastSync }),
+          forecaster_github_pre_restore_recovery_v1: priorRecoverySentinel,
+          forecaster_github_pre_restore_recovery_staging_v1: malformedLegacyStagingStr,
+          pro_transactions: edgeOriginals.jsonTx
+        },
+        {
+          remoteContent: atomicEncryptedRemote,
+          storageHooks: (ls) => {
+            const origSet = ls.setItem;
+            ls.setItem = (k: string, v: string) => {
+              if (k === 'forecaster_github_pre_restore_recovery_staging_v1') {
+                stagingWriteCountA5d++;
+                if (stagingWriteCountA5d === 1) return origSet(k, v);
+                throw new Error('SecurityError: staging restoration blocked');
+              }
+              if (k === 'forecaster_github_pre_restore_recovery_v1') {
+                throw new Error('QuotaExceededError: active promotion blocked');
+              }
+              return origSet(k, v);
+            };
+          }
+        }
+      );
+      const a5dOk = await a5dDom.sandbox.window.ForecasterGitHubSync.pullFromGitHub({
+        passphrase: strongPass,
+        skipReload: true
+      });
+      assert(
+        a5dOk === false &&
+        a5dDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.status === 'RESTORE_FAILED_RECOVERY_REQUIRED' &&
+        a5dDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.datasetsTouched === false &&
+        a5dDom.sandbox.window.ForecasterGitHubSync._lastRestoreOutcome?.rollbackFailures?.some((f: any) => f.storageKey === 'forecaster_github_pre_restore_recovery_staging_v1') &&
+        a5dDom.storage.get('forecaster_github_pre_restore_recovery_v1') === priorRecoverySentinel &&
+        a5dDom.storage.get('pro_transactions') === edgeOriginals.jsonTx,
+        'AtomicGitHub 17.5i-A5d: Failed staging restoration when active is verified returns RESTORE_FAILED_RECOVERY_REQUIRED and keeps valid active copy intact'
+      );
+
       // 17.5j Issue B: In-memory reference update exception safety & rollback verification
       // B1: Throwing setter on window.accounts triggers full localStorage rollback + restores earlier window.* refs -> RESTORE_FAILED_ROLLED_BACK
       const inMemRollbackDom = createAtomicTestEnv(
