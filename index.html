@@ -315,7 +315,7 @@
         font-size: 16px !important;
       }
       main {
-        padding-bottom: 5.5rem !important;
+        padding-bottom: 1.5rem !important;
       }
     }
 
@@ -2194,6 +2194,73 @@
       </div>
     </div>
   </main>
+
+  <!-- =================== APPLICATION FOOTER =================== -->
+  <footer id="app-footer" class="mt-auto bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400">
+    <div class="max-w-7xl w-full mx-auto px-4 md:px-8 pt-10 pb-24 md:pb-10">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-8 lg:gap-12">
+
+        <!-- Brand & Overview -->
+        <div class="md:col-span-5 space-y-3">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-700 to-blue-500 flex items-center justify-center text-white shadow-sm shrink-0" aria-hidden="true">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+              </svg>
+            </div>
+            <span class="text-base font-extrabold tracking-tight text-slate-900 dark:text-white whitespace-nowrap" style="font-family: 'Plus Jakarta Sans', sans-serif;">Forecaster Pro</span>
+          </div>
+          <p class="text-xs leading-relaxed text-slate-600 dark:text-slate-400 max-w-sm">
+            Unified financial ledger, inventory depletion and expiry alerts, rental contract governance, and fleet expense operations.
+          </p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+            <span>Version 01.06.12</span>
+            <span aria-hidden="true" class="mx-1.5">·</span>
+            <span>Enterprise Edition</span>
+          </p>
+        </div>
+
+        <!-- Workspaces Navigation -->
+        <div class="md:col-span-4 space-y-3">
+          <h2 class="text-xs font-bold tracking-wide text-slate-900 dark:text-slate-100">Workspaces</h2>
+          <nav aria-label="Footer workspaces navigation" class="grid grid-cols-2 gap-x-6 gap-y-2.5 text-xs font-medium">
+            <button type="button" onclick="switchView('dashboard')" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap truncate focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Dashboard</button>
+            <button type="button" onclick="switchView('insights')" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap truncate focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Insights &amp; Alerts</button>
+            <button type="button" onclick="switchView('transactions')" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap truncate focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Transactions</button>
+            <button type="button" onclick="switchView('rentals')" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap truncate focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Rentals &amp; Units</button>
+            <button type="button" onclick="switchView('vehicles')" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap truncate focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Vehicles Fleet</button>
+            <button type="button" onclick="switchView('stock'); if (typeof setStockPharmacyModule === 'function') setStockPharmacyModule('inventory');" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap truncate focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Inventory Hub</button>
+            <button type="button" onclick="switchView('accounts')" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap truncate focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Payment Accounts</button>
+            <button type="button" onclick="switchView('reports')" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap truncate focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Reports &amp; Exports</button>
+          </nav>
+        </div>
+
+        <!-- Platform & Actions -->
+        <div class="md:col-span-3 space-y-3">
+          <h2 class="text-xs font-bold tracking-wide text-slate-900 dark:text-slate-100">Platform</h2>
+          <div class="flex flex-col items-start gap-2.5 text-xs font-medium">
+            <a href="/landing" class="text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Product Overview</a>
+            <button type="button" onclick="if (window.ForecasterSubscription) window.ForecasterSubscription.openModal()" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Subscription Plans</button>
+            <button type="button" onclick="if (typeof window.triggerPWAInstall === 'function') window.triggerPWAInstall()" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Install Desktop &amp; Mobile App</button>
+            <button type="button" onclick="if (typeof window.openAndroidAPKModal === 'function') window.openAndroidAPKModal()" class="text-left text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Android App</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Utility Bar -->
+      <div class="mt-8 pt-5 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+        <p class="tabular-nums">&copy; 2026 Forecaster Pro. All rights reserved.</p>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="button" onclick="if (typeof toggleDarkMode === 'function') toggleDarkMode()" class="hover:text-slate-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Toggle Theme</button>
+          <span aria-hidden="true">·</span>
+          <a href="/landing" class="hover:text-slate-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Landing Page</a>
+          <span aria-hidden="true">·</span>
+          <button type="button" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })" class="hover:text-slate-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 rounded-sm">Back to top</button>
+        </div>
+      </div>
+    </div>
+  </footer>
 
   <!-- =================== MOBILE BOTTOM NAVIGATION BAR =================== -->
   <nav id="mobile-bottom-nav" class="md:hidden fixed bottom-0 inset-x-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 z-40 px-2 py-2 flex items-center justify-around">
