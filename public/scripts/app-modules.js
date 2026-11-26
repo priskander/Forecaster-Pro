@@ -185,11 +185,18 @@
     if (unhideModal) unhideModal.classList.remove('hidden');
   };
 
+  function notifyCloudSyncChanged() {
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
+  }
+
   window.hideStockBatch = function(id) {
     const item = (window.stockData || []).find(s => s.id === id);
     if (!item) return;
     item.isHidden = true;
     localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+    notifyCloudSyncChanged();
     if (typeof window.triggerToast === 'function') window.triggerToast('Batch hidden from active inventory.', 'info');
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
@@ -199,6 +206,7 @@
     if (!item) return;
     item.isHidden = false;
     localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+    notifyCloudSyncChanged();
     if (typeof window.triggerToast === 'function') window.triggerToast('Batch restored to active inventory.', 'success');
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
     window.openUnhideItemsModal();
@@ -209,6 +217,7 @@
     if (!item) return;
     item.isHidden = true;
     localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+    notifyCloudSyncChanged();
     if (typeof window.triggerToast === 'function') window.triggerToast('Batch hidden from medication database.', 'info');
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
@@ -218,6 +227,7 @@
     if (!item) return;
     item.isHidden = false;
     localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+    notifyCloudSyncChanged();
     if (typeof window.triggerToast === 'function') window.triggerToast('Batch restored to medication database.', 'success');
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
     window.openUnhideItemsModal();

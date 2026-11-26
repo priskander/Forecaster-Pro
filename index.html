@@ -1706,7 +1706,10 @@
               <div class="text-[10px] uppercase tracking-wider text-slate-404 font-black mb-2">Property / Lease</div>
               <div class="space-y-3">
                 <div>
-                  <label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Property / Unit</label>
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="block text-xs font-bold text-slate-505 dark:text-slate-404">Property / Unit</label>
+                    <button type="button" onclick="window.openPropertyManagerModal()" class="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer">+ Add / Manage</button>
+                  </div>
                   <select class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="rental-property" required=""></select>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
@@ -1875,6 +1878,7 @@
                 <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Cost (EGP)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-fuel-cost" min="0" required="" step="0.01" type="number"/></div>
               </div>
               <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Payment Account</label><select class="payment-account-select w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-semibold" id="vehicle-fuel-account"></select></div>
+              <div><label class="block text-xs font-bold text-slate-505 dark:text-slate-404 mb-1">Notes (Optional)</label><input class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-sm font-medium" id="vehicle-fuel-notes" placeholder="Station, octane, trip notes..." type="text"/></div>
               <input id="vehicle-fuel-edit-id" type="hidden"/>
               <button class="w-full bg-emerald-600 text-white font-bold p-3 rounded-xl hover:bg-emerald-700 transition" id="vehicle-fuel-save-btn" type="submit">Save Fuel Transaction</button>
             </form>
@@ -2788,6 +2792,27 @@
             <span>✓</span> Confirm &amp; Subtract Stock
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== RENTAL PROPERTY / UNIT MANAGER MODAL =================== -->
+  <div class="hidden fixed inset-0 z-[75] overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" id="rpm-modal-backdrop" onclick="if (event.target === this) window.closePropertyManagerModal()" role="dialog" aria-modal="true" aria-labelledby="rpm-modal-title">
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-900 dark:text-white" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+        <div>
+          <span class="text-[10px] uppercase font-black tracking-wider text-blue-600 dark:text-blue-400">Lease Portfolio</span>
+          <h3 id="rpm-modal-title" class="text-base font-black flex items-center gap-2"><span>🏘️</span> Manage Properties &amp; Units</h3>
+        </div>
+        <button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none cursor-pointer" onclick="window.closePropertyManagerModal()" type="button">&times;</button>
+      </div>
+      <form class="flex gap-2" id="rpm-add-property-form" onsubmit="window.rpmAddProperty(event)">
+        <input class="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold" id="rpm-new-property-name" placeholder="e.g. Apt 4B - Nile Tower" required="" type="text"/>
+        <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shrink-0 cursor-pointer" type="submit">+ Add</button>
+      </form>
+      <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar" id="rpm-property-list"></div>
+      <div class="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-700">
+        <button class="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition cursor-pointer" onclick="window.closePropertyManagerModal()" type="button">Done</button>
       </div>
     </div>
   </div>

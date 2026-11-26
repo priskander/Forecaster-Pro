@@ -11,6 +11,7 @@
   const VAULT_STORAGE_KEY = 'forecaster_cloud_vault_id';
   const AUTOSYNC_STORAGE_KEY = 'forecaster_cloud_autosync_enabled';
   const LAST_SYNC_KEY = 'forecaster_cloud_last_sync_time';
+  const DIRTY_KEY = 'forecaster_cloud_pending_changes';
   const LOCAL_SAFETY_SNAPSHOT_KEY = 'forecaster_pre_pull_local_snapshot_v1';
   const LOCAL_SAFETY_SNAPSHOT_STAGING_KEY = 'forecaster_pre_pull_local_snapshot_staging_v1';
   const LOCAL_SAFETY_SNAPSHOT_PREV_KEY = 'forecaster_pre_pull_local_snapshot_prev_v1';
@@ -691,6 +692,8 @@
             }
 
             localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+            try { localStorage.removeItem(DIRTY_KEY); } catch (_) {}
+            this._lastSyncError = null;
 
             if (typeof window.loadIntegratedDatabases === 'function') window.loadIntegratedDatabases();
             if (typeof window.loadVehicleDatabase === 'function') window.loadVehicleDatabase();
@@ -914,6 +917,8 @@
           this._isApplyingRemote = false;
         }
       }
+      try { localStorage.removeItem(DIRTY_KEY); } catch (_) {}
+      this._lastSyncError = null;
 
       return changed;
     },
@@ -994,39 +999,65 @@
         : null;
 
       if (!token) {
-        return;
+        this._lastSyncError = 'Not signed in — data is saved in this browser only.';
+        this.updateUI(false);
+        if (showFeedback && typeof window.triggerToast === 'function') {
+          window.triggerToast('Sign in to sync your data to the cloud (currently saved locally only).', 'info');
+        }
+        return false;
       }
       if (role === 'viewer') {
         if (showFeedback && typeof window.triggerToast === 'function') {
           window.triggerToast('Read-only Viewer accounts cannot push changes to Cloud Sync.', 'info');
         }
-        return;
+        return false;
       }
 
-      if (isSyncing) return;
+      if (isSyncing) return false;
       isSyncing = true;
       this.updateUI(true);
 
       const vaultId = this.getVaultId();
 
       try {
-        // Step 1: Push local state to server to merge
-        const localData = this.getLocalData();
+        // Step 1: Build RBAC-safe payload from local state to push/merge
+        const fullLocal = this.getLocalData();
+        let syncPayload = fullLocal;
+        if (role === 'member') {
+          // Member role can push operational records only; omit owner/manager-restricted config fields so valid changes aren't rejected with 403
+          syncPayload = {
+            transactions: fullLocal.transactions,
+            accountTransfers: fullLocal.accountTransfers,
+            stockData: fullLocal.stockData,
+            pharmacyData: fullLocal.pharmacyData,
+            vehicles: fullLocal.vehicles,
+            fuels: fullLocal.fuels,
+            maint: fullLocal.maint
+          };
+        } else if (role === 'manager') {
+          const { userSettings, profileUser, ...managerAllowed } = fullLocal;
+          syncPayload = managerAllowed;
+        }
 
         const headers = {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`
         };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const res = await fetch(`/api/cloud-sync/vault/${encodeURIComponent(vaultId)}`, {
           method: 'POST',
           headers,
-          body: JSON.stringify(localData)
+          body: JSON.stringify(syncPayload)
         });
 
         if (!res.ok) {
-          throw new Error(`Cloud Sync Server responded with HTTP ${res.status}`);
+          let errMsg = `HTTP ${res.status}`;
+          try {
+            const errJson = await res.json();
+            if (errJson && errJson.error) errMsg = errJson.error;
+          } catch (_) {}
+          throw new Error(errMsg);
         }
 
         const data = await res.json();
@@ -1034,16 +1065,29 @@
           this.applyRemoteData(data.vault);
           const syncTime = new Date().toISOString();
           localStorage.setItem(LAST_SYNC_KEY, syncTime);
+          try { localStorage.removeItem(DIRTY_KEY); } catch (_) {}
+          this._lastSyncError = null;
 
           if (showFeedback && typeof window.triggerToast === 'function') {
             window.triggerToast(`Cloud sync complete! (${data.transactionCount || 0} txns, ${data.accountCount || 0} accounts)`, 'success');
           }
+          return true;
         }
+        return false;
       } catch (err) {
+        this._lastSyncError = err?.message || 'Cloud sync failed.';
         console.warn('[Forecaster CloudSync] Background sync notice:', err.message);
+        const now = Date.now();
+        const isAuthOrPermError = /401|403|forbidden|session|auth/i.test(String(err?.message || ''));
         if (showFeedback && typeof window.triggerToast === 'function') {
-          window.triggerToast(`Cloud sync offline: ${err.message}`, 'info');
+          window.triggerToast(`Cloud sync issue (saved locally): ${err.message}`, 'error');
+        } else if (isAuthOrPermError && (!this._lastSyncErrorToastAt || (now - this._lastSyncErrorToastAt) > 45000)) {
+          this._lastSyncErrorToastAt = now;
+          if (typeof window.triggerToast === 'function') {
+            window.triggerToast(`Saved locally only — cloud sync blocked: ${err.message}`, 'info');
+          }
         }
+        return false;
       } finally {
         isSyncing = false;
         this.updateUI(false);
@@ -1053,25 +1097,52 @@
     notifyDataChanged: function() {
       // Prevent loopback cascade when remote data was just applied
       if (this._isApplyingRemote) return;
+      try { localStorage.setItem(DIRTY_KEY, 'true'); } catch (_) {}
+      this.updateUI(false);
       if (!this.isAutoSync()) return;
       if (this._debounceTimer) clearTimeout(this._debounceTimer);
       this._debounceTimer = setTimeout(() => {
         this.syncNow(false);
-      }, 2000);
+      }, 1500);
+    },
+
+    queueSync: function() {
+      return this.notifyDataChanged();
     },
 
     updateUI: function(syncing = false) {
       const vaultId = this.getVaultId();
       const lastSync = localStorage.getItem(LAST_SYNC_KEY);
       const isAuto = this.isAutoSync();
+      const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
+        ? window.ForecasterAuth.getToken()
+        : (localStorage.getItem('forecaster_auth_token') || '');
+      const role = (window.ForecasterAuth && typeof window.ForecasterAuth.getRole === 'function')
+        ? window.ForecasterAuth.getRole()
+        : null;
+      const hasPending = localStorage.getItem(DIRTY_KEY) === 'true';
 
       // 1. Header Cloud Status Pill
       const headerBadge = document.getElementById('header-cloud-sync-pill');
       if (headerBadge) {
         if (syncing) {
           headerBadge.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-ping mr-1.5"></span><span class="text-blue-600 dark:text-blue-400 font-bold">Syncing...</span>`;
+          headerBadge.removeAttribute('title');
+        } else if (!token) {
+          headerBadge.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1.5"></span><span class="text-amber-700 dark:text-amber-400 font-semibold">Local Only</span> <span class="text-slate-400 text-[10px]">(Sign in to sync)</span>`;
+          headerBadge.title = 'Changes are stored only in this browser until you sign in.';
+        } else if (this._lastSyncError) {
+          headerBadge.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-rose-500 mr-1.5"></span><span class="text-rose-600 dark:text-rose-400 font-semibold">Sync Issue</span> <span class="text-slate-400 text-[10px]">(Local saved)</span>`;
+          headerBadge.title = String(this._lastSyncError);
+        } else if (role === 'viewer') {
+          headerBadge.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-purple-500 mr-1.5"></span><span class="text-purple-700 dark:text-purple-300 font-semibold">Read-Only</span> <span class="text-slate-400 text-[10px]">(${formatTimeAgo(lastSync)})</span>`;
+          headerBadge.removeAttribute('title');
+        } else if (hasPending) {
+          headerBadge.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse mr-1.5"></span><span class="text-amber-700 dark:text-amber-400 font-semibold">Sync Pending</span> <span class="text-slate-400 text-[10px]">(${formatTimeAgo(lastSync)})</span>`;
+          headerBadge.removeAttribute('title');
         } else {
           headerBadge.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5"></span><span class="text-slate-700 dark:text-slate-300 font-semibold">Cloud Synced</span> <span class="text-slate-400 text-[10px]">(${formatTimeAgo(lastSync)})</span>`;
+          headerBadge.removeAttribute('title');
         }
       }
 
@@ -1081,6 +1152,12 @@
         if (syncing) {
           statusBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200';
           statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span> Syncing with Cloud Database...';
+        } else if (!token) {
+          statusBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800';
+          statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-500"></span> Local Browser Only (Sign In to Cloud Sync)';
+        } else if (this._lastSyncError) {
+          statusBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800';
+          statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500"></span> Cloud Sync Blocked (Local Saved)';
         } else {
           statusBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800';
           statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Cloud Database Connected';
@@ -1187,9 +1264,32 @@
         window.cleanDemoDataIfNonDemo();
       }
       this.updateUI(false);
-      // Run initial cloud pull/sync on startup
-      setTimeout(() => {
-        this.syncNow(false);
+      // Startup sync: pull latest cloud vault first when there are no unsynced local changes so stale/empty browser storage never overwrites newer cloud records
+      setTimeout(async () => {
+        const token = (window.ForecasterAuth && typeof window.ForecasterAuth.getToken === 'function')
+          ? window.ForecasterAuth.getToken()
+          : (localStorage.getItem('forecaster_auth_token') || '');
+        if (!token) {
+          this.updateUI(false);
+          return;
+        }
+        const hasPendingLocal = localStorage.getItem(DIRTY_KEY) === 'true';
+        const hasPriorSync = Boolean(localStorage.getItem(LAST_SYNC_KEY));
+        const localData = this.getLocalData();
+        const isLocalEmpty =
+          (!localData.transactions || localData.transactions.length === 0) &&
+          (!localData.vehicles || localData.vehicles.length === 0) &&
+          (!localData.fuels || localData.fuels.length === 0) &&
+          (!localData.maint || localData.maint.length === 0) &&
+          (!localData.rentalContracts || localData.rentalContracts.length === 0) &&
+          (!localData.stockData || localData.stockData.length === 0) &&
+          (!localData.pharmacyData || localData.pharmacyData.length === 0);
+
+        if (!hasPendingLocal && (hasPriorSync || isLocalEmpty)) {
+          await this.pullVault(this.getVaultId(), false);
+        } else {
+          await this.syncNow(false);
+        }
       }, 800);
       this.scheduleAutoSync();
     }

@@ -75,8 +75,15 @@
     if (sms) sms.value = rentalNotificationConfig.smsWebhook || '';
   }
 
+  function notifyCloudChange() {
+    if (window.ForecasterCloudSync && !window.ForecasterCloudSync._isApplyingRemote && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
+  }
+
   function saveRentalDatabase() {
     localStorage.setItem(RENTAL_DB_KEY, JSON.stringify(rentalContracts));
+    notifyCloudChange();
   }
 
   function saveRentalLog() {
@@ -85,6 +92,7 @@
 
   function saveRentalConfig() {
     localStorage.setItem(RENTAL_CONFIG_KEY, JSON.stringify(rentalNotificationConfig));
+    notifyCloudChange();
   }
 
   window.updateRentalDurationPreview = function () {
@@ -790,7 +798,14 @@
     }
   ];
 
-  const save=()=>{localStorage.setItem(VDB,JSON.stringify(vehicles));localStorage.setItem(VFU,JSON.stringify(fuels));localStorage.setItem(VMN,JSON.stringify(maint))};
+  const save=(skipCloudNotify = false)=>{
+    localStorage.setItem(VDB,JSON.stringify(vehicles));
+    localStorage.setItem(VFU,JSON.stringify(fuels));
+    localStorage.setItem(VMN,JSON.stringify(maint));
+    if (!skipCloudNotify && window.ForecasterCloudSync && !window.ForecasterCloudSync._isApplyingRemote && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
+  };
   const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const money=v=>`EGP ${Number(v||0).toFixed(2)}`;
   const vget=id=>Array.isArray(vehicles)?vehicles.find(v=>v&&v.id===id):null;
@@ -930,7 +945,7 @@
       vehChanged = true;
     }
     if (vehChanged) {
-      save();
+      save(!localStorage.getItem('forecaster_auth_token'));
     }
 
     let anyChanged = vehChanged;
@@ -1188,12 +1203,23 @@
       if(fuel){
         fuel.vehicleId=vehicleId; fuel.dateTime=dt; fuel.odometer=od; fuel.liters=lit; fuel.cost=cost; fuel.accountId=accountId; fuel.notes=notes;
         v.odometer=Math.max(Number(v.odometer||0),od);
+        if (Array.isArray(window.transactions)) {
+          const linkedTxn = window.transactions.find(t => t.refId === editId || t.id === ('exp_fuel_' + editId));
+          if (linkedTxn) {
+            linkedTxn.date = dt.slice(0, 10);
+            linkedTxn.amount = parseFloat(Number(cost || 0).toFixed(2));
+            linkedTxn.accountId = accountId;
+            linkedTxn.description = `Vehicle Fuel: ${v.make} ${v.model} (${v.plate}) — ${lit}L${notes ? ' (' + notes + ')' : ''}`;
+            if (typeof window.saveTransactionsDatabase === 'function') window.saveTransactionsDatabase();
+          }
+        }
         save();
         e.target.reset();
         document.getElementById('vehicle-fuel-edit-id').value='';
         document.getElementById('vehicle-fuel-datetime').value=nowInput();
         document.getElementById('vehicle-fuel-save-btn').textContent='Save Fuel Transaction';
         window.renderVehicleManagement();
+        if (typeof window.renderAllViews === 'function') window.renderAllViews();
         if (typeof window.triggerToast === 'function') window.triggerToast('Fuel transaction updated.','success');
         return;
       }
@@ -1203,10 +1229,31 @@
     fuels.unshift(fuel);
     v.odometer=Math.max(Number(v.odometer||0),od);
     save();
-    if(typeof window.logAutomaticExpense==='function') window.logAutomaticExpense(`Fuel — ${v.make} ${v.model} (${v.plate})`,cost,'Transportation');
+    if (cost > 0) {
+      if (!Array.isArray(window.transactions)) window.transactions = [];
+      let targetAcc = accountId;
+      if ((!targetAcc || targetAcc === 'acc_general') && Array.isArray(window.accounts) && window.accounts.length > 0) {
+        targetAcc = window.accounts[0].id;
+      }
+      window.transactions.unshift({
+        id: 'exp_fuel_' + fuel.id,
+        date: dt.slice(0, 10),
+        category: 'Transportation',
+        subcategory: 'Fuel & Petrol',
+        icon: '🚗',
+        amount: parseFloat(Number(cost || 0).toFixed(2)),
+        description: `Vehicle Fuel: ${v.make} ${v.model} (${v.plate}) — ${lit}L${notes ? ' (' + notes + ')' : ''}`,
+        type: 'expense',
+        accountId: targetAcc || '',
+        refType: 'fuel',
+        refId: fuel.id
+      });
+      if (typeof window.saveTransactionsDatabase === 'function') window.saveTransactionsDatabase();
+    }
     e.target.reset();
     document.getElementById('vehicle-fuel-datetime').value=nowInput();
     window.renderVehicleManagement();
+    if (typeof window.renderAllViews === 'function') window.renderAllViews();
     if (typeof window.triggerToast === 'function') window.triggerToast('Fuel transaction saved.','success');
   };
 
@@ -1678,8 +1725,15 @@
   }
   window.rpmLoad = rpmLoad;
 
+  function rpmEscape(v) {
+    return String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+  }
+
   function rpmSave() {
     localStorage.setItem(RPM_DB_KEY, JSON.stringify(rpmProperties));
+    if (window.ForecasterCloudSync && !window.ForecasterCloudSync._isApplyingRemote && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
   }
 
   window.openPropertyManagerModal = function() {
@@ -1694,6 +1748,33 @@
     if (wrap) wrap.classList.add('hidden');
   };
 
+  window.rpmAddProperty = function(event) {
+    if (event) event.preventDefault();
+    const input = document.getElementById('rpm-new-property-name');
+    const name = (input?.value || '').trim();
+    if (!name) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Enter a property or unit name.', 'error');
+      return;
+    }
+    if (rpmProperties.some(p => String(p.name || '').trim().toLowerCase() === name.toLowerCase())) {
+      if (typeof window.triggerToast === 'function') window.triggerToast('Property / Unit already exists.', 'info');
+      return;
+    }
+    const newProp = {
+      id: 'prop_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      name,
+      createdAt: new Date().toISOString()
+    };
+    rpmProperties.unshift(newProp);
+    rpmSave();
+    if (input) input.value = '';
+    window.rpmRenderModalList();
+    window.rpmRenderDropdown();
+    const select = document.getElementById('rental-property');
+    if (select) select.value = newProp.name;
+    if (typeof window.triggerToast === 'function') window.triggerToast('Property / Unit saved.', 'success');
+  };
+
   window.rpmRenderModalList = function() {
     const list = document.getElementById('rpm-property-list');
     if (!list) return;
@@ -1704,9 +1785,9 @@
     list.innerHTML = rpmProperties.map(p => `
       <div class="flex items-start justify-between gap-2 bg-slate-50 dark:bg-slate-800 p-3 rounded-xl">
         <div>
-          <p class="text-xs font-bold text-slate-900 dark:text-white">${p.name}</p>
+          <p class="text-xs font-bold text-slate-900 dark:text-white">${rpmEscape(p.name)}</p>
         </div>
-        <button type="button" onclick="window.rpmDeleteProperty('${p.id}')" class="text-[10px] text-rose-600 font-bold hover:underline shrink-0">Remove</button>
+        <button type="button" onclick="window.rpmDeleteProperty('${rpmEscape(p.id)}')" class="text-[10px] text-rose-600 font-bold hover:underline shrink-0">Remove</button>
       </div>
     `).join('');
   };
@@ -1725,10 +1806,12 @@
     const currentValue = select.value;
     let html = '<option value="" disabled' + (currentValue ? '' : ' selected') + '>Select Property / Unit...</option>';
     rpmProperties.forEach(p => {
-      html += `<option value="${p.name}">${p.name}</option>`;
+      const safeName = rpmEscape(p.name);
+      html += `<option value="${safeName}">${safeName}</option>`;
     });
     if (currentValue && !rpmProperties.some(p => p.name === currentValue)) {
-      html += `<option value="${currentValue}">${currentValue} (legacy)</option>`;
+      const safeCurrent = rpmEscape(currentValue);
+      html += `<option value="${safeCurrent}">${safeCurrent} (legacy)</option>`;
     }
     if (select.innerHTML !== html) {
       select.innerHTML = html;

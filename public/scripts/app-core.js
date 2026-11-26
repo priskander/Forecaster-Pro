@@ -1985,6 +1985,9 @@
     const today = new Date().toISOString().split('T')[0];
     item.consumptionLogs.push({ date: today, amount: amount, type: 'consumed' });
     localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
     window.triggerToast(`Disbursed ${amount} ${item.unit} of ${item.name} from reserves.`, "success");
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
@@ -2002,6 +2005,9 @@
     const today = new Date().toISOString().split('T')[0];
     med.consumptionLogs.push({ date: today, amount: amount, type: 'consumed' });
     localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
     window.triggerToast(`Administered dosage of ${amount} ${med.unit} for ${med.name}.`, "success");
     if (typeof window.renderAllViews === 'function') window.renderAllViews();
   };
@@ -2881,6 +2887,9 @@
     window.budgetLimits.expense = expVal;
     localStorage.setItem('pro_budget_limits', JSON.stringify(window.budgetLimits));
     localStorage.setItem('pro_allocations_mode', 'manual');
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
     
     if (typeof window.triggerToast === 'function') {
       window.triggerToast("Manual allocation limits set!", "success");
@@ -3808,6 +3817,9 @@
     }
 
     localStorage.setItem('pro_stock', JSON.stringify(window.stockData));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
     window.triggerToast(`Disbursed ${inputVal} total of ${name} across active batches.`, "success");
     window.renderAllViews();
   };
@@ -4392,6 +4404,9 @@
     }
 
     localStorage.setItem('pro_pharmacy', JSON.stringify(window.pharmacyData));
+    if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.notifyDataChanged === 'function') {
+      window.ForecasterCloudSync.notifyDataChanged();
+    }
     window.triggerToast(`Disbursed ${inputVal} ${unit} of ${name}. Remaining: ${(currentTotal - inputVal).toFixed(1)} ${unit}.`, "success");
     window.renderAllViews();
   };

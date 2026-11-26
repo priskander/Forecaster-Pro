@@ -682,6 +682,9 @@
 
         this.closeAuthModal();
         this.updateUI();
+        if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.updateUI === 'function') {
+          window.ForecasterCloudSync.updateUI(false);
+        }
 
         if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
         if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
@@ -732,7 +735,15 @@
       localStorage.setItem('pro_vehicles', JSON.stringify([]));
       localStorage.setItem('pro_vehicle_fuel', JSON.stringify([]));
       localStorage.setItem('pro_vehicle_maintenance', JSON.stringify([]));
+      localStorage.setItem('pro_rental_contracts_v1', JSON.stringify([]));
+      localStorage.setItem('pro_rental_properties_v1', JSON.stringify([]));
+      localStorage.removeItem('forecaster_cloud_pending_changes');
+      localStorage.removeItem('forecaster_cloud_last_sync_time');
 
+      if (typeof window.loadRentalDatabase === 'function') window.loadRentalDatabase();
+      if (typeof window.renderRentalManagement === 'function') window.renderRentalManagement();
+      if (typeof window.rpmLoad === 'function') window.rpmLoad();
+      if (typeof window.rpmRenderDropdown === 'function') window.rpmRenderDropdown();
       if (typeof window.populateAccountSelects === 'function') window.populateAccountSelects();
       if (typeof window.renderVehicleManagement === 'function') window.renderVehicleManagement();
       if (typeof window.renderAllViews === 'function') window.renderAllViews();
@@ -747,6 +758,10 @@
       this.closeChangePasswordModal();
       this.closeSubUsersModal();
       this.updateUI();
+      if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.updateUI === 'function') {
+        window.ForecasterCloudSync._lastSyncError = null;
+        window.ForecasterCloudSync.updateUI(false);
+      }
 
       if (typeof window.triggerToast === 'function') {
         window.triggerToast('You have been signed out.', 'info');
@@ -3399,6 +3414,9 @@
       }
 
       this.updateUI();
+      if (window.ForecasterCloudSync && typeof window.ForecasterCloudSync.updateUI === 'function') {
+        window.ForecasterCloudSync.updateUI(false);
+      }
       this.checkSystemStatusBanner();
 
       if (!this._statusPollTimer) {
